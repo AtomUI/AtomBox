@@ -1,0 +1,82 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             x:Class="AtomBox.Desktop.App">
+    <Application.Resources>
+        <SolidColorBrush x:Key="AtomBoxSurfaceBrush" Color="#FFFFFF" />
+        <SolidColorBrush x:Key="AtomBoxSubtleSurfaceBrush" Color="#F8FAFC" />
+        <SolidColorBrush x:Key="AtomBoxNavigationSurfaceBrush" Color="#FAFAFA" />
+        <SolidColorBrush x:Key="AtomBoxStatusBarSurfaceBrush" Color="#F7F8FA" />
+        <SolidColorBrush x:Key="AtomBoxBorderBrush" Color="#E6E8EB" />
+        <SolidColorBrush x:Key="AtomBoxSubtleBorderBrush" Color="#EEF2F7" />
+        <SolidColorBrush x:Key="AtomBoxInputBorderBrush" Color="#D1D5DB" />
+        <SolidColorBrush x:Key="AtomBoxPrimaryTextBrush" Color="#111827" />
+        <SolidColorBrush x:Key="AtomBoxSecondaryTextBrush" Color="#374151" />
+        <SolidColorBrush x:Key="AtomBoxTertiaryTextBrush" Color="#6B7280" />
+        <SolidColorBrush x:Key="AtomBoxStatusTextBrush" Color="#7A818C" />
+        <SolidColorBrush x:Key="AtomBoxRowHoverBrush" Color="#EAF2FF" />
+    </Application.Resources>
+
+    <Application.Styles>
+        <Style Selector="Border.app-page-header">
+            <Setter Property="BorderBrush" Value="{StaticResource AtomBoxBorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="Padding" Value="20,0" />
+        </Style>
+        <Style Selector="TextBlock.app-page-title">
+            <Setter Property="FontSize" Value="18" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="Foreground" Value="{StaticResource AtomBoxPrimaryTextBrush}" />
+        </Style>
+        <Style Selector="Grid.app-page-content">
+            <Setter Property="Margin" Value="20" />
+        </Style>
+        <Style Selector="Border.app-list-surface">
+            <Setter Property="BorderBrush" Value="{StaticResource AtomBoxBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="Background" Value="{StaticResource AtomBoxSurfaceBrush}" />
+        </Style>
+        <Style Selector="Grid.app-list-header">
+            <Setter Property="Background" Value="{StaticResource AtomBoxSubtleSurfaceBrush}" />
+        </Style>
+        <Style Selector="Border.app-list-row">
+            <Setter Property="BorderBrush" Value="{StaticResource AtomBoxSubtleBorderBrush}" />
+            <Setter Property="BorderThickness" Value="0,0,0,1" />
+            <Setter Property="Background" Value="{StaticResource AtomBoxSurfaceBrush}" />
+        </Style>
+        <Style Selector="Border.app-list-row:pointerover">
+            <Setter Property="Background" Value="{StaticResource AtomBoxRowHoverBrush}" />
+        </Style>
+        <Style Selector="Grid.app-list-row-content">
+            <Setter Property="Background" Value="{StaticResource AtomBoxSurfaceBrush}" />
+        </Style>
+        <Style Selector="Border.app-list-row:pointerover Grid.app-list-row-content">
+            <Setter Property="Background" Value="{StaticResource AtomBoxRowHoverBrush}" />
+        </Style>
+        <Style Selector="TextBlock.app-primary-text">
+            <Setter Property="Foreground" Value="{StaticResource AtomBoxPrimaryTextBrush}" />
+        </Style>
+        <Style Selector="TextBlock.app-secondary-text">
+            <Setter Property="Foreground" Value="{StaticResource AtomBoxSecondaryTextBrush}" />
+        </Style>
+        <Style Selector="TextBlock.app-muted-text">
+            <Setter Property="Foreground" Value="{StaticResource AtomBoxTertiaryTextBrush}" />
+        </Style>
+        <Style Selector="atom|FloatButton.app-float-action">
+            <Setter Property="BoxShadow" Value="0 0 0 0 Transparent" />
+            <Setter Property="Background" Value="{StaticResource AtomBoxSubtleSurfaceBrush}" />
+            <Setter Property="Width" Value="40" />
+            <Setter Property="Height" Value="40" />
+        </Style>
+        <Style Selector="Border.app-float-action-frame">
+            <Setter Property="Width" Value="42" />
+            <Setter Property="Height" Value="42" />
+            <Setter Property="CornerRadius" Value="21" />
+            <Setter Property="Background" Value="{StaticResource AtomBoxSubtleSurfaceBrush}" />
+            <Setter Property="BorderBrush" Value="{StaticResource AtomBoxBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+        </Style>
+    </Application.Styles>
+</Application>

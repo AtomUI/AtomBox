@@ -1,0 +1,83 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
+             xmlns:pages="using:AtomBox.Desktop.ViewModels.Pages"
+             x:Class="AtomBox.Desktop.Views.Accounts.AccountManagementView"
+             x:DataType="pages:AccountManagementViewModel"
+             x:Name="Root">
+    <Grid RowDefinitions="56,*">
+        <Border Grid.Row="0"
+                Classes="app-page-header">
+            <DockPanel LastChildFill="False"
+                       VerticalAlignment="Center">
+                <TextBlock DockPanel.Dock="Left"
+                           Classes="app-page-title"
+                           Text="{Binding Title}"
+                           VerticalAlignment="Center" />
+            </DockPanel>
+        </Border>
+        <Grid Grid.Row="1"
+              Classes="app-page-content">
+            <atom:ScopeAwareOverlayLayerPanel ClipToBounds="False">
+                <Border Classes="app-list-surface">
+                    <Grid RowDefinitions="40,*">
+                        <Grid Grid.Row="0"
+                              ColumnDefinitions="1.4*,130,2*,150"
+                              Classes="app-list-header">
+                            <TextBlock Grid.Column="0" Text="名称" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="1" Text="类型" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="2" Text="地址 / Provider" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="3" Text="操作" VerticalAlignment="Center" FontWeight="SemiBold" />
+                        </Grid>
+                        <ScrollViewer Grid.Row="1">
+                            <ItemsControl ItemsSource="{Binding Accounts}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="pages:AccountRowViewModel">
+                                        <Border MinHeight="44"
+                                                Classes="app-list-row"
+                                                PointerEntered="HandleAccountRowPointerEntered"
+                                                PointerExited="HandleAccountRowPointerExited"
+                                                PointerMoved="HandleAccountRowPointerMoved">
+                                            <Grid ColumnDefinitions="1.4*,130,2*,150"
+                                                  Classes="app-list-row-content">
+                                                <TextBlock Grid.Column="0" Classes="app-primary-text" Text="{Binding DisplayName}" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="1" Classes="app-secondary-text" Text="{Binding ProviderType}" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="2" Classes="app-secondary-text" Text="{Binding AddressOrProvider}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                <StackPanel Grid.Column="3"
+                                                            Orientation="Horizontal"
+                                                            Spacing="8"
+                                                            VerticalAlignment="Center">
+                                                    <Button Content="编辑"
+                                                            Command="{Binding #Root.DataContext.EditAccountCommand}"
+                                                            CommandParameter="{Binding}" />
+                                                    <Button Content="删除"
+                                                            Command="{Binding #Root.DataContext.DeleteAccountCommand}"
+                                                            CommandParameter="{Binding}" />
+                                                </StackPanel>
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                    </Grid>
+                </Border>
+                <Border HorizontalAlignment="Right"
+                        VerticalAlignment="Bottom"
+                        Margin="0,0,20,20"
+                        Padding="4"
+                        Background="Transparent">
+                    <Border Classes="app-float-action-frame">
+                        <atom:FloatButton Classes="app-float-action"
+                                          BoxShadow="0 0 0 0 Transparent"
+                                          Icon="{antdicons:AntDesignIconProvider PlusOutlined}"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Command="{Binding AddAccountCommand}" />
+                    </Border>
+                </Border>
+            </atom:ScopeAwareOverlayLayerPanel>
+        </Grid>
+    </Grid>
+</UserControl>

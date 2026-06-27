@@ -1,0 +1,129 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
+             xmlns:pages="using:AtomBox.Desktop.ViewModels.Pages"
+             x:Class="AtomBox.Desktop.Views.Home.HomeView"
+             x:DataType="pages:HomeViewModel">
+    <Grid Background="{StaticResource AtomBoxSurfaceBrush}">
+        <Grid RowDefinitions="Auto,Auto,*"
+              Margin="44,36"
+              MaxWidth="960"
+              HorizontalAlignment="Center">
+            <StackPanel Grid.Row="0"
+                        HorizontalAlignment="Center"
+                        Spacing="12">
+                <Image Source="/Assets/logo.png"
+                       Width="76"
+                       Height="76"
+                       HorizontalAlignment="Center" />
+                <TextBlock Text="{Binding Title}"
+                           FontSize="32"
+                           FontWeight="SemiBold"
+                           Classes="app-primary-text"
+                           HorizontalAlignment="Center" />
+                <TextBlock Text="{Binding Subtitle}"
+                           FontSize="13"
+                           Classes="app-muted-text"
+                           HorizontalAlignment="Center" />
+            </StackPanel>
+
+            <StackPanel Grid.Row="1"
+                        Orientation="Horizontal"
+                        HorizontalAlignment="Center"
+                        Spacing="18"
+                        Margin="0,28,0,26">
+                <TextBlock Text="{Binding AccountSummary}"
+                           Classes="app-muted-text" />
+                <TextBlock Text="{Binding QueueSummary}"
+                           Classes="app-muted-text" />
+                <TextBlock Text="{Binding HistorySummary}"
+                           Classes="app-muted-text" />
+            </StackPanel>
+
+            <Grid Grid.Row="2"
+                  RowDefinitions="Auto,24,*">
+                <Grid Grid.Row="0"
+                      ColumnDefinitions="*,*,*"
+                      ColumnSpacing="12">
+                    <atom:Button Grid.Column="0"
+                                 Content="远程存储"
+                                 Icon="{antdicons:AntDesignIconProvider CloudServerOutlined}"
+                                 Command="{Binding OpenRemoteStorageCommand}"
+                                 HorizontalAlignment="Stretch"
+                                 Height="38" />
+                    <atom:Button Grid.Column="1"
+                                 Content="传输队列"
+                                 Icon="{antdicons:AntDesignIconProvider SwapOutlined}"
+                                 Command="{Binding OpenTransferQueueCommand}"
+                                 HorizontalAlignment="Stretch"
+                                 Height="38" />
+                    <atom:Button Grid.Column="2"
+                                 Content="账号管理"
+                                 Icon="{antdicons:AntDesignIconProvider UserOutlined}"
+                                 Command="{Binding OpenAccountManagementCommand}"
+                                 HorizontalAlignment="Stretch"
+                                 Height="38" />
+                </Grid>
+
+                <Border Grid.Row="2"
+                        Classes="app-list-surface">
+                    <Grid RowDefinitions="40,*">
+                        <Grid Grid.Row="0"
+                              Classes="app-list-header"
+                              ColumnDefinitions="*,Auto">
+                            <TextBlock Grid.Column="0"
+                                       Text="最近传输"
+                                       Margin="12,0"
+                                       VerticalAlignment="Center"
+                                       FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="1"
+                                       Text="最近 5 条"
+                                       Margin="0,0,12,0"
+                                       VerticalAlignment="Center"
+                                       Classes="app-muted-text" />
+                        </Grid>
+                        <Grid Grid.Row="1">
+                            <ItemsControl ItemsSource="{Binding RecentTransfers}"
+                                          IsVisible="{Binding IsRecentHistoryVisible}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="pages:HomeRecentTransferViewModel">
+                                        <Border Classes="app-list-row"
+                                                MinHeight="42">
+                                            <Grid Classes="app-list-row-content"
+                                                  ColumnDefinitions="2*,80,90,110">
+                                                <TextBlock Grid.Column="0"
+                                                           Text="{Binding FileName}"
+                                                           Margin="12,0"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis"
+                                                           Classes="app-primary-text" />
+                                                <TextBlock Grid.Column="1"
+                                                           Text="{Binding Direction}"
+                                                           VerticalAlignment="Center"
+                                                           Classes="app-secondary-text" />
+                                                <TextBlock Grid.Column="2"
+                                                           Text="{Binding Result}"
+                                                           VerticalAlignment="Center"
+                                                           Classes="app-secondary-text" />
+                                                <TextBlock Grid.Column="3"
+                                                           Text="{Binding CompletedAt}"
+                                                           VerticalAlignment="Center"
+                                                           Classes="app-muted-text" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                            <TextBlock Text="暂无传输记录。"
+                                       IsVisible="{Binding IsRecentHistoryEmpty}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Classes="app-muted-text" />
+                        </Grid>
+                    </Grid>
+                </Border>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

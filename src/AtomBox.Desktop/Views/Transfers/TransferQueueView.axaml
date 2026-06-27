@@ -1,0 +1,107 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
+             xmlns:pages="using:AtomBox.Desktop.ViewModels.Pages"
+             x:Class="AtomBox.Desktop.Views.Transfers.TransferQueueView"
+             x:DataType="pages:TransferQueueViewModel">
+    <UserControl.Styles>
+        <Style Selector="Border.transfer-row:pointerover">
+            <Setter Property="Background" Value="{StaticResource AtomBoxRowHoverBrush}" />
+        </Style>
+        <Style Selector="Border.transfer-row:pointerover Grid.transfer-row-content">
+            <Setter Property="Background" Value="{StaticResource AtomBoxRowHoverBrush}" />
+        </Style>
+    </UserControl.Styles>
+    <Grid RowDefinitions="56,*">
+        <Border Grid.Row="0"
+                Classes="app-page-header">
+            <DockPanel LastChildFill="False"
+                       VerticalAlignment="Center">
+                <TextBlock DockPanel.Dock="Left"
+                           Classes="app-page-title"
+                           Text="{Binding Title}"
+                           VerticalAlignment="Center" />
+            </DockPanel>
+        </Border>
+        <Grid Grid.Row="1"
+              Classes="app-page-content"
+              RowDefinitions="*">
+            <atom:ScopeAwareOverlayLayerPanel Grid.Row="0"
+                                              ClipToBounds="False">
+                <Border Classes="app-list-surface">
+                    <Grid RowDefinitions="40,*">
+                        <Grid Grid.Row="0"
+                              ColumnDefinitions="1.4*,90,2*,90,90,90"
+                              Classes="app-list-header">
+                            <TextBlock Grid.Column="0" Text="文件名" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="1" Text="方向" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="2" Text="目标 / 来源" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="3" Text="进度" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="4" Text="速度" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="5" Text="操作" VerticalAlignment="Center" FontWeight="SemiBold" />
+                        </Grid>
+                        <Grid Grid.Row="1">
+                            <ScrollViewer IsVisible="{Binding IsTaskListVisible}">
+                                <ItemsControl ItemsSource="{Binding Tasks}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="pages:TransferTaskRowViewModel">
+                                            <Border Classes="transfer-row"
+                                                    MinHeight="40"
+                                                    BorderBrush="{StaticResource AtomBoxSubtleBorderBrush}"
+                                                    BorderThickness="0,0,0,1"
+                                                    Background="{StaticResource AtomBoxSurfaceBrush}"
+                                                    PointerEntered="HandleTransferRowPointerEntered"
+                                                    PointerMoved="HandleTransferRowPointerMoved"
+                                                    PointerExited="HandleTransferRowPointerExited">
+                                                <Grid Classes="transfer-row-content"
+                                                      ColumnDefinitions="1.4*,90,2*,90,90,90"
+                                                      Background="Transparent">
+                                                    <TextBlock Grid.Column="0" Text="{Binding FileName}" Margin="12,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Grid.Column="1" Text="{Binding Direction}" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="2"
+                                                               Text="{Binding TargetOrSource}"
+                                                               VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <TextBlock Grid.Column="3" Text="{Binding Progress}" VerticalAlignment="Center" />
+                                                    <TextBlock Grid.Column="4" Text="{Binding Speed}" VerticalAlignment="Center" />
+                                                    <Button Grid.Column="5"
+                                                            Content="{Binding Action}"
+                                                            Command="{Binding ActionCommand}"
+                                                            CommandParameter="{Binding}"
+                                                            Margin="0,0,8,0"
+                                                            VerticalAlignment="Center"
+                                                            HorizontalAlignment="Stretch" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </ScrollViewer>
+                            <TextBlock Text="暂无传输任务。"
+                                       IsVisible="{Binding IsEmptyStateVisible}"
+                                       HorizontalAlignment="Center"
+                                       VerticalAlignment="Center"
+                                       Classes="app-muted-text" />
+                        </Grid>
+                    </Grid>
+                </Border>
+                <Border HorizontalAlignment="Right"
+                        VerticalAlignment="Bottom"
+                        Margin="0,0,20,20"
+                        Padding="4"
+                        Background="Transparent"
+                        IsVisible="{Binding HasRetryableTasks}">
+                    <Border Classes="app-float-action-frame">
+                        <atom:FloatButton Classes="app-float-action"
+                                          BoxShadow="0 0 0 0 Transparent"
+                                          Icon="{antdicons:AntDesignIconProvider SyncOutlined}"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Command="{Binding RetryFailedTasksCommand}" />
+                    </Border>
+                </Border>
+            </atom:ScopeAwareOverlayLayerPanel>
+        </Grid>
+    </Grid>
+</UserControl>

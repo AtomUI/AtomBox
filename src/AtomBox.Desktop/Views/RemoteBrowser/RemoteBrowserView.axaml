@@ -1,0 +1,515 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:antdicons="https://atomui.net/icons/antdesign"
+             xmlns:pages="using:AtomBox.Desktop.ViewModels.Pages"
+             x:Class="AtomBox.Desktop.Views.RemoteBrowser.RemoteBrowserView"
+    x:DataType="pages:RemoteBrowserViewModel"
+    x:Name="Root">
+    <UserControl.Styles>
+        <Style Selector="Border.remote-search-frame">
+            <Setter Property="Width" Value="190" />
+            <Setter Property="Height" Value="30" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="CornerRadius" Value="6" />
+            <Setter Property="BorderBrush" Value="{StaticResource AtomBoxInputBorderBrush}" />
+            <Setter Property="BorderThickness" Value="1" />
+            <Setter Property="Background" Value="{StaticResource AtomBoxSurfaceBrush}" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="atom|LineEdit.remote-search-input">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="MinHeight" Value="30" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+            <Setter Property="BorderThickness" Value="0" />
+            <Setter Property="Background" Value="Transparent" />
+        </Style>
+        <Style Selector="atom|Button.remote-search-button">
+            <Setter Property="Width" Value="32" />
+            <Setter Property="Height" Value="28" />
+            <Setter Property="MinHeight" Value="28" />
+            <Setter Property="Padding" Value="0" />
+            <Setter Property="ButtonType" Value="Text" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+    </UserControl.Styles>
+    <Grid RowDefinitions="84,*">
+        <Border Grid.Row="0"
+                Classes="app-page-header"
+                Padding="20,10">
+            <Grid RowDefinitions="28,36"
+                  ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Row="0"
+                           Grid.Column="0"
+                           Classes="app-page-title"
+                           Text="{Binding Title}"
+                           VerticalAlignment="Center" />
+                <StackPanel Grid.Row="0"
+                            Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            VerticalAlignment="Center">
+                    <Button Content="添加账号"
+                            Command="{Binding AddAccountCommand}"
+                            IsVisible="{Binding IsAddAccountVisible}" />
+                </StackPanel>
+                <Grid Grid.Row="1"
+                      Grid.Column="0"
+                      Grid.ColumnSpan="2"
+                      ColumnDefinitions="Auto,*,Auto"
+                      ColumnSpacing="10"
+                      VerticalAlignment="Center"
+                      IsVisible="{Binding IsObjectStorageNavigationVisible}">
+                    <atom:ComboBox ItemsSource="{Binding Buckets}"
+                                   SelectedItem="{Binding SelectedBucket}"
+                                   PlaceholderText="请选择 Bucket"
+                                   Grid.Column="0"
+                                   Width="240"
+                                   Height="30"
+                                   MinHeight="30"
+                                   VerticalAlignment="Center"
+                                   SizeType="Small"
+                                   IsVisible="{Binding IsBucketSelectorVisible}">
+                        <atom:ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="pages:BucketChoiceViewModel">
+                                <TextBlock Text="{Binding Name}" />
+                            </DataTemplate>
+                        </atom:ComboBox.ItemTemplate>
+                    </atom:ComboBox>
+                    <atom:Breadcrumb ItemsSource="{Binding BreadcrumbItems}"
+                                     NavigateRequest="HandleBreadcrumbNavigateRequest"
+                                     Grid.Column="0"
+                                     IsVisible="{Binding IsWebDavBreadcrumbInSearchNavigationVisible}"
+                                     HorizontalAlignment="Left"
+                                     VerticalAlignment="Center">
+                        <atom:Breadcrumb.ItemTemplate>
+                            <DataTemplate x:DataType="atom:BreadcrumbItemData">
+                                <TextBlock Text="{Binding Content}" />
+                            </DataTemplate>
+                        </atom:Breadcrumb.ItemTemplate>
+                    </atom:Breadcrumb>
+                    <atom:Breadcrumb ItemsSource="{Binding BreadcrumbItems}"
+                                     NavigateRequest="HandleBreadcrumbNavigateRequest"
+                                     Grid.Column="1"
+                                     IsVisible="{Binding IsObjectStorageBreadcrumbInSearchNavigationVisible}"
+                                     HorizontalAlignment="Left"
+                                     VerticalAlignment="Center">
+                        <atom:Breadcrumb.ItemTemplate>
+                            <DataTemplate x:DataType="atom:BreadcrumbItemData">
+                                <TextBlock Text="{Binding Content}" />
+                            </DataTemplate>
+                        </atom:Breadcrumb.ItemTemplate>
+                    </atom:Breadcrumb>
+                    <Border Grid.Column="2"
+                            Classes="remote-search-frame"
+                            IsVisible="{Binding IsSearchVisible}">
+                        <Grid ColumnDefinitions="*,32">
+                            <atom:LineEdit Grid.Column="0"
+                                           Classes="remote-search-input"
+                                           PlaceholderText="按名称前缀搜索"
+                                           Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                           SizeType="Small"
+                                           StyleVariant="Borderless" />
+                            <Border Grid.Column="1"
+                                    BorderBrush="{StaticResource AtomBoxInputBorderBrush}"
+                                    BorderThickness="1,0,0,0"
+                                    Height="30">
+                                <atom:Button Classes="remote-search-button"
+                                             Icon="{antdicons:AntDesignIconProvider SearchOutlined}"
+                                             Click="HandleSearchButtonClick" />
+                            </Border>
+                        </Grid>
+                    </Border>
+                </Grid>
+                <atom:Breadcrumb Grid.Row="1"
+                                 Grid.Column="0"
+                                 Grid.ColumnSpan="2"
+                                 ItemsSource="{Binding BreadcrumbItems}"
+                                 NavigateRequest="HandleBreadcrumbNavigateRequest"
+                                 IsVisible="{Binding IsPlainBreadcrumbNavigationVisible}"
+                                 HorizontalAlignment="Left"
+                                 VerticalAlignment="Center">
+                    <atom:Breadcrumb.ItemTemplate>
+                        <DataTemplate x:DataType="atom:BreadcrumbItemData">
+                            <TextBlock Text="{Binding Content}" />
+                        </DataTemplate>
+                    </atom:Breadcrumb.ItemTemplate>
+                </atom:Breadcrumb>
+            </Grid>
+        </Border>
+        <Grid Grid.Row="1"
+              Classes="app-page-content"
+              RowDefinitions="Auto,*,48">
+            <StackPanel Grid.Row="0"
+                        Spacing="8"
+                        Margin="0,0,0,12">
+                <StackPanel Orientation="Horizontal"
+                            Spacing="8">
+                    <Button Content="查看详情"
+                            Command="{Binding ShowErrorDetailsCommand}"
+                            IsVisible="{Binding HasErrorDetails}" />
+                    <Button Content="重试"
+                            Command="{Binding RetryLoadCommand}"
+                            IsVisible="{Binding HasErrorDetails}" />
+                </StackPanel>
+            </StackPanel>
+            <atom:ScopeAwareOverlayLayerPanel Grid.Row="1"
+                                              ClipToBounds="False">
+            <Border Classes="app-list-surface"
+                    IsVisible="{Binding IsRemoteFileBrowserVisible}"
+                    HorizontalAlignment="Stretch"
+                    VerticalAlignment="Stretch">
+                <atom:Spin IsSpinning="{Binding IsLoading}"
+                           IsTipVisible="True"
+                           Tip="正在加载"
+                           SizeType="Large"
+                           HorizontalAlignment="Stretch"
+                           VerticalAlignment="Stretch">
+                <Grid RowDefinitions="40,*">
+                    <Grid Grid.Row="0"
+                          ColumnDefinitions="90,2*,140,170"
+                          Classes="app-list-header">
+                        <TextBlock Grid.Column="0" Text="缩略图" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" />
+                        <TextBlock Grid.Column="1" Text="{Binding NameColumnHeader}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                        <TextBlock Grid.Column="2" Text="文件大小" VerticalAlignment="Center" FontWeight="SemiBold" />
+                        <TextBlock Grid.Column="3" Text="修改时间" VerticalAlignment="Center" FontWeight="SemiBold" />
+                    </Grid>
+                    <Grid Grid.Row="1">
+                        <ScrollViewer Name="RemoteRowsScrollViewer"
+                                      IsVisible="{Binding IsDataRowsVisible}"
+                                      HorizontalScrollBarVisibility="Disabled">
+                            <ItemsControl ItemsSource="{Binding Rows}"
+                                          HorizontalAlignment="Stretch">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate x:DataType="pages:RemoteListRowViewModel">
+                                        <Border Classes="remote-row"
+                                                Background="{StaticResource AtomBoxSurfaceBrush}"
+                                                DoubleTapped="HandleRowDoubleTapped"
+                                                PointerPressed="HandleRemoteRowPointerPressed"
+                                                PointerEntered="HandleRemoteRowPointerEntered"
+                                                PointerExited="HandleRemoteRowPointerExited"
+                                                PointerMoved="HandleRemoteRowPointerMoved"
+                                                HorizontalAlignment="Stretch"
+                                                Width="{Binding Bounds.Width, ElementName=RemoteRowsScrollViewer}">
+                                            <Border.ContextMenu>
+                                                <atom:ContextMenu Closed="HandleRemoteRowContextMenuClosed">
+                                                    <atom:MenuItem Header="打开"
+                                                                   Command="{Binding OpenCommand}"
+                                                                   CommandParameter="{Binding}"
+                                                                   IsVisible="{Binding IsFolderLike}" />
+                                                    <atom:MenuItem Header="下载"
+                                                                   Command="{Binding DownloadCommand}"
+                                                                   CommandParameter="{Binding}"
+                                                                   IsVisible="{Binding IsFile}" />
+                                                    <atom:MenuItem Header="重命名"
+                                                                   Command="{Binding RenameCommand}"
+                                                                   CommandParameter="{Binding}"
+                                                                   IsVisible="{Binding CanRename}" />
+                                                    <atom:MenuItem Header="删除"
+                                                                   Command="{Binding DeleteCommand}"
+                                                                   CommandParameter="{Binding}"
+                                                                   IsEnabled="{Binding CanDelete}" />
+                                                </atom:ContextMenu>
+                                            </Border.ContextMenu>
+                                            <Grid ColumnDefinitions="90,2*,140,170"
+                                                  MinHeight="42"
+                                                  HorizontalAlignment="Stretch"
+                                                  Background="{StaticResource AtomBoxSurfaceBrush}">
+                                                <TextBlock Grid.Column="0" Classes="app-secondary-text" Text="{Binding Icon}" Margin="12,0" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="1" Classes="app-primary-text" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Grid.Column="2" Classes="app-secondary-text" Text="{Binding Size}" VerticalAlignment="Center" />
+                                                <TextBlock Grid.Column="3" Classes="app-secondary-text" Text="{Binding UpdatedAt}" VerticalAlignment="Center" />
+                                            </Grid>
+                                        </Border>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+                        <TextBlock Text="{Binding EmptyStateText}"
+                                   IsVisible="{Binding IsEmptyStateVisible}"
+                                   HorizontalAlignment="Center"
+                                   VerticalAlignment="Center"
+                                   Classes="app-muted-text" />
+                    </Grid>
+                </Grid>
+                </atom:Spin>
+            </Border>
+                <Border Classes="app-list-surface"
+                        IsVisible="{Binding IsRemoteAccountOverviewVisible}"
+                        HorizontalAlignment="Stretch"
+                        VerticalAlignment="Stretch">
+                    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                        <StackPanel Spacing="16"
+                                    Margin="16">
+                            <UniformGrid Columns="4"
+                                         Rows="1"
+                                         ColumnSpacing="16">
+                                <atom:Statistic Header="全部账号"
+                                                Value="{Binding TotalAccountCount}" />
+                                <atom:Statistic Header="对象存储"
+                                                Value="{Binding ObjectStorageAccountCount}" />
+                                <atom:Statistic Header="FTP / SFTP"
+                                                Value="{Binding FileTransferAccountCount}" />
+                                <atom:Statistic Header="WebDAV"
+                                                Value="{Binding WebDavAccountCount}" />
+                            </UniformGrid>
+                            <atom:Card Header="对象存储"
+                                       SizeType="Middle"
+                                       HorizontalAlignment="Stretch"
+                                       IsVisible="{Binding HasObjectStorageAccounts}">
+                                <ItemsControl ItemsSource="{Binding ObjectStorageAccounts}"
+                                              HorizontalAlignment="Stretch">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="pages:RemoteAccountChoiceViewModel">
+                                            <Border Classes="app-list-row"
+                                                    DoubleTapped="HandleRemoteAccountRowDoubleTapped"
+                                                    PointerEntered="HandleRemoteRowPointerEntered"
+                                                    PointerExited="HandleRemoteRowPointerExited"
+                                                    PointerMoved="HandleRemoteRowPointerMoved"
+                                                    HorizontalAlignment="Stretch">
+                                                <Grid Classes="app-list-row-content"
+                                                      ColumnDefinitions="2*,150,2*,90"
+                                                      MinHeight="46"
+                                                      HorizontalAlignment="Stretch">
+                                                    <TextBlock Grid.Column="0"
+                                                               Classes="app-primary-text"
+                                                               Text="{Binding DisplayName}"
+                                                               Margin="12,0"
+                                                               VerticalAlignment="Center"
+                                                               FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <atom:Tag Grid.Column="1"
+                                                              Text="{Binding ProviderTag}"
+                                                              TagColor="{Binding ProviderTagColor}"
+                                                              VerticalAlignment="Center"
+                                                              HorizontalAlignment="Left" />
+                                                    <TextBlock Grid.Column="2"
+                                                               Classes="app-secondary-text"
+                                                               Text="{Binding Endpoint}"
+                                                               VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <atom:Button Grid.Column="3"
+                                                                 Content="打开"
+                                                                 Command="{Binding #Root.DataContext.OpenAccountCommand}"
+                                                                 CommandParameter="{Binding}"
+                                                                 HorizontalAlignment="Left"
+                                                                 VerticalAlignment="Center" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </atom:Card>
+                            <atom:Card Header="FTP / SFTP"
+                                       SizeType="Middle"
+                                       HorizontalAlignment="Stretch"
+                                       IsVisible="{Binding HasFileTransferAccounts}">
+                                <ItemsControl ItemsSource="{Binding FileTransferAccounts}"
+                                              HorizontalAlignment="Stretch">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="pages:RemoteAccountChoiceViewModel">
+                                            <Border Classes="app-list-row"
+                                                    DoubleTapped="HandleRemoteAccountRowDoubleTapped"
+                                                    PointerEntered="HandleRemoteRowPointerEntered"
+                                                    PointerExited="HandleRemoteRowPointerExited"
+                                                    PointerMoved="HandleRemoteRowPointerMoved"
+                                                    HorizontalAlignment="Stretch">
+                                                <Grid Classes="app-list-row-content"
+                                                      ColumnDefinitions="2*,150,2*,90"
+                                                      MinHeight="46"
+                                                      HorizontalAlignment="Stretch">
+                                                    <TextBlock Grid.Column="0"
+                                                               Classes="app-primary-text"
+                                                               Text="{Binding DisplayName}"
+                                                               Margin="12,0"
+                                                               VerticalAlignment="Center"
+                                                               FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <atom:Tag Grid.Column="1"
+                                                              Text="{Binding ProviderTag}"
+                                                              TagColor="{Binding ProviderTagColor}"
+                                                              VerticalAlignment="Center"
+                                                              HorizontalAlignment="Left" />
+                                                    <TextBlock Grid.Column="2"
+                                                               Classes="app-secondary-text"
+                                                               Text="{Binding Endpoint}"
+                                                               VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <atom:Button Grid.Column="3"
+                                                                 Content="打开"
+                                                                 Command="{Binding #Root.DataContext.OpenAccountCommand}"
+                                                                 CommandParameter="{Binding}"
+                                                                 HorizontalAlignment="Left"
+                                                                 VerticalAlignment="Center" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </atom:Card>
+                            <atom:Card Header="WebDAV"
+                                       SizeType="Middle"
+                                       HorizontalAlignment="Stretch"
+                                       IsVisible="{Binding HasWebDavAccounts}">
+                                <ItemsControl ItemsSource="{Binding WebDavAccounts}"
+                                              HorizontalAlignment="Stretch">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate x:DataType="pages:RemoteAccountChoiceViewModel">
+                                            <Border Classes="app-list-row"
+                                                    DoubleTapped="HandleRemoteAccountRowDoubleTapped"
+                                                    PointerEntered="HandleRemoteRowPointerEntered"
+                                                    PointerExited="HandleRemoteRowPointerExited"
+                                                    PointerMoved="HandleRemoteRowPointerMoved"
+                                                    HorizontalAlignment="Stretch">
+                                                <Grid Classes="app-list-row-content"
+                                                      ColumnDefinitions="2*,150,2*,90"
+                                                      MinHeight="46"
+                                                      HorizontalAlignment="Stretch">
+                                                    <TextBlock Grid.Column="0"
+                                                               Classes="app-primary-text"
+                                                               Text="{Binding DisplayName}"
+                                                               Margin="12,0"
+                                                               VerticalAlignment="Center"
+                                                               FontWeight="SemiBold"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <atom:Tag Grid.Column="1"
+                                                              Text="{Binding ProviderTag}"
+                                                              TagColor="{Binding ProviderTagColor}"
+                                                              VerticalAlignment="Center"
+                                                              HorizontalAlignment="Left" />
+                                                    <TextBlock Grid.Column="2"
+                                                               Classes="app-secondary-text"
+                                                               Text="{Binding Endpoint}"
+                                                               VerticalAlignment="Center"
+                                                               TextTrimming="CharacterEllipsis" />
+                                                    <atom:Button Grid.Column="3"
+                                                                 Content="打开"
+                                                                 Command="{Binding #Root.DataContext.OpenAccountCommand}"
+                                                                 CommandParameter="{Binding}"
+                                                                 HorizontalAlignment="Left"
+                                                                 VerticalAlignment="Center" />
+                                                </Grid>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </atom:Card>
+                        </StackPanel>
+                    </ScrollViewer>
+                </Border>
+                <Grid IsVisible="{Binding IsRemoteEntryEmptyVisible}"
+                      HorizontalAlignment="Stretch"
+                      VerticalAlignment="Stretch">
+                    <StackPanel HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Spacing="12">
+                        <atom:Empty PresetImage="Simple"
+                                    SizeType="Large"
+                                    Description="暂无远程连接" />
+                        <atom:Button Content="添加账号"
+                                     ButtonType="Primary"
+                                     Command="{Binding AddAccountCommand}"
+                                     HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Grid>
+                <Border HorizontalAlignment="Right"
+                        VerticalAlignment="Bottom"
+                        Margin="0,0,20,20"
+                        Padding="4"
+                        Background="Transparent"
+                        IsVisible="{Binding IsFileListActionsVisible}">
+                    <StackPanel Spacing="8">
+                        <Border Classes="app-float-action-frame">
+                            <atom:FloatButton Classes="app-float-action"
+                                              BoxShadow="0 0 0 0 Transparent"
+                                              Icon="{antdicons:AntDesignIconProvider SyncOutlined}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Command="{Binding RefreshCommand}" />
+                        </Border>
+                        <Border Classes="app-float-action-frame"
+                                IsVisible="{Binding IsUploadActionVisible}">
+                            <atom:FloatButton Classes="app-float-action"
+                                              BoxShadow="0 0 0 0 Transparent"
+                                              Icon="{antdicons:AntDesignIconProvider UploadOutlined}"
+                                              IsEnabled="{Binding CanUpload}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Click="HandleUploadFloatButtonClick" />
+                        </Border>
+                        <Border Classes="app-float-action-frame"
+                                IsVisible="{Binding IsCreateFolderActionVisible}">
+                            <atom:FloatButton Classes="app-float-action"
+                                              BoxShadow="0 0 0 0 Transparent"
+                                              Icon="{antdicons:AntDesignIconProvider FolderAddOutlined}"
+                                              IsEnabled="{Binding CanCreateFolder}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Click="HandleCreateFolderFloatButtonClick" />
+                        </Border>
+                    </StackPanel>
+                </Border>
+                <Border HorizontalAlignment="Right"
+                        VerticalAlignment="Bottom"
+                        Margin="0,0,20,20"
+                        Padding="4"
+                        Background="Transparent"
+                        IsVisible="{Binding IsBucketListActionsVisible}">
+                    <StackPanel Spacing="8">
+                        <Border Classes="app-float-action-frame">
+                            <atom:FloatButton Classes="app-float-action"
+                                              BoxShadow="0 0 0 0 Transparent"
+                                              Icon="{antdicons:AntDesignIconProvider SyncOutlined}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Command="{Binding RefreshCommand}" />
+                        </Border>
+                        <Border Classes="app-float-action-frame">
+                            <atom:FloatButton Classes="app-float-action"
+                                              BoxShadow="0 0 0 0 Transparent"
+                                              Icon="{antdicons:AntDesignIconProvider PlusOutlined}"
+                                              IsEnabled="{Binding CanCreateBucket}"
+                                              HorizontalAlignment="Center"
+                                              VerticalAlignment="Center"
+                                              Click="HandleCreateBucketFloatButtonClick" />
+                        </Border>
+                    </StackPanel>
+                </Border>
+                <Border HorizontalAlignment="Right"
+                        VerticalAlignment="Bottom"
+                        Margin="0,0,20,20"
+                        Padding="4"
+                        Background="Transparent"
+                        IsVisible="{Binding IsRemoteEntryActionsVisible}">
+                    <Border Classes="app-float-action-frame">
+                        <atom:FloatButton Classes="app-float-action"
+                                          BoxShadow="0 0 0 0 Transparent"
+                                          Icon="{antdicons:AntDesignIconProvider PlusOutlined}"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Command="{Binding AddAccountCommand}" />
+                    </Border>
+                </Border>
+            </atom:ScopeAwareOverlayLayerPanel>
+            <DockPanel Grid.Row="2"
+                       VerticalAlignment="Center"
+                       LastChildFill="False">
+                <TextBlock DockPanel.Dock="Left"
+                           Text="{Binding StatusMessage}"
+                           Classes="app-muted-text"
+                           VerticalAlignment="Center" />
+                <StackPanel DockPanel.Dock="Right"
+                            Orientation="Horizontal"
+                            Spacing="8"
+                            IsVisible="{Binding IsPaginationVisible}">
+                    <Button Content="上一页"
+                            Command="{Binding PreviousPageCommand}"
+                            IsEnabled="{Binding CanGoPreviousPage}" />
+                    <Button Content="下一页"
+                            Command="{Binding NextPageCommand}"
+                            IsEnabled="{Binding CanGoNextPage}" />
+                </StackPanel>
+            </DockPanel>
+        </Grid>
+    </Grid>
+</UserControl>

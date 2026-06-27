@@ -1,0 +1,235 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:pages="using:AtomBox.Desktop.ViewModels.Pages"
+             x:Class="AtomBox.Desktop.Views.Settings.SettingsView"
+             x:DataType="pages:SettingsViewModel">
+    <UserControl.Styles>
+        <Style Selector="Grid.setting-row">
+            <Setter Property="ColumnSpacing" Value="28" />
+            <Setter Property="MinHeight" Value="50" />
+        </Style>
+        <Style Selector="TextBlock.setting-label">
+            <Setter Property="Foreground" Value="{StaticResource AtomBoxPrimaryTextBrush}" />
+            <Setter Property="FontWeight" Value="SemiBold" />
+            <Setter Property="VerticalAlignment" Value="Center" />
+        </Style>
+        <Style Selector="TextBlock.setting-description">
+            <Setter Property="Foreground" Value="{StaticResource AtomBoxTertiaryTextBrush}" />
+            <Setter Property="FontSize" Value="12" />
+            <Setter Property="TextWrapping" Value="Wrap" />
+        </Style>
+        <Style Selector="Border.setting-separator">
+            <Setter Property="Height" Value="1" />
+            <Setter Property="Background" Value="{StaticResource AtomBoxSubtleBorderBrush}" />
+        </Style>
+    </UserControl.Styles>
+    <Grid RowDefinitions="56,*">
+        <Border Grid.Row="0"
+                Classes="app-page-header">
+            <DockPanel LastChildFill="False"
+                       VerticalAlignment="Center">
+                <TextBlock DockPanel.Dock="Left"
+                           Classes="app-page-title"
+                           Text="{Binding Title}"
+                           VerticalAlignment="Center" />
+            </DockPanel>
+        </Border>
+        <Grid Grid.Row="1"
+              Classes="app-page-content"
+              RowDefinitions="*,Auto">
+            <Border Grid.Row="0"
+                    BorderBrush="{StaticResource AtomBoxBorderBrush}"
+                    BorderThickness="1"
+                    CornerRadius="6"
+                    Padding="22,18">
+                <StackPanel Spacing="14"
+                            HorizontalAlignment="Stretch"
+                            MaxWidth="900">
+                    <Grid Classes="setting-row"
+                          ColumnDefinitions="260,*">
+                        <StackPanel Grid.Column="0"
+                                    Spacing="4"
+                                    VerticalAlignment="Center">
+                            <TextBlock Classes="setting-label"
+                                       Text="启动后默认页面" />
+                            <TextBlock Classes="setting-description"
+                                       Text="决定 AtomBox 打开后首先进入哪个页面。" />
+                        </StackPanel>
+                        <Grid Grid.Column="1"
+                              MinHeight="32"
+                              VerticalAlignment="Center">
+                        <atom:ComboBox SelectedIndex="{Binding StartupPageSelectedIndex}"
+                                       Width="220">
+                            <atom:ComboBoxItem Content="首页" />
+                            <atom:ComboBoxItem Content="远程存储" />
+                            <atom:ComboBoxItem Content="传输队列" />
+                            <atom:ComboBoxItem Content="账号管理" />
+                        </atom:ComboBox>
+                        </Grid>
+                    </Grid>
+
+                    <Border Classes="setting-separator" />
+
+                    <Grid Classes="setting-row"
+                          ColumnDefinitions="260,*">
+                        <StackPanel Grid.Column="0"
+                                    Spacing="4"
+                                    VerticalAlignment="Center">
+                            <TextBlock Classes="setting-label"
+                                       Text="关闭窗口时" />
+                            <TextBlock Classes="setting-description"
+                                       Text="选择直接退出，或保留在系统托盘中继续运行。" />
+                        </StackPanel>
+                        <Grid Grid.Column="1"
+                              MinHeight="32"
+                              VerticalAlignment="Center">
+                            <atom:ComboBox SelectedIndex="{Binding CloseBehaviorSelectedIndex}"
+                                           Width="220">
+                                <atom:ComboBoxItem Content="关闭应用" />
+                                <atom:ComboBoxItem Content="最小化应用" />
+                            </atom:ComboBox>
+                        </Grid>
+                    </Grid>
+
+                    <Border Classes="setting-separator" />
+
+                    <Grid Classes="setting-row"
+                          ColumnDefinitions="260,*">
+                        <StackPanel Grid.Column="0"
+                                    Spacing="4"
+                                    VerticalAlignment="Center">
+                            <TextBlock Classes="setting-label"
+                                       Text="默认下载目录" />
+                            <TextBlock Classes="setting-description"
+                                       Text="下载文件时默认保存到这个本地目录。" />
+                        </StackPanel>
+                        <Grid Grid.Column="1"
+                              ColumnDefinitions="360,Auto"
+                              ColumnSpacing="8"
+                              MinHeight="32"
+                              VerticalAlignment="Center">
+                            <atom:LineEdit Grid.Column="0"
+                                           Text="{Binding DefaultDownloadDirectory}"
+                                           IsReadOnly="True" />
+                            <atom:Button Grid.Column="1"
+                                         Content="修改"
+                                         Command="{Binding ChooseDownloadDirectoryCommand}" />
+                        </Grid>
+                    </Grid>
+
+                    <Border Classes="setting-separator" />
+
+                    <Grid Classes="setting-row"
+                          ColumnDefinitions="260,*">
+                        <StackPanel Grid.Column="0"
+                                    Spacing="4"
+                                    VerticalAlignment="Center">
+                            <TextBlock Classes="setting-label"
+                                       Text="最大并发数" />
+                            <TextBlock Classes="setting-description"
+                                       Text="控制同时上传或下载的任务数量。" />
+                        </StackPanel>
+                        <Grid Grid.Column="1"
+                              MinHeight="32"
+                              VerticalAlignment="Center">
+                            <atom:NumericUpDown Minimum="1"
+                                                Maximum="16"
+                                                Increment="1"
+                                                FormatString="0"
+                                                Value="{Binding DefaultConcurrency}"
+                                                Width="140"
+                                                HorizontalAlignment="Left" />
+                        </Grid>
+                    </Grid>
+
+                    <!--
+                    缓存能力目前只有目录和 Infrastructure 占位类，尚未接入真实业务链路。
+                    后续实现 MetadataCache / ThumbnailCache / 清理缓存用例后，可恢复缓存相关表单项。
+                    -->
+
+                    <Border Classes="setting-separator" />
+
+                    <Grid Classes="setting-row"
+                          ColumnDefinitions="260,*">
+                        <StackPanel Grid.Column="0"
+                                    Spacing="4"
+                                    VerticalAlignment="Center">
+                            <TextBlock Classes="setting-label"
+                                       Text="配置目录" />
+                            <TextBlock Classes="setting-description"
+                                       Text="查看本机保存的应用配置文件。" />
+                        </StackPanel>
+                        <Grid Grid.Column="1"
+                              MinHeight="32"
+                              VerticalAlignment="Center">
+                            <atom:Button Content="打开"
+                                         Command="{Binding OpenConfigurationDirectoryCommand}"
+                                         HorizontalAlignment="Left" />
+                        </Grid>
+                    </Grid>
+
+                    <Border Classes="setting-separator" />
+
+                    <Grid Classes="setting-row"
+                          ColumnDefinitions="260,*">
+                        <StackPanel Grid.Column="0"
+                                    Spacing="4"
+                                    VerticalAlignment="Center">
+                            <TextBlock Classes="setting-label"
+                                       Text="日志目录" />
+                            <TextBlock Classes="setting-description"
+                                       Text="用于排查启动、连接和传输异常。" />
+                        </StackPanel>
+                        <Grid Grid.Column="1"
+                              MinHeight="32"
+                              VerticalAlignment="Center">
+                            <atom:Button Content="打开"
+                                         Command="{Binding OpenLogDirectoryCommand}"
+                                         HorizontalAlignment="Left" />
+                        </Grid>
+                    </Grid>
+
+                    <Border Classes="setting-separator" />
+
+                    <Grid Classes="setting-row"
+                          ColumnDefinitions="260,*">
+                        <StackPanel Grid.Column="0"
+                                    Spacing="4"
+                                    VerticalAlignment="Center">
+                            <TextBlock Classes="setting-label"
+                                       Text="状态目录" />
+                            <TextBlock Classes="setting-description"
+                                       Text="保存传输队列、历史记录等本地运行状态。" />
+                        </StackPanel>
+                        <Grid Grid.Column="1"
+                              MinHeight="32"
+                              VerticalAlignment="Center">
+                            <atom:Button Content="打开"
+                                         Command="{Binding OpenStateDirectoryCommand}"
+                                         HorizontalAlignment="Left" />
+                        </Grid>
+                    </Grid>
+                </StackPanel>
+            </Border>
+            <Grid Grid.Row="1"
+                  Margin="0,12,0,0"
+                  ColumnDefinitions="*,Auto">
+                <atom:Button Grid.Column="0"
+                             Content="查看详情"
+                             Command="{Binding ShowErrorDetailsCommand}"
+                             IsVisible="{Binding HasErrorDetails}"
+                             HorizontalAlignment="Left" />
+                <StackPanel Grid.Column="1"
+                            Orientation="Horizontal"
+                            Spacing="8">
+                    <atom:Button Content="重置"
+                                 Command="{Binding ResetCommand}" />
+                    <atom:Button Content="保存"
+                                 ButtonType="Primary"
+                                 Command="{Binding SaveCommand}" />
+                </StackPanel>
+            </Grid>
+        </Grid>
+    </Grid>
+</UserControl>

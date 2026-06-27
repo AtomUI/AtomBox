@@ -1,0 +1,27 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\AtomBox.Core\AtomBox.Core.csproj" />
+    <ProjectReference Include="..\AtomBox.Application\AtomBox.Application.csproj" />
+    <ProjectReference Include="..\AtomBox.Transfer\AtomBox.Transfer.csproj" />
+    <ProjectReference Include="..\AtomBox.Providers\AtomBox.Providers.csproj" />
+    <ProjectReference Include="..\AtomBox.Infrastructure\AtomBox.Infrastructure.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="AtomUI.Desktop.Controls" />
+    <PackageReference Include="AtomUI.Fonts.AlibabaSans" />
+    <PackageReference Include="Avalonia.Desktop" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <AvaloniaResource Include="Assets\**" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <ApplicationIcon>Assets/logo.ico</ApplicationIcon>
+  </PropertyGroup>
+
+</Project>

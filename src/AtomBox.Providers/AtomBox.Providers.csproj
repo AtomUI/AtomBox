@@ -1,0 +1,20 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\AtomBox.Core\AtomBox.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aliyun.OSS.SDK.NetCore" />
+    <PackageReference Include="FluentFTP" />
+    <PackageReference Include="HuaweiCloud.Obs" />
+    <PackageReference Include="log4net" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection.Abstractions" />
+    <PackageReference Include="Newtonsoft.Json" />
+    <PackageReference Include="Qiniu" />
+    <PackageReference Include="SSH.NET" />
+    <PackageReference Include="Tencent.QCloud.Cos.Sdk" />
+    <PackageReference Include="Volcengine.TOS.SDK.NetCore" />
+  </ItemGroup>
+
+</Project>

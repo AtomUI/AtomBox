@@ -1,0 +1,91 @@
+<atom:Window xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:atom="https://atomui.net"
+             xmlns:shell="using:AtomBox.Desktop.Shell"
+             x:Class="AtomBox.Desktop.Shell.MainWindow"
+             x:DataType="shell:MainWindowViewModel"
+             Title="AtomBox"
+             Icon="/Assets/logo.ico"
+             Width="1200"
+             Height="760"
+             MinWidth="960"
+             MinHeight="620"
+             WindowStartupLocation="CenterScreen">
+    <atom:Window.LogoTemplate>
+        <DataTemplate>
+            <Image Source="/Assets/logo.png" />
+        </DataTemplate>
+    </atom:Window.LogoTemplate>
+
+    <Border BorderBrush="{StaticResource AtomBoxBorderBrush}"
+            BorderThickness="0,1,0,0">
+    <Grid RowDefinitions="*,30">
+        <atom:Splitter Grid.Row="0"
+                       Orientation="Vertical"
+                       HandleSize="4">
+            <Border Name="NavigationPane"
+                    atom:Splitter.DefaultSize="260"
+                    atom:Splitter.MinSize="220"
+                    atom:Splitter.MaxSize="420"
+                    Background="{StaticResource AtomBoxNavigationSurfaceBrush}"
+                    BorderBrush="{StaticResource AtomBoxBorderBrush}"
+                    BorderThickness="0,0,0,0">
+                <Grid RowDefinitions="56,*">
+                    <StackPanel Grid.Row="0"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center"
+                                Margin="16,0"
+                                Spacing="10">
+                        <Image Source="/Assets/logo.png"
+                               Width="24"
+                               Height="24" />
+                        <TextBlock Text="AtomBox"
+                                   FontSize="18"
+                                   FontWeight="SemiBold"
+                                   VerticalAlignment="Center" />
+                    </StackPanel>
+
+                    <atom:NavMenu Grid.Row="1"
+                                  Name="MainNavigationMenu"
+                                  Mode="Inline"
+                                  HorizontalAlignment="Stretch"
+                                  atom:ScrollViewer.IsLiteMode="True"
+                                  ScrollViewer.AllowAutoHide="True" />
+                </Grid>
+            </Border>
+
+            <Border atom:Splitter.MinSize="640"
+                    Background="{StaticResource AtomBoxSurfaceBrush}">
+                <ContentControl Name="MainContent"
+                                Content="{Binding CurrentViewModel}" />
+            </Border>
+        </atom:Splitter>
+
+        <Border Grid.Row="1"
+                Background="{StaticResource AtomBoxStatusBarSurfaceBrush}"
+                BorderBrush="{StaticResource AtomBoxBorderBrush}"
+                BorderThickness="0,1,0,0">
+            <StackPanel Orientation="Horizontal"
+                        VerticalAlignment="Center"
+                        Margin="12,0"
+                        Spacing="16">
+                <TextBlock Text="{Binding StatusBar.StateText}"
+                           FontSize="11"
+                           Foreground="{StaticResource AtomBoxStatusTextBrush}" />
+                <TextBlock Text="{Binding StatusBar.RunningTransfers, StringFormat='运行中 {0}'}"
+                           FontSize="11"
+                           Foreground="{StaticResource AtomBoxStatusTextBrush}" />
+                <TextBlock Text="{Binding StatusBar.UploadSpeedText}"
+                           FontSize="11"
+                           Foreground="{StaticResource AtomBoxStatusTextBrush}" />
+                <TextBlock Text="{Binding StatusBar.DownloadSpeedText}"
+                           FontSize="11"
+                           Foreground="{StaticResource AtomBoxStatusTextBrush}" />
+                <TextBlock Text="{Binding StatusBar.ErrorCount, StringFormat='错误 {0}'}"
+                           FontSize="11"
+                           Foreground="{StaticResource AtomBoxStatusTextBrush}" />
+            </StackPanel>
+        </Border>
+    </Grid>
+    </Border>
+</atom:Window>
