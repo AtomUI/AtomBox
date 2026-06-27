@@ -1,0 +1,10 @@
+bin
+.artifacts
+.idea
+obj
+*.sln.DotSettings.user
+global.json
+lib-need-to-learn
+.local/
+.local/*.env.ps1
+!.local/*.env.ps1.example
