@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/AtomBox.Application/AtomBox.Application.csproj" />
+    <Project Path="src/AtomBox.Core/AtomBox.Core.csproj" />
+    <Project Path="src/AtomBox.Desktop/AtomBox.Desktop.csproj" />
+    <Project Path="src/AtomBox.Infrastructure/AtomBox.Infrastructure.csproj" />
+    <Project Path="src/AtomBox.Providers/AtomBox.Providers.csproj" />
+    <Project Path="src/AtomBox.Transfer/AtomBox.Transfer.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/AtomBox.Application.Tests/AtomBox.Application.Tests.csproj" />
+    <Project Path="tests/AtomBox.Core.Tests/AtomBox.Core.Tests.csproj" />
+    <Project Path="tests/AtomBox.Infrastructure.Tests/AtomBox.Infrastructure.Tests.csproj" />
+    <Project Path="tests/AtomBox.Providers.Tests/AtomBox.Providers.Tests.csproj" />
+    <Project Path="tests/AtomBox.Transfer.Tests/AtomBox.Transfer.Tests.csproj" />
+  </Folder>
+</Solution>
