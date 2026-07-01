@@ -1196,7 +1196,7 @@ public sealed class DialogService : IDialogService
         private static bool IsVisibleProvider(ProviderDescriptor provider)
         {
             // Keep QingStor hidden from the account dialog until it has completed release validation.
-            if (provider.Id.Value is "qingstor")
+            if (provider.Id.Value is "jdcloud-oss" or "qingstor")
             {
                 return false;
             }
