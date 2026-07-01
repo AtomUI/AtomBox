@@ -61,11 +61,11 @@ public sealed class BaiduBosProviderCreator : IStorageProviderCreator
             var configuration = new BceClientConfiguration
             {
                 Credentials = new DefaultBceCredentials(accessKeyId, accessKeySecret),
-                Endpoint = NormalizeEndpoint(account.Endpoint, account.GetProviderConfigValue("bucket"), region),
+                Endpoint = NormalizeEndpoint(account.Endpoint),
                 Protocol = BceConstants.Protocol.Https,
                 Region = region.Trim()
             };
-            var client = new BaiduBosSdkClient(new BosClient(configuration), account.GetProviderConfigValue("bucket"), useBucketEndpoint: true);
+            var client = new BaiduBosSdkClient(configuration, account.GetProviderConfigValue("bucket"));
             return OperationResult<IStorageProvider>.Success(
                 new S3CompatibleProvider(client, materialLease, Descriptor.Capabilities));
         }
@@ -76,33 +76,13 @@ public sealed class BaiduBosProviderCreator : IStorageProviderCreator
         }
     }
 
-    private static string NormalizeEndpoint(string endpoint, string? bucketName, string region)
+    private static string NormalizeEndpoint(string endpoint)
     {
         var trimmed = endpoint.Trim().TrimEnd('/');
-        var withScheme = trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-            trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+        return trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+               trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
             ? trimmed
             : $"https://{trimmed}";
-        if (string.IsNullOrWhiteSpace(bucketName) ||
-            !Uri.TryCreate(withScheme, UriKind.Absolute, out var uri))
-        {
-            return withScheme;
-        }
-
-        var expectedRegionalHost = $"{region.Trim()}.bcebos.com";
-        var expectedBucketHost = $"{bucketName.Trim()}.{expectedRegionalHost}";
-        if (uri.Host.Equals(expectedBucketHost, StringComparison.OrdinalIgnoreCase))
-        {
-            return withScheme;
-        }
-
-        if (uri.Host.Equals(expectedRegionalHost, StringComparison.OrdinalIgnoreCase))
-        {
-            var builder = new UriBuilder(uri) { Host = expectedBucketHost };
-            return builder.Uri.ToString().TrimEnd('/');
-        }
-
-        return withScheme;
     }
 
     private static OperationResult ValidateSecretMaterial(CredentialSecretMaterial material)

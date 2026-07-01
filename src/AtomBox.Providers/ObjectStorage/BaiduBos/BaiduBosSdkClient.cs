@@ -1,3 +1,4 @@
+using BaiduBce;
 using BaiduBce.Services.Bos;
 using BaiduBce.Services.Bos.Model;
 using AtomBox.Providers.ObjectStorage.S3Compatible;
@@ -6,25 +7,27 @@ namespace AtomBox.Providers.ObjectStorage.BaiduBos;
 
 internal sealed class BaiduBosSdkClient : IS3CompatibleClient
 {
-    private readonly BosClient _client;
+    private readonly BceClientConfiguration _baseConfiguration;
     private readonly string _configuredBucketName;
-    private readonly bool _useBucketEndpoint;
+    private readonly string _regionalEndpoint;
+    private readonly BosClient _regionalClient;
 
-    public BaiduBosSdkClient(BosClient client, string? configuredBucketName = null, bool useBucketEndpoint = false)
+    public BaiduBosSdkClient(BceClientConfiguration configuration, string? configuredBucketName = null)
     {
-        _client = client;
+        _baseConfiguration = new BceClientConfiguration(configuration);
+        _regionalEndpoint = _baseConfiguration.Endpoint.Trim().TrimEnd('/');
         _configuredBucketName = configuredBucketName?.Trim() ?? string.Empty;
-        _useBucketEndpoint = useBucketEndpoint;
+        _regionalClient = new BosClient(_baseConfiguration);
     }
 
     public IReadOnlyList<S3CompatibleBucket> ListBuckets()
     {
-        if (_useBucketEndpoint && !string.IsNullOrWhiteSpace(_configuredBucketName))
+        if (!string.IsNullOrWhiteSpace(_configuredBucketName))
         {
             return [new S3CompatibleBucket(_configuredBucketName, null)];
         }
 
-        var response = _client.ListBuckets();
+        var response = _regionalClient.ListBuckets();
         return response.Buckets
             .Select(bucket => new S3CompatibleBucket(bucket.Name, ToDateTimeOffset(bucket.CreationDate)))
             .Where(bucket => !string.IsNullOrWhiteSpace(bucket.Name))
@@ -33,20 +36,20 @@ internal sealed class BaiduBosSdkClient : IS3CompatibleClient
 
     public void CreateBucket(string bucketName)
     {
-        _client.CreateBucket(ToSdkBucketName(bucketName));
+        _regionalClient.CreateBucket(bucketName);
     }
 
     public S3CompatibleObjectListing ListObjects(string bucketName, string prefix, string? cursor = null, int maxKeys = 1000)
     {
         var request = new ListObjectsRequest
         {
-            BucketName = ToSdkBucketName(bucketName),
+            BucketName = string.Empty,
             Prefix = string.IsNullOrWhiteSpace(prefix) ? null : prefix,
             Marker = string.IsNullOrWhiteSpace(cursor) ? null : cursor,
             Delimiter = "/",
             MaxKeys = maxKeys
         };
-        var response = _client.ListObjects(request);
+        var response = CreateBucketClient(bucketName).ListObjects(request);
         var objects = response.Contents
             .Select(item => new S3CompatibleObjectSummary(
                 item.Key,
@@ -70,17 +73,17 @@ internal sealed class BaiduBosSdkClient : IS3CompatibleClient
 
     public void DeleteObject(string bucketName, string key)
     {
-        _client.DeleteObject(ToSdkBucketName(bucketName), key);
+        CreateBucketClient(bucketName).DeleteObject(string.Empty, key);
     }
 
     public void CopyObject(string sourceBucketName, string sourceKey, string destinationBucketName, string destinationKey)
     {
-        _client.CopyObject(sourceBucketName, sourceKey, ToSdkBucketName(destinationBucketName), destinationKey);
+        CreateBucketClient(destinationBucketName).CopyObject(sourceBucketName, sourceKey, string.Empty, destinationKey);
     }
 
     public void PutObject(string bucketName, string key, Stream content)
     {
-        _client.PutObject(ToSdkBucketName(bucketName), key, content);
+        CreateBucketClient(bucketName).PutObject(string.Empty, key, content);
     }
 
     public void PutObjectMultipart(
@@ -90,8 +93,8 @@ internal sealed class BaiduBosSdkClient : IS3CompatibleClient
         long contentLength,
         Action<long, long>? progress = null)
     {
-        var sdkBucketName = ToSdkBucketName(bucketName);
-        var uploadId = _client.InitiateMultipartUpload(sdkBucketName, key).UploadId;
+        var client = CreateBucketClient(bucketName);
+        var uploadId = client.InitiateMultipartUpload(string.Empty, key).UploadId;
         var transferred = 0L;
         var partEtags = new List<PartETag>();
         try
@@ -102,14 +105,14 @@ internal sealed class BaiduBosSdkClient : IS3CompatibleClient
                 using var partStream = new MemoryStream(part, writable: false);
                 var request = new UploadPartRequest
                 {
-                    BucketName = ToSdkBucketName(bucketName),
+                    BucketName = string.Empty,
                     Key = key,
                     UploadId = uploadId,
                     PartNumber = partNumber,
                     PartSize = part.LongLength,
                     InputStream = partStream
                 };
-                var response = _client.UploadPart(request);
+                var response = client.UploadPart(request);
                 partEtags.Add(new PartETag
                 {
                     PartNumber = partNumber,
@@ -120,19 +123,19 @@ internal sealed class BaiduBosSdkClient : IS3CompatibleClient
                 partNumber++;
             }
 
-            _client.CompleteMultipartUpload(sdkBucketName, key, uploadId, partEtags);
+            client.CompleteMultipartUpload(string.Empty, key, uploadId, partEtags);
             progress?.Invoke(contentLength, contentLength);
         }
         catch
         {
-            _client.AbortMultipartUpload(sdkBucketName, key, uploadId);
+            client.AbortMultipartUpload(string.Empty, key, uploadId);
             throw;
         }
     }
 
     public S3CompatibleDownloadObject GetObject(string bucketName, string key)
     {
-        var response = _client.GetObject(ToSdkBucketName(bucketName), key);
+        var response = CreateBucketClient(bucketName).GetObject(string.Empty, key);
         return new S3CompatibleDownloadObject(response.ObjectContent, response.ObjectMetadata?.ContentLength);
     }
 
@@ -140,12 +143,37 @@ internal sealed class BaiduBosSdkClient : IS3CompatibleClient
     {
     }
 
-    private string ToSdkBucketName(string bucketName)
+    private BosClient CreateBucketClient(string bucketName)
     {
-        return _useBucketEndpoint &&
-               (string.IsNullOrWhiteSpace(_configuredBucketName) || bucketName.Equals(_configuredBucketName, StringComparison.Ordinal))
-            ? string.Empty
-            : bucketName;
+        var normalizedBucket = string.IsNullOrWhiteSpace(_configuredBucketName)
+            ? bucketName.Trim()
+            : _configuredBucketName;
+        var configuration = new BceClientConfiguration(_baseConfiguration)
+        {
+            Endpoint = ToBucketEndpoint(normalizedBucket)
+        };
+        return new BosClient(configuration);
+    }
+
+    private string ToBucketEndpoint(string bucketName)
+    {
+        if (string.IsNullOrWhiteSpace(bucketName) ||
+            !Uri.TryCreate(_regionalEndpoint, UriKind.Absolute, out var uri))
+        {
+            return _regionalEndpoint;
+        }
+
+        var bucketPrefix = $"{bucketName}.";
+        if (uri.Host.StartsWith(bucketPrefix, StringComparison.OrdinalIgnoreCase))
+        {
+            return _regionalEndpoint;
+        }
+
+        var builder = new UriBuilder(uri)
+        {
+            Host = bucketPrefix + uri.Host
+        };
+        return builder.Uri.ToString().TrimEnd('/');
     }
 
     private static IEnumerable<byte[]> ReadParts(Stream content, long partSize)

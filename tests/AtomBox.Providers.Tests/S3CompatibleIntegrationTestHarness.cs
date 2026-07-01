@@ -71,6 +71,18 @@ internal static class S3CompatibleIntegrationTestHarness
         await DownloadAndAssertAsync(provider, movedPath, renamePayload, $"{environment.DisplayName} moved object download").ConfigureAwait(false);
     }
 
+
+    public static async Task RunBucketRootPageTestAsync(
+        S3CompatibleIntegrationEnvironment environment,
+        Func<ProviderDescriptor, ProviderCredentialResolver, IStorageProviderCreator> createCreator)
+    {
+        await using var provider = await CreateProviderAsync(environment, createCreator).ConfigureAwait(false);
+        var pageResult = await provider.ListPageAsync(
+            new RemotePath(environment.Bucket, RemotePathKind.BucketRoot),
+            RemotePageRequest.FirstPage).ConfigureAwait(false);
+        Assert.True(pageResult.IsSuccess, FormatError($"Expected {environment.DisplayName} bucket root page list to succeed.", pageResult.Error));
+        Assert.Equal(new RemotePath(environment.Bucket, RemotePathKind.BucketRoot), pageResult.GetValueOrThrow().Path);
+    }
     public static string FormatError(string message, StorageError? error)
     {
         return error is null

@@ -22,4 +22,22 @@ public sealed class BaiduBosIntegrationTests
             environment,
             (descriptor, credentialResolver) => new BaiduBosProviderCreator(descriptor, credentialResolver));
     }
+
+    [Fact]
+    [Trait("Category", "Integration")]
+    public async Task BaiduBosIntegration_ListBucketRootPage()
+    {
+        var environment = S3CompatibleIntegrationEnvironment.TryRead(
+            StorageProviderRegistry.BaiduBosProviderId,
+            "Baidu BOS",
+            "BAIDU_BOS");
+        if (environment is null)
+        {
+            return;
+        }
+
+        await S3CompatibleIntegrationTestHarness.RunBucketRootPageTestAsync(
+            environment,
+            (descriptor, credentialResolver) => new BaiduBosProviderCreator(descriptor, credentialResolver));
+    }
 }
