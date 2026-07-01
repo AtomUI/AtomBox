@@ -1,0 +1,146 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.artifact_name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            rid: win-x64
+            artifact_name: AtomBox-win-x64
+            publish_dir: .artifacts/publish/AtomBox-win-x64
+            package_path: .artifacts/packages/AtomBox-win-x64.zip
+            package_kind: zip
+          - os: ubuntu-latest
+            rid: linux-x64
+            artifact_name: AtomBox-linux-x64
+            publish_dir: .artifacts/publish/AtomBox-linux-x64
+            package_path: .artifacts/packages/AtomBox-linux-x64.tar.gz
+            package_kind: tar
+          - os: macos-latest
+            rid: osx-x64
+            artifact_name: AtomBox-osx-x64
+            publish_dir: .artifacts/publish/AtomBox-osx-x64
+            package_path: .artifacts/packages/AtomBox-osx-x64.zip
+            package_kind: macapp
+            app_bundle: .artifacts/packages/AtomBox-osx-x64/AtomBox.app
+          - os: macos-latest
+            rid: osx-arm64
+            artifact_name: AtomBox-osx-arm64
+            publish_dir: .artifacts/publish/AtomBox-osx-arm64
+            package_path: .artifacts/packages/AtomBox-osx-arm64.zip
+            package_kind: macapp
+            app_bundle: .artifacts/packages/AtomBox-osx-arm64/AtomBox.app
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore AtomBox.slnx
+
+      - name: Test
+        run: dotnet test AtomBox.slnx --configuration Release --no-restore
+
+      - name: Publish
+        run: >
+          dotnet publish src/AtomBox.Desktop/AtomBox.Desktop.csproj
+          --configuration Release
+          --runtime ${{ matrix.rid }}
+          --self-contained true
+          --no-restore
+          -p:PublishSingleFile=true
+          -p:EnableCompressionInSingleFile=true
+          -p:IncludeNativeLibrariesForSelfExtract=true
+          --output ${{ matrix.publish_dir }}
+
+      - name: Package Windows
+        if: matrix.package_kind == 'zip'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force .artifacts/packages | Out-Null
+          Compress-Archive -Path "${{ matrix.publish_dir }}/*" -DestinationPath "${{ matrix.package_path }}" -Force
+
+      - name: Package Linux
+        if: matrix.package_kind == 'tar'
+        shell: bash
+        run: |
+          mkdir -p .artifacts/packages
+          chmod +x "${{ matrix.publish_dir }}/AtomBox.Desktop"
+          tar -czf "${{ matrix.package_path }}" -C "${{ matrix.publish_dir }}" .
+
+      - name: Package macOS app bundle
+        if: matrix.package_kind == 'macapp'
+        shell: bash
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          mkdir -p "${{ matrix.app_bundle }}/Contents/MacOS"
+          mkdir -p "${{ matrix.app_bundle }}/Contents/Resources"
+          cp -R "${{ matrix.publish_dir }}/"* "${{ matrix.app_bundle }}/Contents/MacOS/"
+          mv "${{ matrix.app_bundle }}/Contents/MacOS/AtomBox.Desktop" "${{ matrix.app_bundle }}/Contents/MacOS/AtomBox"
+          chmod +x "${{ matrix.app_bundle }}/Contents/MacOS/AtomBox"
+          cat > "${{ matrix.app_bundle }}/Contents/Info.plist" <<'PLIST'
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>CFBundleName</key>
+            <string>AtomBox</string>
+            <key>CFBundleDisplayName</key>
+            <string>AtomBox</string>
+            <key>CFBundleIdentifier</key>
+            <string>net.atomui.atombox</string>
+            <key>CFBundleVersion</key>
+            <string>${version}</string>
+            <key>CFBundleShortVersionString</key>
+            <string>${version}</string>
+            <key>CFBundleExecutable</key>
+            <string>AtomBox</string>
+            <key>CFBundlePackageType</key>
+            <string>APPL</string>
+            <key>NSHighResolutionCapable</key>
+            <true/>
+          </dict>
+          </plist>
+          PLIST
+          ditto -c -k --sequesterRsrc --keepParent "${{ matrix.app_bundle }}" "${{ matrix.package_path }}"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.package_path }}
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: .artifacts/downloaded
+          merge-multiple: true
+
+      - name: Create release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: .artifacts/downloaded/*
+          generate_release_notes: true
