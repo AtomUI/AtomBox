@@ -67,7 +67,15 @@ jobs:
           -p:PublishSingleFile=true
           -p:EnableCompressionInSingleFile=true
           -p:IncludeNativeLibrariesForSelfExtract=true
+          -p:DebugType=None
+          -p:DebugSymbols=false
           --output ${{ matrix.publish_dir }}
+
+      - name: Remove debug symbols
+        shell: pwsh
+        run: |
+          Get-ChildItem -LiteralPath "${{ matrix.publish_dir }}" -Filter "*.pdb" -File -ErrorAction SilentlyContinue |
+            Remove-Item -Force
 
       - name: Package Windows
         if: matrix.package_kind == 'zip'
