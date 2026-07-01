@@ -1,4 +1,5 @@
 using AtomBox.Core.Errors;
+using BaiduBce;
 using Aliyun.OSS.Common;
 using COSXML.CosException;
 using FluentFTP.Exceptions;
@@ -22,6 +23,7 @@ public static class ProviderErrorMapper
         return exception switch
         {
             AliyunServiceException serviceException => FromServiceException(serviceException),
+            BceServiceException serviceException => FromBceServiceException(serviceException),
             SshAuthenticationException => new StorageError(
                 StorageErrorCode.AuthenticationFailed,
                 "Provider authentication failed.",
@@ -76,6 +78,11 @@ public static class ProviderErrorMapper
                 StorageErrorCode.NetworkUnavailable,
                 "Provider HTTP network request failed.",
                 StorageErrorCategory.Network,
+                isRetryable: true),
+            BceClientException => new StorageError(
+                StorageErrorCode.ProviderUnavailable,
+                "Provider Baidu BOS client failed before the remote service completed the request.",
+                StorageErrorCategory.Provider,
                 isRetryable: true),
             ClientException => new StorageError(
                 StorageErrorCode.ProviderUnavailable,
@@ -199,6 +206,77 @@ public static class ProviderErrorMapper
             "Provider FTP command failed.",
             StorageErrorCategory.Provider,
             providerErrorCode: completionCode);
+    }
+
+    private static StorageError FromBceServiceException(BceServiceException exception)
+    {
+        var errorCode = string.IsNullOrWhiteSpace(exception.ErrorCode)
+            ? exception.StatusCode.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : exception.ErrorCode;
+
+        if (IsClockSkewError(errorCode))
+        {
+            return ClockSkewError(errorCode);
+        }
+
+        if (exception.StatusCode == 401 ||
+            string.Equals(errorCode, "SignatureDoesNotMatch", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(errorCode, "InvalidAccessKeyId", StringComparison.OrdinalIgnoreCase))
+        {
+            return new StorageError(
+                StorageErrorCode.AuthenticationFailed,
+                "Provider authentication failed.",
+                StorageErrorCategory.Authentication,
+                providerErrorCode: errorCode);
+        }
+
+        if (exception.StatusCode == 403 ||
+            string.Equals(errorCode, "AccessDenied", StringComparison.OrdinalIgnoreCase))
+        {
+            return new StorageError(
+                StorageErrorCode.AuthorizationFailed,
+                "Provider authorization failed.",
+                StorageErrorCategory.Authorization,
+                providerErrorCode: errorCode);
+        }
+
+        if (exception.StatusCode == 404 ||
+            string.Equals(errorCode, "NoSuchBucket", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(errorCode, "NoSuchKey", StringComparison.OrdinalIgnoreCase))
+        {
+            return new StorageError(
+                StorageErrorCode.NotFound,
+                "Remote resource was not found.",
+                StorageErrorCategory.NotFound,
+                providerErrorCode: errorCode);
+        }
+
+        if (exception.StatusCode is 409 or 412 ||
+            string.Equals(errorCode, "BucketAlreadyExists", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(errorCode, "BucketAlreadyOwnedByYou", StringComparison.OrdinalIgnoreCase))
+        {
+            return new StorageError(
+                StorageErrorCode.Conflict,
+                "Remote resource conflict.",
+                StorageErrorCategory.Conflict,
+                providerErrorCode: errorCode);
+        }
+
+        if (exception.StatusCode == 400)
+        {
+            return new StorageError(
+                StorageErrorCode.ValidationFailed,
+                "Provider request is invalid.",
+                StorageErrorCategory.Validation,
+                providerErrorCode: errorCode);
+        }
+
+        return new StorageError(
+            StorageErrorCode.ProviderUnavailable,
+            "Provider Baidu BOS service request failed.",
+            StorageErrorCategory.Provider,
+            isRetryable: exception.StatusCode is 408 or 429 or >= 500 || IsRetryableServiceError(errorCode),
+            providerErrorCode: errorCode);
     }
 
     private static StorageError FromCosServerException(CosServerException exception)
@@ -575,3 +653,4 @@ public static class ProviderErrorMapper
                message.StartsWith("Upyun ", StringComparison.Ordinal);
     }
 }
+

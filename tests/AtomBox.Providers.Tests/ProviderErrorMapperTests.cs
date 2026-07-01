@@ -1,4 +1,5 @@
 using Aliyun.OSS.Common;
+using BaiduBce;
 using AtomBox.Core.Errors;
 using AtomBox.Providers.Common;
 
@@ -117,6 +118,73 @@ public sealed class ProviderErrorMapperTests
         Assert.Equal(errorCode, error.ProviderErrorCode);
     }
 
+    [Theory]
+    [InlineData("InvalidAccessKeyId")]
+    [InlineData("SignatureDoesNotMatch")]
+    public void FromException_MapsBaiduBosAuthenticationErrors(string errorCode)
+    {
+        var error = ProviderErrorMapper.FromException(CreateBceServiceException(errorCode, 403));
+
+        Assert.Equal(StorageErrorCategory.Authentication, error.Category);
+        Assert.Equal(StorageErrorCode.AuthenticationFailed, error.Code);
+        Assert.Equal(errorCode, error.ProviderErrorCode);
+        Assert.DoesNotContain("raw sdk", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void FromException_MapsBaiduBosAccessDeniedToAuthorization()
+    {
+        var error = ProviderErrorMapper.FromException(CreateBceServiceException("AccessDenied", 403));
+
+        Assert.Equal(StorageErrorCategory.Authorization, error.Category);
+        Assert.Equal(StorageErrorCode.AuthorizationFailed, error.Code);
+        Assert.Equal("AccessDenied", error.ProviderErrorCode);
+    }
+
+    [Theory]
+    [InlineData("NoSuchBucket")]
+    [InlineData("NoSuchKey")]
+    public void FromException_MapsBaiduBosMissingResourcesToNotFound(string errorCode)
+    {
+        var error = ProviderErrorMapper.FromException(CreateBceServiceException(errorCode, 404));
+
+        Assert.Equal(StorageErrorCategory.NotFound, error.Category);
+        Assert.Equal(StorageErrorCode.NotFound, error.Code);
+        Assert.Equal(errorCode, error.ProviderErrorCode);
+    }
+
+    [Fact]
+    public void FromException_MapsBaiduBosTemporaryServiceErrorsToRetryableProviderFailure()
+    {
+        var error = ProviderErrorMapper.FromException(CreateBceServiceException("ServiceUnavailable", 503));
+
+        Assert.Equal(StorageErrorCategory.Provider, error.Category);
+        Assert.Equal(StorageErrorCode.ProviderUnavailable, error.Code);
+        Assert.True(error.IsRetryable);
+        Assert.Equal("ServiceUnavailable", error.ProviderErrorCode);
+    }
+
+    [Fact]
+    public void FromException_MapsBaiduBosClientExceptionToRetryableProviderFailure()
+    {
+        var error = ProviderErrorMapper.FromException(new BceClientException("raw sdk client failure"));
+
+        Assert.Equal(StorageErrorCategory.Provider, error.Category);
+        Assert.Equal(StorageErrorCode.ProviderUnavailable, error.Code);
+        Assert.True(error.IsRetryable);
+        Assert.DoesNotContain("raw sdk", error.Message, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static BceServiceException CreateBceServiceException(string errorCode, int statusCode)
+    {
+        return new BceServiceException("raw sdk service failure")
+        {
+            ErrorCode = errorCode,
+            StatusCode = statusCode,
+            RequestId = "request-id"
+        };
+    }
+
     private static ServiceException CreateServiceException(string errorCode)
     {
         var exception = new ServiceException("raw sdk service failure");
@@ -126,3 +194,4 @@ public sealed class ProviderErrorMapperTests
         return exception;
     }
 }
+

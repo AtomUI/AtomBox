@@ -1,3 +1,6 @@
+using BaiduBce;
+using BaiduBce.Auth;
+using BaiduBce.Services.Bos;
 using AtomBox.Core.Accounts;
 using AtomBox.Core.Credentials;
 using AtomBox.Core.Errors;
@@ -55,7 +58,14 @@ public sealed class BaiduBosProviderCreator : IStorageProviderCreator
 
             var accessKeyId = materialLease.Material.GetRequiredValue("accessKeyId");
             var accessKeySecret = materialLease.Material.GetRequiredValue("accessKeySecret");
-            var client = new S3CompatibleAwsV4Client(account.Endpoint, region, accessKeyId, accessKeySecret);
+            var configuration = new BceClientConfiguration
+            {
+                Credentials = new DefaultBceCredentials(accessKeyId, accessKeySecret),
+                Endpoint = NormalizeEndpoint(account.Endpoint, account.GetProviderConfigValue("bucket"), region),
+                Protocol = BceConstants.Protocol.Https,
+                Region = region.Trim()
+            };
+            var client = new BaiduBosSdkClient(new BosClient(configuration), account.GetProviderConfigValue("bucket"), useBucketEndpoint: true);
             return OperationResult<IStorageProvider>.Success(
                 new S3CompatibleProvider(client, materialLease, Descriptor.Capabilities));
         }
@@ -64,6 +74,35 @@ public sealed class BaiduBosProviderCreator : IStorageProviderCreator
             await materialLease.DisposeAsync().ConfigureAwait(false);
             return OperationResult<IStorageProvider>.Failure(ProviderErrorMapper.FromException(exception));
         }
+    }
+
+    private static string NormalizeEndpoint(string endpoint, string? bucketName, string region)
+    {
+        var trimmed = endpoint.Trim().TrimEnd('/');
+        var withScheme = trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
+            ? trimmed
+            : $"https://{trimmed}";
+        if (string.IsNullOrWhiteSpace(bucketName) ||
+            !Uri.TryCreate(withScheme, UriKind.Absolute, out var uri))
+        {
+            return withScheme;
+        }
+
+        var expectedRegionalHost = $"{region.Trim()}.bcebos.com";
+        var expectedBucketHost = $"{bucketName.Trim()}.{expectedRegionalHost}";
+        if (uri.Host.Equals(expectedBucketHost, StringComparison.OrdinalIgnoreCase))
+        {
+            return withScheme;
+        }
+
+        if (uri.Host.Equals(expectedRegionalHost, StringComparison.OrdinalIgnoreCase))
+        {
+            var builder = new UriBuilder(uri) { Host = expectedBucketHost };
+            return builder.Uri.ToString().TrimEnd('/');
+        }
+
+        return withScheme;
     }
 
     private static OperationResult ValidateSecretMaterial(CredentialSecretMaterial material)

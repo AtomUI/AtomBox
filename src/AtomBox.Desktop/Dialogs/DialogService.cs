@@ -1195,8 +1195,8 @@ public sealed class DialogService : IDialogService
 
         private static bool IsVisibleProvider(ProviderDescriptor provider)
         {
-            // Hide unverified OSS providers from the account dialog for the v0.1 release.
-            if (provider.Id.Value is "baidu-bos" or "jdcloud-oss" or "qingstor")
+            // Keep QingStor hidden from the account dialog until it has completed release validation.
+            if (provider.Id.Value is "qingstor")
             {
                 return false;
             }
