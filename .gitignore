@@ -8,3 +8,5 @@ lib-need-to-learn
 .local/
 .local/*.env.ps1
 !.local/*.env.ps1.example
+lib-need-to-learn
+publish-self-contained-singlefile.ps1
