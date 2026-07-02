@@ -215,7 +215,13 @@
                                                   MinHeight="42"
                                                   HorizontalAlignment="Stretch"
                                                   Background="{StaticResource AtomBoxSurfaceBrush}">
-                                                <TextBlock Grid.Column="0" Classes="app-secondary-text" Text="{Binding Icon}" Margin="12,0" VerticalAlignment="Center" />
+                                                <ContentControl Grid.Column="0"
+                                                                Content="{Binding Icon}"
+                                                                Width="20"
+                                                                Height="20"
+                                                                Margin="12,0"
+                                                                HorizontalAlignment="Left"
+                                                                VerticalAlignment="Center" />
                                                 <TextBlock Grid.Column="1" Classes="app-primary-text" Text="{Binding Name}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                                 <TextBlock Grid.Column="2" Classes="app-secondary-text" Text="{Binding Size}" VerticalAlignment="Center" />
                                                 <TextBlock Grid.Column="3" Classes="app-secondary-text" Text="{Binding UpdatedAt}" VerticalAlignment="Center" />

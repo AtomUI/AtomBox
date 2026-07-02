@@ -11,7 +11,9 @@ using AtomBox.Core.ValueObjects;
 using AtomBox.Desktop.Dialogs;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Services;
+using AtomUI.Controls;
 using AtomUI.Desktop.Controls;
+using AtomUI.Icons.AntDesign;
 using Avalonia.Threading;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
@@ -1764,7 +1766,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
 public sealed record RemoteItemRowViewModel(
     RemotePath Path,
-    string Icon,
+    Icon Icon,
     string Name,
     string Size,
     string UpdatedAt,
@@ -1791,7 +1793,7 @@ public sealed record RemoteItemRowViewModel(
     {
         return new RemoteItemRowViewModel(
             item.Path,
-            FormatIcon(item.Kind),
+            RemoteItemIconFactory.Create(item),
             item.Name,
             FormatSize(item.Size, item.Kind),
             item.UpdatedAt?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? string.Empty,
@@ -1802,17 +1804,6 @@ public sealed record RemoteItemRowViewModel(
             deleteCommand,
             canRename,
             canDelete);
-    }
-
-    private static string FormatIcon(RemoteItemKind kind)
-    {
-        return kind switch
-        {
-            RemoteItemKind.Folder => "DIR",
-            RemoteItemKind.Bucket => "BOX",
-            RemoteItemKind.File => "FILE",
-            _ => "?"
-        };
     }
 
     private static string FormatSize(long? size, RemoteItemKind kind)
@@ -1837,7 +1828,7 @@ public sealed record RemoteItemRowViewModel(
 
 public sealed record RemoteListRowViewModel(
     RemotePath Path,
-    string Icon,
+    Icon Icon,
     string Name,
     string Size,
     string UpdatedAt,
@@ -1864,7 +1855,7 @@ public sealed record RemoteListRowViewModel(
     {
         return new RemoteListRowViewModel(
             item.Path,
-            FormatIcon(item.Kind),
+            RemoteItemIconFactory.Create(item),
             item.Name,
             FormatSize(item.Size, item.Kind),
             item.UpdatedAt?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? string.Empty,
@@ -1875,17 +1866,6 @@ public sealed record RemoteListRowViewModel(
             deleteCommand,
             canRename,
             canDelete);
-    }
-
-    private static string FormatIcon(RemoteItemKind kind)
-    {
-        return kind switch
-        {
-            RemoteItemKind.Folder => "DIR",
-            RemoteItemKind.Bucket => "BOX",
-            RemoteItemKind.File => "FILE",
-            _ => "?"
-        };
     }
 
     private static string FormatSize(long? size, RemoteItemKind kind)
@@ -1905,6 +1885,47 @@ public sealed record RemoteListRowViewModel(
         }
 
         return $"{value:0.#} {units[unitIndex]}";
+    }
+}
+
+internal static class RemoteItemIconFactory
+{
+    public static Icon Create(RemoteItem item)
+    {
+        var icon = item.Kind switch
+        {
+            RemoteItemKind.Bucket => new FolderOutlined(),
+            RemoteItemKind.Folder => new FolderOutlined(),
+            RemoteItemKind.File => CreateFileIcon(item.Name),
+            _ => new FileUnknownOutlined()
+        };
+
+        icon.Width = 16;
+        icon.Height = 16;
+        return icon;
+    }
+
+    private static Icon CreateFileIcon(string name)
+    {
+        var extension = Path.GetExtension(name).ToLowerInvariant();
+        return extension switch
+        {
+            ".jpg" or ".jpeg" => new FileJpgOutlined(),
+            ".gif" => new FileGifOutlined(),
+            ".png" or ".bmp" or ".webp" or ".svg" => new FileImageOutlined(),
+            ".pdf" => new FilePdfOutlined(),
+            ".doc" or ".docx" => new FileWordOutlined(),
+            ".xls" or ".xlsx" or ".csv" => new FileExcelOutlined(),
+            ".ppt" or ".pptx" => new FilePptOutlined(),
+            ".zip" or ".rar" or ".7z" or ".tar" or ".gz" => new FileZipOutlined(),
+            ".txt" or ".log" => new FileTextOutlined(),
+            ".md" or ".markdown" => new FileMarkdownOutlined(),
+            ".cs" or ".js" or ".ts" or ".html" or ".css" or ".xml" or ".json" or ".yaml" or ".yml" or ".py" or ".java" or ".go" or ".rs" or ".cpp" or ".c" or ".h" => new CodeOutlined(),
+            ".mp3" or ".wav" or ".flac" or ".aac" or ".ogg" or ".m4a" => new AudioOutlined(),
+            ".mp4" or ".mov" or ".avi" or ".mkv" or ".webm" or ".wmv" => new VideoCameraOutlined(),
+            ".exe" or ".msi" => new WindowsOutlined(),
+            _ => new FileUnknownOutlined()
+        };
     }
 }
 
