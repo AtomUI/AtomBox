@@ -197,6 +197,10 @@
                                                                    Command="{Binding OpenCommand}"
                                                                    CommandParameter="{Binding}"
                                                                    IsVisible="{Binding IsFolderLike}" />
+                                                    <atom:MenuItem Header="预览"
+                                                                   Command="{Binding PreviewCommand}"
+                                                                   CommandParameter="{Binding}"
+                                                                   IsVisible="{Binding CanPreview}" />
                                                     <atom:MenuItem Header="下载"
                                                                    Command="{Binding DownloadCommand}"
                                                                    CommandParameter="{Binding}"

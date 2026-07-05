@@ -2,11 +2,13 @@ using AtomBox.Application.Browsing;
 using AtomBox.Core.Accounts;
 using AtomBox.Core.Capabilities;
 using AtomBox.Core.Errors;
+using AtomBox.Core.Previews;
 using AtomBox.Core.Providers;
 using AtomBox.Core.RemoteItems;
 using AtomBox.Core.Results;
 using AtomBox.Core.Transfers;
 using AtomBox.Core.ValueObjects;
+using System.Text;
 
 namespace AtomBox.Application.Tests;
 
@@ -212,6 +214,167 @@ public sealed class RemoteBrowserAppServiceContractTests
 
         Assert.True(result.IsFailure);
         Assert.Equal(StorageErrorCategory.Provider, result.Error?.Category);
+    }
+
+    [Fact]
+    public async Task PreviewRemoteFileAsync_UnsupportedExtension_ReturnsNotSupportedWithoutProvider()
+    {
+        var accountId = StorageAccountId.New();
+        var service = new RemoteBrowserAppService(
+            new SingleAccountRepository(accountId, StorageProviderCategory.ObjectStorage),
+            new ThrowingProviderFactory());
+
+        var result = await service.PreviewRemoteFileAsync(new PreviewRemoteFileRequest(
+            accountId,
+            new RemotePath("bucket/file.exe"),
+            "file.exe",
+            10,
+            RemoteItemKind.File));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCode.OperationNotSupported, result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task PreviewRemoteFileAsync_FolderKind_ReturnsNotSupported()
+    {
+        var accountId = StorageAccountId.New();
+        var service = new RemoteBrowserAppService(
+            new SingleAccountRepository(accountId, StorageProviderCategory.ObjectStorage),
+            new ThrowingProviderFactory());
+
+        var result = await service.PreviewRemoteFileAsync(new PreviewRemoteFileRequest(
+            accountId,
+            new RemotePath("bucket/folder", RemotePathKind.Folder),
+            "folder",
+            null,
+            RemoteItemKind.Folder));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCode.OperationNotSupported, result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task PreviewRemoteFileAsync_TextSuccess_ReturnsDecodedText()
+    {
+        var accountId = StorageAccountId.New();
+        var payload = Encoding.UTF8.GetBytes("{\"ok\":true}");
+        var providerFactory = new ProbeProviderFactory(
+            OperationResult<IReadOnlyList<RemoteItem>>.Success([]),
+            downloadPayload: payload);
+        var service = new RemoteBrowserAppService(
+            new SingleAccountRepository(accountId, StorageProviderCategory.ObjectStorage),
+            providerFactory);
+
+        var result = await service.PreviewRemoteFileAsync(new PreviewRemoteFileRequest(
+            accountId,
+            new RemotePath("bucket/config.json"),
+            "config.json",
+            payload.Length,
+            RemoteItemKind.File));
+
+        Assert.True(result.IsSuccess);
+        var preview = result.GetValueOrThrow();
+        Assert.Equal(RemotePreviewKind.Text, preview.Kind);
+        Assert.Equal("application/json", preview.ContentType);
+        Assert.Equal("{\"ok\":true}", preview.Text);
+        Assert.Equal("utf-8", preview.EncodingName);
+        Assert.Equal(payload, preview.Content);
+        Assert.Equal(1, providerFactory.Provider.DownloadCallCount);
+    }
+
+    [Fact]
+    public async Task PreviewRemoteFileAsync_ImageSuccess_ReturnsBytes()
+    {
+        var accountId = StorageAccountId.New();
+        byte[] payload = [1, 2, 3, 4];
+        var providerFactory = new ProbeProviderFactory(
+            OperationResult<IReadOnlyList<RemoteItem>>.Success([]),
+            downloadPayload: payload);
+        var service = new RemoteBrowserAppService(
+            new SingleAccountRepository(accountId, StorageProviderCategory.ObjectStorage),
+            providerFactory);
+
+        var result = await service.PreviewRemoteFileAsync(new PreviewRemoteFileRequest(
+            accountId,
+            new RemotePath("bucket/image.png"),
+            "image.png",
+            payload.Length,
+            RemoteItemKind.File));
+
+        Assert.True(result.IsSuccess);
+        var preview = result.GetValueOrThrow();
+        Assert.Equal(RemotePreviewKind.Image, preview.Kind);
+        Assert.Equal("image/png", preview.ContentType);
+        Assert.Null(preview.Text);
+        Assert.Null(preview.EncodingName);
+        Assert.Equal(payload, preview.Content);
+    }
+
+    [Fact]
+    public async Task PreviewRemoteFileAsync_SizeTooLarge_DoesNotCreateProvider()
+    {
+        var accountId = StorageAccountId.New();
+        var service = new RemoteBrowserAppService(
+            new SingleAccountRepository(accountId, StorageProviderCategory.ObjectStorage),
+            new ThrowingProviderFactory());
+
+        var result = await service.PreviewRemoteFileAsync(new PreviewRemoteFileRequest(
+            accountId,
+            new RemotePath("bucket/huge.txt"),
+            "huge.txt",
+            RemotePreviewOptions.DefaultMaxTextBytes + 1,
+            RemoteItemKind.File));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCode.OperationNotSupported, result.Error?.Code);
+    }
+
+    [Fact]
+    public async Task PreviewRemoteFileAsync_ProviderDownloadFailure_PropagatesError()
+    {
+        var accountId = StorageAccountId.New();
+        var error = new StorageError(StorageErrorCode.ProviderUnavailable, "download failed", StorageErrorCategory.Provider);
+        var providerFactory = new ProbeProviderFactory(
+            OperationResult<IReadOnlyList<RemoteItem>>.Success([]),
+            downloadResult: OperationResult.Failure(error));
+        var service = new RemoteBrowserAppService(
+            new SingleAccountRepository(accountId, StorageProviderCategory.ObjectStorage),
+            providerFactory);
+
+        var result = await service.PreviewRemoteFileAsync(new PreviewRemoteFileRequest(
+            accountId,
+            new RemotePath("bucket/a.txt"),
+            "a.txt",
+            10,
+            RemoteItemKind.File));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCategory.Provider, result.Error?.Category);
+    }
+
+    [Fact]
+    public async Task PreviewRemoteFileAsync_ActualBytesExceedLimit_ReturnsFailure()
+    {
+        var accountId = StorageAccountId.New();
+        var payload = new byte[RemotePreviewOptions.DefaultMaxTextBytes + 1];
+        Array.Fill(payload, (byte)'a');
+        var providerFactory = new ProbeProviderFactory(
+            OperationResult<IReadOnlyList<RemoteItem>>.Success([]),
+            downloadPayload: payload);
+        var service = new RemoteBrowserAppService(
+            new SingleAccountRepository(accountId, StorageProviderCategory.ObjectStorage),
+            providerFactory);
+
+        var result = await service.PreviewRemoteFileAsync(new PreviewRemoteFileRequest(
+            accountId,
+            new RemotePath("bucket/a.txt"),
+            "a.txt",
+            null,
+            RemoteItemKind.File));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCode.OperationNotSupported, result.Error?.Code);
     }
 
     [Fact]
@@ -491,9 +654,11 @@ public sealed class RemoteBrowserAppServiceContractTests
         public ProbeProviderFactory(
             OperationResult<IReadOnlyList<RemoteItem>> probeResult,
             RemotePageCursor? previousCursor = null,
-            RemotePageCursor? nextCursor = null)
+            RemotePageCursor? nextCursor = null,
+            byte[]? downloadPayload = null,
+            OperationResult? downloadResult = null)
         {
-            _provider = new ProbeStorageProvider(probeResult, previousCursor, nextCursor);
+            _provider = new ProbeStorageProvider(probeResult, previousCursor, nextCursor, downloadPayload, downloadResult);
         }
 
         public ProbeStorageProvider Provider => _provider;
@@ -507,20 +672,28 @@ public sealed class RemoteBrowserAppServiceContractTests
         private readonly OperationResult<IReadOnlyList<RemoteItem>> _probeResult;
         private readonly RemotePageCursor? _previousCursor;
         private readonly RemotePageCursor? _nextCursor;
+        private readonly byte[] _downloadPayload;
+        private readonly OperationResult _downloadResult;
 
         public ProbeStorageProvider(
             OperationResult<IReadOnlyList<RemoteItem>> probeResult,
             RemotePageCursor? previousCursor = null,
-            RemotePageCursor? nextCursor = null)
+            RemotePageCursor? nextCursor = null,
+            byte[]? downloadPayload = null,
+            OperationResult? downloadResult = null)
         {
             _probeResult = probeResult;
             _previousCursor = previousCursor;
             _nextCursor = nextCursor;
+            _downloadPayload = downloadPayload ?? [];
+            _downloadResult = downloadResult ?? OperationResult.Success();
         }
 
         public StorageCapabilitySet Capabilities => StorageCapabilitySet.Empty;
 
         public RemotePageRequest? LastPageRequest { get; private set; }
+
+        public int DownloadCallCount { get; private set; }
 
         public Task<OperationResult<IReadOnlyList<RemoteItem>>> ListAsync(RemotePath path, CancellationToken cancellationToken = default)
             => Task.FromResult(_probeResult);
@@ -551,7 +724,16 @@ public sealed class RemoteBrowserAppServiceContractTests
 
         public Task<OperationResult> DownloadAsync(RemotePath path, Stream destination,
             IProgress<TransferProgress>? progress = null, CancellationToken cancellationToken = default)
-            => Task.FromResult(OperationResult.Success());
+        {
+            DownloadCallCount++;
+            if (_downloadResult.IsFailure)
+            {
+                return Task.FromResult(_downloadResult);
+            }
+
+            destination.Write(_downloadPayload, 0, _downloadPayload.Length);
+            return Task.FromResult(OperationResult.Success());
+        }
 
         public ValueTask DisposeAsync() => ValueTask.CompletedTask;
     }

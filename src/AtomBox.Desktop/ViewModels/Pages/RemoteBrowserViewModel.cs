@@ -5,6 +5,7 @@ using AtomBox.Application.Browsing;
 using AtomBox.Application.Transfers;
 using AtomBox.Core.Accounts;
 using AtomBox.Core.Errors;
+using AtomBox.Core.Previews;
 using AtomBox.Core.RemoteItems;
 using AtomBox.Core.Settings;
 using AtomBox.Core.ValueObjects;
@@ -88,6 +89,9 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         DownloadSelectedCommand = new AsyncRelayCommand(
             DownloadSelectedAsync,
             parameter => TryGetFileRow(parameter, out _, out _));
+        PreviewSelectedCommand = new AsyncRelayCommand(
+            PreviewSelectedAsync,
+            parameter => TryGetPreviewableRow(parameter, out _, out _, out _, out _));
         RenameSelectedCommand = new AsyncRelayCommand(
             RenameSelectedAsync,
             parameter => TryGetRenameableRow(parameter, out _, out _, out _));
@@ -341,6 +345,8 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
     public AsyncRelayCommand DownloadSelectedCommand { get; }
 
+    public AsyncRelayCommand PreviewSelectedCommand { get; }
+
     public AsyncRelayCommand RenameSelectedCommand { get; }
 
     public AsyncRelayCommand DeleteSelectedCommand { get; }
@@ -386,6 +392,11 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             SyncSelectedBucketForPath(_remotePath);
 
             return LoadItemsAsync();
+        }
+
+        if (row is { Kind: RemoteItemKind.File, CanPreview: true })
+        {
+            return PreviewSelectedAsync(row);
         }
 
         SelectedItem = Items.FirstOrDefault(item => item.Path == row.Path);
@@ -664,17 +675,21 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             Items.Add(RemoteItemRowViewModel.From(
                 item,
                 OpenRowCommand,
+                PreviewSelectedCommand,
                 DownloadSelectedCommand,
                 RenameSelectedCommand,
                 DeleteSelectedCommand,
+                CanPreviewItem(item),
                 CanRenameItem(item),
                 CanDeleteItem(item)));
             Rows.Add(RemoteListRowViewModel.From(
                 item,
                 OpenRowCommand,
+                PreviewSelectedCommand,
                 DownloadSelectedCommand,
                 RenameSelectedCommand,
                 DeleteSelectedCommand,
+                CanPreviewItem(item),
                 CanRenameItem(item),
                 CanDeleteItem(item)));
         }
@@ -1146,6 +1161,51 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         });
     }
 
+    private async Task PreviewSelectedAsync(object? parameter)
+    {
+        if (_storageAccountId is null ||
+            !TryGetPreviewableRow(parameter, out var path, out var name, out var sizeBytes, out var kind))
+        {
+            return;
+        }
+
+        StatusMessage = $"正在预览：{name}";
+        var result = await RunWithLoadingAsync(() => _browser.PreviewRemoteFileAsync(new PreviewRemoteFileRequest(
+            _storageAccountId.Value,
+            path,
+            name,
+            sizeBytes,
+            kind))).ConfigureAwait(true);
+
+        if (result.IsFailure)
+        {
+            var message = result.Error?.Message ?? "远程文件预览失败。";
+            StatusMessage = message;
+            SetErrorDetails(
+                "远程文件预览失败",
+                "远程文件预览失败。",
+                result.Error,
+                new Dictionary<string, string>
+                {
+                    ["文件"] = name,
+                    ["路径"] = path.ToString()
+                });
+            _messages.Error(message);
+            return;
+        }
+
+        var preview = result.GetValueOrThrow();
+        await _dialogs.ShowPreviewAsync(new PreviewDialogRequest(
+            preview.Kind,
+            preview.FileName,
+            preview.ContentType,
+            preview.Size,
+            preview.Content,
+            preview.Text,
+            preview.EncodingName)).ConfigureAwait(true);
+        StatusMessage = $"已打开预览：{name}";
+    }
+
     private async Task RenameSelectedAsync(object? parameter)
     {
         if (_storageAccountId is null ||
@@ -1255,17 +1315,21 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         var itemRow = RemoteItemRowViewModel.From(
             item,
             OpenRowCommand,
+            PreviewSelectedCommand,
             DownloadSelectedCommand,
             RenameSelectedCommand,
             DeleteSelectedCommand,
+            CanPreviewItem(item),
             CanRenameItem(item),
             CanDeleteItem(item));
         var listRow = RemoteListRowViewModel.From(
             item,
             OpenRowCommand,
+            PreviewSelectedCommand,
             DownloadSelectedCommand,
             RenameSelectedCommand,
             DeleteSelectedCommand,
+            CanPreviewItem(item),
             CanRenameItem(item),
             CanDeleteItem(item));
 
@@ -1559,6 +1623,23 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
                !IsObjectStorageFolderOperationDisabled(item.Kind);
     }
 
+    private static bool CanPreviewItem(RemoteItem item)
+    {
+        if (item.Kind != RemoteItemKind.File)
+        {
+            return false;
+        }
+
+        var maxBytes = Path.GetExtension(item.Name).ToLowerInvariant() switch
+        {
+            ".png" or ".jpg" or ".jpeg" or ".bmp" or ".gif" or ".webp" => RemotePreviewOptions.DefaultMaxImageBytes,
+            ".txt" or ".log" or ".md" or ".markdown" or ".json" or ".xml" or ".yaml" or ".yml" or ".csv" or ".ini" or ".conf" or ".config" or ".html" or ".css" or ".js" or ".ts" or ".cs" or ".py" or ".java" or ".go" or ".rs" or ".cpp" or ".c" or ".h" or ".sql" or ".sh" or ".ps1" => RemotePreviewOptions.DefaultMaxTextBytes,
+            _ => 0
+        };
+
+        return maxBytes > 0 && (item.Size is null || item.Size <= maxBytes);
+    }
+
     private bool IsObjectStorageFolderOperationDisabled(RemoteItemKind kind)
     {
         return kind == RemoteItemKind.Folder &&
@@ -1580,6 +1661,36 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             default:
                 path = RemotePath.Root;
                 name = string.Empty;
+                return false;
+        }
+    }
+
+    private static bool TryGetPreviewableRow(
+        object? parameter,
+        out RemotePath path,
+        out string name,
+        out long? sizeBytes,
+        out RemoteItemKind kind)
+    {
+        switch (parameter)
+        {
+            case RemoteItemRowViewModel { CanPreview: true } row:
+                path = row.Path;
+                name = row.Name;
+                sizeBytes = row.SizeBytes;
+                kind = row.Kind;
+                return true;
+            case RemoteListRowViewModel { CanPreview: true } row:
+                path = row.Path;
+                name = row.Name;
+                sizeBytes = row.SizeBytes;
+                kind = row.Kind;
+                return true;
+            default:
+                path = RemotePath.Root;
+                name = string.Empty;
+                sizeBytes = null;
+                kind = default;
                 return false;
         }
     }
@@ -1768,13 +1879,16 @@ public sealed record RemoteItemRowViewModel(
     RemotePath Path,
     Icon Icon,
     string Name,
+    long? SizeBytes,
     string Size,
     string UpdatedAt,
     RemoteItemKind Kind,
     ICommand OpenCommand,
+    ICommand PreviewCommand,
     ICommand DownloadCommand,
     ICommand RenameCommand,
     ICommand DeleteCommand,
+    bool CanPreview,
     bool CanRename,
     bool CanDelete)
 {
@@ -1785,9 +1899,11 @@ public sealed record RemoteItemRowViewModel(
     public static RemoteItemRowViewModel From(
         RemoteItem item,
         ICommand openCommand,
+        ICommand previewCommand,
         ICommand downloadCommand,
         ICommand renameCommand,
         ICommand deleteCommand,
+        bool canPreview,
         bool canRename,
         bool canDelete)
     {
@@ -1795,13 +1911,16 @@ public sealed record RemoteItemRowViewModel(
             item.Path,
             RemoteItemIconFactory.Create(item),
             item.Name,
+            item.Size,
             FormatSize(item.Size, item.Kind),
             item.UpdatedAt?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? string.Empty,
             item.Kind,
             openCommand,
+            previewCommand,
             downloadCommand,
             renameCommand,
             deleteCommand,
+            canPreview,
             canRename,
             canDelete);
     }
@@ -1830,13 +1949,16 @@ public sealed record RemoteListRowViewModel(
     RemotePath Path,
     Icon Icon,
     string Name,
+    long? SizeBytes,
     string Size,
     string UpdatedAt,
     RemoteItemKind Kind,
     ICommand OpenCommand,
+    ICommand PreviewCommand,
     ICommand DownloadCommand,
     ICommand RenameCommand,
     ICommand DeleteCommand,
+    bool CanPreview,
     bool CanRename,
     bool CanDelete)
 {
@@ -1847,9 +1969,11 @@ public sealed record RemoteListRowViewModel(
     public static RemoteListRowViewModel From(
         RemoteItem item,
         ICommand openCommand,
+        ICommand previewCommand,
         ICommand downloadCommand,
         ICommand renameCommand,
         ICommand deleteCommand,
+        bool canPreview,
         bool canRename,
         bool canDelete)
     {
@@ -1857,13 +1981,16 @@ public sealed record RemoteListRowViewModel(
             item.Path,
             RemoteItemIconFactory.Create(item),
             item.Name,
+            item.Size,
             FormatSize(item.Size, item.Kind),
             item.UpdatedAt?.LocalDateTime.ToString("yyyy-MM-dd HH:mm") ?? string.Empty,
             item.Kind,
             openCommand,
+            previewCommand,
             downloadCommand,
             renameCommand,
             deleteCommand,
+            canPreview,
             canRename,
             canDelete);
     }
