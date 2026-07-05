@@ -9,14 +9,16 @@
 ## 阅读顺序
 
 1. 先读 `roadmap.md`，确认当前工程阶段、总体原则、跳步规则和发布基线状态。
-2. 需要阶段细节时，进入 `phases/` 阅读对应 Phase 文档。
-3. 需要测试覆盖范围、回归测试要求或真实 provider 验收规则时，进入 `testing/` 阅读测试矩阵。
+2. 需要 v0.1 后专业化能力方向时，读 `professionalization-roadmap.md`。
+3. 需要阶段细节时，进入 `phases/` 阅读对应 Phase 文档。
+4. 需要测试覆盖范围、回归测试要求或真实 provider 验收规则时，进入 `testing/` 阅读测试矩阵。
 
 ## 目录职责
 
 | 路径 | 职责 |
 |---|---|
 | `roadmap.md` | 实现路线总览、Phase 索引、测试矩阵索引、跳步规则和当前发布基线状态。 |
+| `professionalization-roadmap.md` | v0.1 后专业化能力路线，记录除新增 Provider 外的产品能力方向、优先级和实施边界。 |
 | `phases/` | Phase 0-11 的阶段细节、历史阶段归档和阶段验收说明。 |
 | `testing/` | Provider、Transfer 等可长期复用的测试矩阵和回归测试规范。 |
 

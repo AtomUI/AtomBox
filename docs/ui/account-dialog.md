@@ -20,6 +20,8 @@
 - 文件传输：SFTP、FTP、WebDAV。
 - 网盘 API：阿里云盘、百度网盘 provider 代码与注册已存在，但第一版发布基线不把它们作为已充分验收的主路径能力。
 
+当前账号弹窗可见范围与注册范围不同：京东云 OSS 和青云 QingStor 代码已注册，但在添加账号弹窗中暂时隐藏，等待完成发布级真实验收后再开放；百度智能云 BOS 已在账号弹窗中开放。
+
 账号弹窗只属于 Desktop / Presentation 层。Application 不知道弹窗存在，Core、Transfer、Providers、Infrastructure 不依赖弹窗概念。
 
 第一版采用统一弹窗骨架，根据连接类型和 provider 切换字段。
@@ -69,7 +71,7 @@ OSS 第一版字段：
 
 | 分区 | 字段 | 描述 |
 | --- | --- | --- |
-| 连接类型 | 类型、Provider / 协议 | 当前已注册多个对象存储 provider。 |
+| 连接类型 | 类型、Provider / 协议 | 展示当前允许在账号弹窗中选择的对象存储 provider；京东云 OSS 和青云 QingStor 暂时隐藏。 |
 | 基本信息 | 显示名称 | 用户自定义账号显示名。 |
 | 连接配置 | Endpoint、Region、Bucket/Root 等 | 具体字段由 provider descriptor 决定。 |
 | 凭据 | AccessKeyId、AccessKeySecret 等 | 不回显 secret 明文。 |

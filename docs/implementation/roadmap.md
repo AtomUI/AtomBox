@@ -112,5 +112,6 @@ v0.1 发布前：
 v0.1 发布后：
   -> 根据真实使用反馈修 bug
   -> 补齐 provider opt-in 集成测试报告
+  -> 参考 professionalization-roadmap.md 规划专业化能力
   -> 再讨论 FTPS、网盘 OAuth、断点续传、体积优化和更复杂 UI 能力
 ```

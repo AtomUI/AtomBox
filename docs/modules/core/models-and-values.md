@@ -150,6 +150,54 @@ Unknown
 
 `RemoteItem` 不是活动代理对象。删除、重命名、覆盖后，旧快照不会自动变化，必须重新列表或重新查询。
 
+## 5.1 远程预览模型
+
+远程预览模型用于表达“小文件直接查看”的跨层语义。它不是传输任务，也不是 UI 控件模型。
+
+第一版预览只支持图片和小文本：
+
+```text
+Text
+Image
+```
+
+`RemotePreviewKind` 表示预览类型。
+
+`RemotePreviewOptions` 表示预览大小限制：
+
+| 字段 | 含义 |
+| --- | --- |
+| `MaxTextBytes` | 文本预览最大读取字节数。 |
+| `MaxImageBytes` | 图片预览最大读取字节数。 |
+
+默认限制由 Core 提供稳定常量：文本 `1 MB`，图片 `10 MB`。
+
+`PreviewRemoteFileRequest` 表示一次预览请求：
+
+| 字段 | 含义 |
+| --- | --- |
+| `StorageAccountId` | 远程账号。 |
+| `Path` | 远程文件路径。 |
+| `FileName` | 文件名，用于扩展名判断、标题展示和 content type 推断。 |
+| `Size` | 列表项中的文件大小，允许为空，用于读取前预检。 |
+| `Kind` | 远程资源类型，只允许 `File` 进入预览。 |
+
+`PreviewRemoteFileResult` 表示一次成功预览结果：
+
+| 字段 | 含义 |
+| --- | --- |
+| `Kind` | 文本或图片。 |
+| `FileName` | 文件名。 |
+| `ContentType` | 根据扩展名推断的 MIME 类型。 |
+| `Size` | 实际读取到的字节数。 |
+| `Content` | 原始字节。 |
+| `Text` | 文本预览解码结果；图片预览为空。 |
+| `EncodingName` | 文本编码名称；图片预览为空。 |
+
+不支持预览、文件超限、编码不支持、疑似二进制内容等情况通过 `OperationResult<PreviewRemoteFileResult>.Failure(...)` 返回。失败状态不写入 `PreviewRemoteFileResult`。
+
+Core 不能引用 Avalonia、AtomUI、Bitmap、Image 或任何 UI 类型。
+
 ## 6. 传输模型
 
 `TransferTaskId` 是传输任务稳定标识。

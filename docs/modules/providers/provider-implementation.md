@@ -197,7 +197,8 @@ S3 compatible 对象存储分层：
 
 - `S3CompatibleProvider` 承载通用对象存储运行时行为：bucket/key 路径解析、prefix 伪目录列表、上传、下载、删除和统一错误映射。
 - `IS3CompatibleClient` 隔离具体 SDK/API，返回中性 `S3Compatible*` 数据模型。
-- `S3CompatibleAwsV4Client` 用于 AWS Signature V4 且 S3 API 兼容的服务，例如华为云 OBS、百度智能云 BOS、京东云 OSS、青云 QingStor 当前适配路径。
+- `S3CompatibleAwsV4Client` 用于 AWS Signature V4 且 S3 API 兼容的服务，例如华为云 OBS、京东云 OSS、青云 QingStor 当前适配路径。
+- 百度智能云 BOS 使用百度官方 C# SDK（`BaiduBce.Services.Bos.BosClient`）实现 `BaiduBosSdkClient`，再适配到 `IS3CompatibleClient`，运行时仍复用 `S3CompatibleProvider`。
 - 火山引擎 TOS 使用官方 `Volcengine.TOS.SDK.NetCore`，通过 `VolcengineTosSdkClient` 适配到 `IS3CompatibleClient`，运行时仍复用 `S3CompatibleProvider`。
 - 具体云厂商 creator 负责校验自身必填配置、读取 credential material、选择合适的 `IS3CompatibleClient`，但不复制通用对象存储 provider 行为。
 
