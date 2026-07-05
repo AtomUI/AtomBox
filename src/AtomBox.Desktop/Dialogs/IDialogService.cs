@@ -8,5 +8,7 @@ public interface IDialogService
 
     Task<string?> ShowTextInputAsync(TextInputDialogRequest request);
 
+    Task ShowPreviewAsync(PreviewDialogRequest request);
+
     Task ShowErrorDetailsAsync(ErrorDialogRequest request);
 }

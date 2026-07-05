@@ -1,13 +1,16 @@
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Controls.ApplicationLifetimes;
+using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
+using Avalonia.Media.Imaging;
 using Avalonia.Threading;
 using AtomBox.Application.Accounts;
 using AtomBox.Core.Accounts;
 using AtomBox.Core.Capabilities;
+using AtomBox.Core.Previews;
 using AtomBox.Core.Providers;
 using AtomBox.Core.Results;
 using AtomBox.Core.ValueObjects;
@@ -29,6 +32,7 @@ using AtomDialogVerticalAnchor = AtomUI.Desktop.Controls.DialogVerticalAnchor;
 using AtomDialogButton = AtomUI.Desktop.Controls.DialogButton;
 using AtomDialogButtonRole = AtomUI.Desktop.Controls.DialogButtonRole;
 using AtomLineEdit = AtomUI.Desktop.Controls.LineEdit;
+using AtomTextArea = AtomUI.Desktop.Controls.TextArea;
 
 namespace AtomBox.Desktop.Dialogs;
 
@@ -189,6 +193,58 @@ public sealed class DialogService : IDialogService
         }
 
         return ShowErrorDetailsOverlayAsync(request, mainWindow);
+    }
+
+    public async Task ShowPreviewAsync(PreviewDialogRequest request)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (GetMainWindow() is not { } mainWindow)
+        {
+            return;
+        }
+
+        try
+        {
+            await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
+            await AtomDialog.ShowDialogModalAsync(
+                new PreviewDialogContent(request),
+                null,
+                new AtomDialogOptions
+                {
+                    Title = $"预览 - {request.FileName}",
+                    DialogHostType = AtomDialogHostType.Overlay,
+                    IsResizable = true,
+                    IsClosable = true,
+                    IsDragMovable = true,
+                    IsMaximizable = false,
+                    IsMinimizable = false,
+                    StandardButtons = AtomDialogStandardButtons.Parse("Close"),
+                    DefaultStandardButton = AtomDialogStandardButton.Close,
+                    HorizontalStartupLocation = AtomDialogHorizontalAnchor.Center,
+                    VerticalStartupLocation = AtomDialogVerticalAnchor.Center,
+                    HostWidth = request.Kind == RemotePreviewKind.Image ? 760 : 820,
+                    HostHeight = 620,
+                    HostMinWidth = 520,
+                    HostMinHeight = 360,
+                    HostMaxWidth = 1100,
+                    HostMaxHeight = 860
+                },
+                mainWindow).ConfigureAwait(true);
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine(ex);
+            await ShowErrorDetailsOverlayAsync(new ErrorDialogRequest(
+                "预览打开失败",
+                $"预览打开失败：{ex.Message}",
+                Details: new Dictionary<string, string>
+                {
+                    ["文件"] = request.FileName,
+                    ["类型"] = request.ContentType,
+                    ["异常类型"] = ex.GetType().FullName ?? ex.GetType().Name
+                }), mainWindow).ConfigureAwait(true);
+        }
     }
 
     private static Window? GetMainWindow()
@@ -441,6 +497,118 @@ public sealed class DialogService : IDialogService
                     valueText
                 }
             }.WithInputColumn(valueText);
+        }
+    }
+
+    private sealed class PreviewDialogContent : UserControl
+    {
+        public PreviewDialogContent(PreviewDialogRequest request)
+        {
+            var header = new Grid
+            {
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition(1, GridUnitType.Star),
+                    new ColumnDefinition(GridLength.Auto)
+                },
+                Children =
+                {
+                    new TextBlock
+                    {
+                        Text = request.FileName,
+                        FontWeight = FontWeight.SemiBold,
+                        TextTrimming = TextTrimming.CharacterEllipsis,
+                        VerticalAlignment = VerticalAlignment.Center
+                    },
+                    new TextBlock
+                    {
+                        Text = FormatPreviewMeta(request),
+                        Foreground = Brushes.DimGray,
+                        VerticalAlignment = VerticalAlignment.Center
+                    }.WithPreviewMetaColumn()
+                }
+            };
+
+            Content = new Grid
+            {
+                Margin = new Thickness(20),
+                RowDefinitions = new RowDefinitions("Auto,*"),
+                RowSpacing = 12,
+                Children =
+                {
+                    header,
+                    BuildPreviewContent(request).WithPreviewContentRow()
+                }
+            };
+        }
+
+        private static Control BuildPreviewContent(PreviewDialogRequest request)
+        {
+            if (request.Kind == RemotePreviewKind.Image)
+            {
+                using var stream = new MemoryStream(request.Content);
+                return new Border
+                {
+                    BorderBrush = Brushes.LightGray,
+                    BorderThickness = new Thickness(1),
+                    Background = Brushes.White,
+                    Padding = new Thickness(12),
+                    Child = new ScrollViewer
+                    {
+                        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                        Content = new Image
+                        {
+                            Source = new Bitmap(stream),
+                            Stretch = Stretch.Uniform,
+                            HorizontalAlignment = HorizontalAlignment.Center,
+                            VerticalAlignment = VerticalAlignment.Center
+                        }
+                    }
+                };
+            }
+
+            return new AtomTextArea
+            {
+                Text = request.Text ?? string.Empty,
+                IsReadOnly = true,
+                AcceptsReturn = true,
+                TextWrapping = TextWrapping.Wrap,
+                FontFamily = FontFamily.Parse("Consolas, Cascadia Mono, Menlo, monospace"),
+                MinHeight = 420,
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Stretch,
+                Lines = 18,
+                IsAutoSize = false,
+                IsResizable = false,
+                StyleVariant = InputControlStyleVariant.Outlined,
+                SizeType = SizeType.Middle
+            };
+        }
+
+        private static string FormatPreviewMeta(PreviewDialogRequest request)
+        {
+            var parts = new List<string> { FormatSize(request.Size), request.ContentType };
+            if (!string.IsNullOrWhiteSpace(request.EncodingName))
+            {
+                parts.Add(request.EncodingName);
+            }
+
+            return string.Join(" | ", parts);
+        }
+
+        private static string FormatSize(long size)
+        {
+            var value = (double)size;
+            string[] units = ["B", "KB", "MB", "GB", "TB"];
+            var unitIndex = 0;
+            while (value >= 1024 && unitIndex < units.Length - 1)
+            {
+                value /= 1024;
+                unitIndex++;
+            }
+
+            return $"{value:0.#} {units[unitIndex]}";
         }
     }
 
@@ -1195,7 +1363,7 @@ public sealed class DialogService : IDialogService
 
         private static bool IsVisibleProvider(ProviderDescriptor provider)
         {
-            // Keep QingStor hidden from the account dialog until it has completed release validation.
+            // Keep JdCloud OSS and QingStor hidden from the account dialog until they complete release validation.
             if (provider.Id.Value is "jdcloud-oss" or "qingstor")
             {
                 return false;
@@ -1443,6 +1611,18 @@ public static Control WithOverlayMessagePlacement(this Control control)
     control.HorizontalAlignment = HorizontalAlignment.Center;
     control.Margin = new Thickness(0, 12, 0, 0);
     control.ZIndex = 10;
+    return control;
+}
+
+public static Control WithPreviewContentRow(this Control control)
+{
+    Grid.SetRow(control, 1);
+    return control;
+}
+
+public static Control WithPreviewMetaColumn(this Control control)
+{
+    Grid.SetColumn(control, 1);
     return control;
 }
 }
