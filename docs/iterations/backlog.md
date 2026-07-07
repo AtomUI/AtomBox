@@ -11,6 +11,7 @@
 | 能力 | 优先级 | 状态 | 设计文档 |
 |---|---|---|---|
 | 远程图片与小文本文件预览 | P0 | In Progress | `features/remote-file-preview.md` |
+| 本地文件指纹索引 | P1 | Planned | `features/local-file-fingerprint-index.md` |
 | 批量文件管理 | P1 | Candidate | TBD |
 | 专业传输队列增强 | P1 | Candidate | TBD |
 | 大文件断点续传 | P1 | Candidate | TBD |
