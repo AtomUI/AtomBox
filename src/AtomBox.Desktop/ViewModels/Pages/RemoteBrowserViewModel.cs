@@ -7,11 +7,13 @@ using AtomBox.Core.Accounts;
 using AtomBox.Core.Errors;
 using AtomBox.Core.Previews;
 using AtomBox.Core.RemoteItems;
+using AtomBox.Core.Results;
 using AtomBox.Core.Settings;
 using AtomBox.Core.ValueObjects;
 using AtomBox.Desktop.Dialogs;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Services;
+using AtomBox.Desktop.Shell;
 using AtomUI.Controls;
 using AtomUI.Desktop.Controls;
 using AtomUI.Icons.AntDesign;
@@ -30,6 +32,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
     private readonly IFilePickerService _filePicker;
     private readonly IDesktopPreferencesService _preferences;
     private readonly IAccountDialogWorkflow _accountDialogWorkflow;
+    private readonly StatusBarViewModel _statusBar;
     private string _title = "远程浏览";
     private string _statusMessage = "选择左侧远程存储类型或连接实例。";
     private string _currentPath = "/";
@@ -54,6 +57,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
     private ErrorDialogRequest? _lastErrorDetails;
     private bool _isSyncingBucketSelection;
     private string _searchText = string.Empty;
+    private bool _isUploadPreparing;
 
     public RemoteBrowserViewModel(
         AccountAppService accounts,
@@ -64,7 +68,8 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         INavigationService navigation,
         IFilePickerService filePicker,
         IDesktopPreferencesService preferences,
-        IAccountDialogWorkflow accountDialogWorkflow)
+        IAccountDialogWorkflow accountDialogWorkflow,
+        StatusBarViewModel statusBar)
     {
         _accounts = accounts;
         _browser = browser;
@@ -75,6 +80,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         _filePicker = filePicker;
         _preferences = preferences;
         _accountDialogWorkflow = accountDialogWorkflow;
+        _statusBar = statusBar;
         _accountDialogWorkflow.AccountsChanged += (_, _) => RefreshAccountsOnUiThread();
         RefreshCommand = new AsyncRelayCommand(_ => RefreshAsync());
         RetryLoadCommand = new AsyncRelayCommand(_ => RetryLoadAsync(), _ => _lastFailedListRequest is not null);
@@ -207,6 +213,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
     public bool CanUpload =>
         _storageAccountId is not null &&
         !IsLoading &&
+        !IsUploadPreparing &&
         !IsAccountSelection &&
         !IsJianguoyunVirtualRoot() &&
         (_pathContext.CanUpload || CanWriteAtCurrentRoot() || CanWriteAtCurrentFileTransferLocation());
@@ -300,6 +307,18 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         _pathContext.IsRoot;
 
     public bool IsDataRowsVisible => !IsAccountSelection;
+
+    public bool IsUploadPreparing
+    {
+        get => _isUploadPreparing;
+        private set
+        {
+            if (SetProperty(ref _isUploadPreparing, value))
+            {
+                RaiseUploadStateChanged();
+            }
+        }
+    }
 
     public ObservableCollection<RemoteItemRowViewModel> Items { get; } = [];
 
@@ -1400,6 +1419,11 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
     {
         if (_storageAccountId is null || !CanUpload)
         {
+            if (IsUploadPreparing)
+            {
+                StatusMessage = "当前正在准备上传，请稍后再试。";
+            }
+
             return;
         }
 
@@ -1415,15 +1439,68 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             .Select(localPath => new UploadTaskTarget(localPath, GetUploadTargetPath(localPath)))
             .ToArray();
         var storageAccountId = _storageAccountId.Value;
-        await _navigation.NavigateAsync(NavigationTarget.TransferQueue).ConfigureAwait(true);
-        _messages.Info(uploadTargets.Length == 1 ? "正在创建上传任务。" : $"正在创建 {uploadTargets.Length} 个上传任务。");
+
+        IsUploadPreparing = true;
+        ClearErrorDetails();
+        OperationResult<PrepareBatchUploadTasksResult> prepareResult;
+        try
+        {
+            var progress = new Progress<UploadPreparationProgress>(item =>
+            {
+                StatusMessage = item.TotalCount <= 1
+                    ? $"正在计算文件指纹：{item.FileName}"
+                    : $"正在计算文件指纹 {item.CurrentIndex}/{item.TotalCount}：{item.FileName}";
+            });
+            prepareResult = await _transfers
+                .PrepareBatchUploadTasksAsync(
+                    new PrepareBatchUploadTasksRequest(storageAccountId, uploadTargets),
+                    progress)
+                .ConfigureAwait(true);
+        }
+        finally
+        {
+            IsUploadPreparing = false;
+        }
+
+        if (prepareResult.IsFailure)
+        {
+            var message = prepareResult.Error?.Message ?? "上传前检查失败。";
+            StatusMessage = message;
+            SetErrorDetails("上传前检查失败", "上传前检查失败。", prepareResult.Error);
+            _messages.Error(message);
+            return;
+        }
+
+        var prepared = prepareResult.GetValueOrThrow();
+        var duplicateTargets = prepared.Targets
+            .Where(target => target.HistoricalRecords.Count > 0)
+            .ToArray();
+        if (duplicateTargets.Length > 0)
+        {
+            var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogRequest(
+                "文件以前上传过",
+                BuildDuplicateUploadMessage(duplicateTargets),
+                "再次上传",
+                "取消")).ConfigureAwait(true);
+            if (!confirmed)
+            {
+                StatusMessage = "已取消上传。";
+                return;
+            }
+        }
+
+        var targetsToCreate = prepared.Targets
+            .Select(target => new UploadTaskTarget(target.LocalPath, target.RemotePath, target.Fingerprint))
+            .ToArray();
+
+        _messages.Info(targetsToCreate.Length == 1 ? "正在创建上传任务。" : $"正在创建 {targetsToCreate.Length} 个上传任务。");
 
         _ = Task.Run(async () =>
         {
             var result = await _transfers.CreateBatchUploadTasksAsync(
                 new CreateBatchUploadTasksRequest(
                     storageAccountId,
-                    uploadTargets,
+                    targetsToCreate,
                     TransferOverwritePolicy.Ask)).ConfigureAwait(false);
 
             Dispatcher.UIThread.Post(() =>
@@ -1438,9 +1515,11 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
                 }
 
                 var createdCount = result.GetValueOrThrow().Tasks.Count;
+                _statusBar.ReportTransferTasksCreated(createdCount);
                 StatusMessage = createdCount <= 1
                     ? "上传任务已创建，等待传输完成。"
                     : $"已创建 {createdCount} 个上传任务，等待传输完成。";
+                _messages.Success(createdCount <= 1 ? "上传任务已创建。" : $"已创建 {createdCount} 个上传任务。");
             });
         });
     }
@@ -1789,6 +1868,33 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         }
 
         await _navigation.NavigateAsync(NavigationTarget.TransferHistory, new TransferHistoryNavigationParameter(1)).ConfigureAwait(true);
+    }
+
+    private static string BuildDuplicateUploadMessage(IReadOnlyList<PreparedUploadTaskTarget> targets)
+    {
+        var lines = new List<string>
+        {
+            targets.Count == 1
+                ? "该文件以前上传过，确认是否再次上传？"
+                : $"{targets.Count} 个文件以前上传过，确认是否再次上传？",
+            string.Empty
+        };
+
+        foreach (var target in targets.Take(5))
+        {
+            var record = target.HistoricalRecords
+                .OrderByDescending(item => item.LastSeenAt ?? item.UploadedAt)
+                .ThenByDescending(item => item.UploadedAt)
+                .First();
+            lines.Add($"{target.LocalPath.GetFileName()} -> {FormatRemotePath(record.RemotePath)}");
+        }
+
+        if (targets.Count > 5)
+        {
+            lines.Add($"另有 {targets.Count - 5} 个文件也存在历史上传记录。");
+        }
+
+        return string.Join(Environment.NewLine, lines);
     }
 
     private static string FormatRemotePath(RemotePath path)

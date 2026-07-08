@@ -161,6 +161,50 @@ public sealed class TransferModelTests
     }
 
     [Fact]
+    public void TransferTask_FingerprintMetadata_IsOptionalAndPreserved()
+    {
+        var task = new TransferTask(
+            TransferTaskId.New(),
+            StorageAccountId.New(),
+            TransferDirection.Upload,
+            new LocalPath(@"C:\temp\a.txt"),
+            new RemotePath("bucket/a.txt"),
+            TransferStatus.Pending,
+            DefaultOptions,
+            Now,
+            Now,
+            FingerprintHashAlgorithm: "SHA256",
+            FingerprintHashValue: "ABCDEF",
+            FingerprintFileSize: 0,
+            FingerprintCalculatedAt: Now);
+
+        Assert.True(task.HasCompleteFingerprintMetadata);
+        Assert.Equal("sha256", task.FingerprintHashAlgorithm);
+        Assert.Equal("abcdef", task.FingerprintHashValue);
+
+        var updated = task.WithStatus(TransferStatus.Succeeded, Now.AddSeconds(1));
+        Assert.Equal("sha256", updated.FingerprintHashAlgorithm);
+        Assert.Equal("abcdef", updated.FingerprintHashValue);
+        Assert.Equal(0, updated.FingerprintFileSize);
+    }
+
+    [Fact]
+    public void TransferTask_PartialFingerprintMetadata_Throws()
+    {
+        Assert.Throws<ArgumentException>(() => new TransferTask(
+            TransferTaskId.New(),
+            StorageAccountId.New(),
+            TransferDirection.Upload,
+            new LocalPath(@"C:\temp\a.txt"),
+            new RemotePath("bucket/a.txt"),
+            TransferStatus.Pending,
+            DefaultOptions,
+            Now,
+            Now,
+            FingerprintHashAlgorithm: "sha256"));
+    }
+
+    [Fact]
     public void TransferTask_StatusReasonIsTrimmed()
     {
         var task = CreateTask(TransferStatus.Failed, "  reason  ", StorageErrorCategory.Unknown);

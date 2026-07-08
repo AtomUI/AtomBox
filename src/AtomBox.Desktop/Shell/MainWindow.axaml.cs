@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using AtomUI;
 using AtomUI.Controls;
 using AtomUI.Icons.AntDesign;
@@ -8,6 +9,10 @@ using AtomBox.Desktop.ViewFactory;
 using AtomUI.Desktop.Controls;
 using Avalonia;
 using Avalonia.Controls;
+using Avalonia.Controls.Templates;
+using Avalonia.Data;
+using Avalonia.Layout;
+using Avalonia.Media;
 using Avalonia.Controls.Primitives.PopupPositioning;
 using Avalonia.Markup.Xaml;
 using Avalonia.Platform;
@@ -26,6 +31,8 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
     private const double NavigationBaseChromeWidth = 112;
     private const double NavigationDisplayUnitWidth = 7.5;
     private static readonly Uri TrayIconUri = new("avares://AtomBox.Desktop/Assets/logo.ico");
+    private static readonly IBrush TransferQueueBadgeBackground = Brush.Parse("#1677FF");
+    private static readonly IBrush TransferQueueBadgeForeground = Brushes.White;
 
     private readonly MainWindowViewModel? _viewModel;
     private readonly IDesktopPreferencesService? _preferences;
@@ -37,6 +44,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
     private NavMenuNode? _ossRootNode;
     private NavMenuNode? _fileTransferRootNode;
     private NavMenuNode? _webDavRootNode;
+    private NavMenuNode? _transferRootNode;
     private Border? _navigationPane;
     private readonly Dictionary<string, NavMenuNode> _navigationNodesByKey = new(StringComparer.Ordinal);
     private string? _pendingNavigationMenuKey;
@@ -68,6 +76,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
         BuildNavigationMenu(navMenu);
         viewModel.RemoteAccountMenuRefreshed += HandleRemoteAccountMenuRefreshed;
         viewModel.CurrentMenuKeyChanged += HandleCurrentMenuKeyChanged;
+        viewModel.StatusBar.PropertyChanged += HandleStatusBarPropertyChanged;
         navMenu.NavMenuItemClick += HandleNavMenuItemClick;
         Closing += HandleClosing;
         EnsureTrayIcon();
@@ -251,7 +260,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
         }));
         navMenu.Items.Add(_remoteRootNode);
         AttachRemoteCategoryNodes();
-        navMenu.Items.Add(new NavMenuNode
+        _transferRootNode = new NavMenuNode
         {
             Header = "传输",
             Icon = new CloudSyncOutlined(),
@@ -260,6 +269,8 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
                 RegisterNavigationNode(new NavMenuNode
                 {
                     Header = "传输队列",
+                    HeaderTemplate = CreateTransferQueueHeaderTemplate(_viewModel?.StatusBar ??
+                        throw new InvalidOperationException("Main window view model was not initialized.")),
                     Icon = new SwapOutlined(),
                     ItemKey = new EntityKey(NavigationMenuKeys.TransferQueue)
                 }),
@@ -270,7 +281,8 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
                     ItemKey = new EntityKey(NavigationMenuKeys.TransferHistory)
                 })
             }
-        });
+        };
+        navMenu.Items.Add(_transferRootNode);
         navMenu.Items.Add(new NavMenuNode
         {
             Header = "设置",
@@ -293,6 +305,94 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
         });
 
         RebuildRemoteAccountNodes();
+    }
+
+    private static FuncDataTemplate<NavMenuNode> CreateTransferQueueHeaderTemplate(StatusBarViewModel statusBar)
+    {
+        return new FuncDataTemplate<NavMenuNode>((_, _) =>
+        {
+            var panel = new Grid
+            {
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition(GridLength.Star),
+                    new ColumnDefinition(GridLength.Auto)
+                },
+                HorizontalAlignment = HorizontalAlignment.Stretch,
+                VerticalAlignment = VerticalAlignment.Center,
+            };
+
+            var title = new Avalonia.Controls.TextBlock
+            {
+                Text = "传输队列",
+                VerticalAlignment = VerticalAlignment.Center
+            };
+            Grid.SetColumn(title, 0);
+            panel.Children.Add(title);
+
+            var badgeText = new Avalonia.Controls.TextBlock
+            {
+                FontSize = 10,
+                FontWeight = FontWeight.SemiBold,
+                Foreground = TransferQueueBadgeForeground,
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                TextAlignment = TextAlignment.Center
+            };
+            badgeText.Bind(Avalonia.Controls.TextBlock.TextProperty, new Binding(nameof(StatusBarViewModel.ActiveTransferBadgeText))
+            {
+                Source = statusBar
+            });
+
+            var badge = new Border
+            {
+                MinWidth = 18,
+                Height = 18,
+                Padding = new Thickness(5, 0),
+                Margin = new Thickness(8, 0, 0, 0),
+                CornerRadius = new CornerRadius(9),
+                Background = TransferQueueBadgeBackground,
+                HorizontalAlignment = HorizontalAlignment.Right,
+                VerticalAlignment = VerticalAlignment.Center,
+                Child = badgeText
+            };
+            badge.Bind(IsVisibleProperty, new Binding(nameof(StatusBarViewModel.IsActiveTransferBadgeVisible))
+            {
+                Source = statusBar
+            });
+            Grid.SetColumn(badge, 1);
+            panel.Children.Add(badge);
+
+            return panel;
+        });
+    }
+
+    private void HandleStatusBarPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (!string.Equals(e.PropertyName, nameof(StatusBarViewModel.ActiveTransferCount), StringComparison.Ordinal) ||
+            _viewModel?.StatusBar.ActiveTransferCount <= 0)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(ExpandTransferMenu, DispatcherPriority.Background);
+    }
+
+    private void ExpandTransferMenu()
+    {
+        if (_navMenu is null || _transferRootNode is null)
+        {
+            return;
+        }
+
+        foreach (var item in _navMenu.GetVisualDescendants().OfType<INavMenuItem>())
+        {
+            if (ReferenceEquals(item.Node, _transferRootNode))
+            {
+                item.Open();
+                return;
+            }
+        }
     }
 
     private void AttachRemoteCategoryNodes()
@@ -612,4 +712,3 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
         return false;
     }
 }
-
