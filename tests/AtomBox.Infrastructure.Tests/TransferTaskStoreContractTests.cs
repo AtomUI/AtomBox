@@ -54,6 +54,53 @@ public sealed class TransferTaskStoreContractTests : IDisposable
     }
 
     [Fact]
+    public async Task Save_OlderSnapshot_DoesNotOverwriteNewerTaskState()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var task = CreateTask(TransferStatus.Running, now);
+        await _store.SaveAsync(task);
+
+        var completed = task.WithStatus(TransferStatus.Succeeded, now.AddSeconds(2));
+        var staleRunning = task.WithStatus(TransferStatus.Running, now.AddSeconds(1));
+        await _store.SaveAsync(completed);
+
+        var staleResult = await _store.SaveAsync(staleRunning);
+
+        Assert.True(staleResult.IsSuccess);
+        var getResult = await _store.GetByIdAsync(task.Id);
+        Assert.True(getResult.IsSuccess);
+        Assert.Equal(TransferStatus.Succeeded, getResult.GetValueOrThrow().Status);
+    }
+
+    [Fact]
+    public async Task Save_ConcurrentUpdates_PreservesLatestStateForEachTask()
+    {
+        var now = DateTimeOffset.UtcNow;
+        var task1 = CreateTask(TransferStatus.Running, now);
+        var task2 = CreateTask(TransferStatus.Running, now);
+        await _store.SaveAsync(task1);
+        await _store.SaveAsync(task2);
+
+        var updates = Enumerable.Range(0, 20)
+            .Select(index =>
+            {
+                var task = index % 2 == 0 ? task1 : task2;
+                var updated = task.WithStatus(
+                    index % 4 == 0 ? TransferStatus.Succeeded : TransferStatus.Running,
+                    now.AddSeconds(index + 1));
+                return _store.SaveAsync(updated);
+            })
+            .ToArray();
+
+        await Task.WhenAll(updates);
+
+        var listResult = await _store.ListAsync();
+        Assert.True(listResult.IsSuccess);
+        Assert.Equal(2, listResult.GetValueOrThrow().Count);
+        Assert.All(listResult.GetValueOrThrow(), task => Assert.Equal(now.AddSeconds(task.Id == task1.Id ? 19 : 20), task.UpdatedAt));
+    }
+
+    [Fact]
     public async Task List_ReturnsAllSavedTasks()
     {
         var t1 = CreateTask(TransferStatus.Pending);
@@ -128,9 +175,9 @@ public sealed class TransferTaskStoreContractTests : IDisposable
             Directory.Delete(_root, recursive: true);
     }
 
-    private static TransferTask CreateTask(TransferStatus status)
+    private static TransferTask CreateTask(TransferStatus status, DateTimeOffset? timestamp = null)
     {
-        var now = DateTimeOffset.UtcNow;
+        var now = timestamp ?? DateTimeOffset.UtcNow;
         return new TransferTask(
             TransferTaskId.New(),
             StorageAccountId.New(),

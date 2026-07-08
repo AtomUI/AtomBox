@@ -1,5 +1,6 @@
 using AtomBox.Application.Transfers;
 using AtomBox.Core.Errors;
+using AtomBox.Core.Fingerprints;
 using AtomBox.Core.Results;
 using AtomBox.Core.Settings;
 using AtomBox.Core.Transfers;
@@ -145,6 +146,87 @@ public sealed class TransferAppServiceContractTests
             TransferOverwritePolicy.Ask));
 
         Assert.True(result.IsFailure);
+    }
+
+    [Fact]
+    public async Task PrepareBatchUploadAsync_SettingsDisabled_ReturnsTargetsWithoutFingerprint()
+    {
+        var service = new TransferAppService(
+            new CountingScheduler(),
+            new EmptyStateStore(),
+            new EmptyTaskStore(),
+            new FixedSettingsRepository(enableFingerprintIndex: false),
+            new FixedLocalFileStore([1, 2, 3]),
+            new FakeFingerprintIndexStore());
+
+        var result = await service.PrepareBatchUploadTasksAsync(new PrepareBatchUploadTasksRequest(
+            StorageAccountId.New(),
+            [new UploadTaskTarget(new LocalPath(@"C:\test.txt"), new RemotePath("bucket/test.txt"))]));
+
+        Assert.True(result.IsSuccess);
+        var target = Assert.Single(result.GetValueOrThrow().Targets);
+        Assert.Null(target.Fingerprint);
+        Assert.Empty(target.HistoricalRecords);
+    }
+
+    [Fact]
+    public async Task PrepareBatchUploadAsync_SettingsEnabled_ComputesFingerprintAndReturnsMatches()
+    {
+        var accountId = StorageAccountId.New();
+        var historical = new FileFingerprintRecord(
+            "sha256",
+            "ignored",
+            5,
+            accountId,
+            new StorageProviderId("sftp"),
+            new RemotePath("backup/test.txt"),
+            DateTimeOffset.UtcNow);
+        var index = new FakeFingerprintIndexStore([historical]);
+        var service = new TransferAppService(
+            new CountingScheduler(),
+            new EmptyStateStore(),
+            new EmptyTaskStore(),
+            new FixedSettingsRepository(enableFingerprintIndex: true),
+            new FixedLocalFileStore([1, 2, 3, 4, 5]),
+            index);
+
+        var result = await service.PrepareBatchUploadTasksAsync(new PrepareBatchUploadTasksRequest(
+            accountId,
+            [new UploadTaskTarget(new LocalPath(@"C:\test.txt"), new RemotePath("bucket/test.txt"))]));
+
+        Assert.True(result.IsSuccess);
+        var target = Assert.Single(result.GetValueOrThrow().Targets);
+        Assert.NotNull(target.Fingerprint);
+        Assert.Equal("sha256", target.Fingerprint!.HashAlgorithm);
+        Assert.Equal(5, target.Fingerprint.FileSize);
+        Assert.Single(target.HistoricalRecords);
+        Assert.NotNull(index.LastQuery);
+        Assert.Equal(accountId, index.LastQuery!.StorageAccountId);
+    }
+
+    [Fact]
+    public async Task CreateBatchUploadAsync_WithFingerprint_PersistsMetadataOnTask()
+    {
+        var scheduler = new CountingScheduler();
+        var service = new TransferAppService(
+            scheduler,
+            new EmptyStateStore(),
+            new EmptyTaskStore());
+        var fingerprint = new UploadTaskFingerprint("sha256", "abcdef", 123, DateTimeOffset.UtcNow);
+
+        var result = await service.CreateBatchUploadTasksAsync(new CreateBatchUploadTasksRequest(
+            StorageAccountId.New(),
+            [new UploadTaskTarget(new LocalPath(@"C:\test.txt"), new RemotePath("bucket/test.txt"), fingerprint)],
+            TransferOverwritePolicy.Ask));
+
+        Assert.True(result.IsSuccess);
+        var task = Assert.Single(result.GetValueOrThrow().Tasks);
+        Assert.True(task.HasCompleteFingerprintMetadata);
+        Assert.Equal("sha256", task.FingerprintHashAlgorithm);
+        Assert.Equal("abcdef", task.FingerprintHashValue);
+        Assert.Equal(123, task.FingerprintFileSize);
+        Assert.Single(scheduler.SubmittedTasks);
+        Assert.Equal("abcdef", scheduler.SubmittedTasks[0].FingerprintHashValue);
     }
 
     [Fact]
@@ -516,10 +598,12 @@ public sealed class TransferAppServiceContractTests
         public int CancelCalls { get; set; }
         public int RetryCalls { get; set; }
         public int WakeCalls { get; set; }
+        public List<TransferTask> SubmittedTasks { get; } = [];
 
         public Task<OperationResult> SubmitAsync(TransferTask task, CancellationToken cancellationToken = default)
         {
             SubmitCalls++;
+            SubmittedTasks.Add(task);
             return Task.FromResult(OperationResult.Success());
         }
 
@@ -538,6 +622,101 @@ public sealed class TransferAppServiceContractTests
         public Task<OperationResult> WakeAsync(CancellationToken cancellationToken = default)
         {
             WakeCalls++;
+            return Task.FromResult(OperationResult.Success());
+        }
+    }
+
+    private sealed class FixedSettingsRepository : IApplicationSettingsRepository
+    {
+        private readonly bool _enableFingerprintIndex;
+
+        public FixedSettingsRepository(bool enableFingerprintIndex)
+        {
+            _enableFingerprintIndex = enableFingerprintIndex;
+        }
+
+        public Task<OperationResult<ApplicationSettings>> GetAsync(CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(OperationResult<ApplicationSettings>.Success(
+                new ApplicationSettings(3, TransferOverwritePolicy.Ask, true, _enableFingerprintIndex)));
+        }
+
+        public Task<OperationResult> SaveAsync(
+            ApplicationSettings settings,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(OperationResult.Success());
+        }
+    }
+
+    private sealed class FixedLocalFileStore : ILocalTransferFileStore
+    {
+        private readonly byte[] _content;
+
+        public FixedLocalFileStore(byte[] content)
+        {
+            _content = content;
+        }
+
+        public Task<OperationResult<LocalTransferReadHandle>> OpenReadAsync(
+            LocalPath path,
+            CancellationToken cancellationToken = default)
+        {
+            var stream = new MemoryStream(_content, writable: false);
+            return Task.FromResult(OperationResult<LocalTransferReadHandle>.Success(
+                new LocalTransferReadHandle(stream, _content.Length)));
+        }
+
+        public Task<OperationResult<LocalTransferWriteHandle>> OpenWriteAsync(
+            LocalPath path,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(OperationResult<LocalTransferWriteHandle>.Failure(
+                StorageError.NotSupported("write not supported")));
+        }
+    }
+
+    private sealed class FakeFingerprintIndexStore : IFileFingerprintIndexStore
+    {
+        private readonly IReadOnlyList<FileFingerprintRecord> _records;
+
+        public FakeFingerprintIndexStore()
+            : this([])
+        {
+        }
+
+        public FakeFingerprintIndexStore(IReadOnlyList<FileFingerprintRecord> records)
+        {
+            _records = records;
+        }
+
+        public FileFingerprintQuery? LastQuery { get; private set; }
+
+        public Task<OperationResult<IReadOnlyList<FileFingerprintRecord>>> FindAsync(
+            FileFingerprintQuery query,
+            CancellationToken cancellationToken = default)
+        {
+            LastQuery = query;
+            return Task.FromResult<OperationResult<IReadOnlyList<FileFingerprintRecord>>>(
+                OperationResult<IReadOnlyList<FileFingerprintRecord>>.Success(_records));
+        }
+
+        public Task<OperationResult> AddOrUpdateAsync(
+            FileFingerprintRecord record,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(OperationResult.Success());
+        }
+
+        public Task<OperationResult<FileFingerprintIndexStatistics>> GetStatisticsAsync(
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(OperationResult<FileFingerprintIndexStatistics>.Success(
+                new FileFingerprintIndexStatistics("index.json", _records.Count, null)));
+        }
+
+        public Task<OperationResult> ClearAsync(CancellationToken cancellationToken = default)
+        {
             return Task.FromResult(OperationResult.Success());
         }
     }

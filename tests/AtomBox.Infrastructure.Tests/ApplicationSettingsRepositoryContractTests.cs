@@ -22,7 +22,7 @@ public sealed class ApplicationSettingsRepositoryContractTests : IDisposable
     public async Task SaveAndGet_Roundtrips()
     {
         var repo = new ApplicationSettingsRepository(new AtomBoxStoragePaths(_root));
-        var settings = new ApplicationSettings(5, TransferOverwritePolicy.Overwrite, false);
+        var settings = new ApplicationSettings(5, TransferOverwritePolicy.Overwrite, false, false);
 
         var saveResult = await repo.SaveAsync(settings);
         Assert.True(saveResult.IsSuccess);
@@ -32,6 +32,28 @@ public sealed class ApplicationSettingsRepositoryContractTests : IDisposable
         Assert.Equal(5, getResult.GetValueOrThrow().DefaultConcurrency);
         Assert.Equal(TransferOverwritePolicy.Overwrite, getResult.GetValueOrThrow().DefaultOverwritePolicy);
         Assert.False(getResult.GetValueOrThrow().KeepCompletedTransfers);
+        Assert.False(getResult.GetValueOrThrow().EnableUploadFingerprintIndex);
+    }
+
+    [Fact]
+    public async Task Get_OldSettingsWithoutFingerprintSwitch_DefaultsToDisabled()
+    {
+        var paths = new AtomBoxStoragePaths(_root);
+        Directory.CreateDirectory(paths.ConfigurationDirectory);
+        await File.WriteAllTextAsync(paths.SettingsFile, """
+            {
+              "defaultConcurrency": 5,
+              "defaultOverwritePolicy": 2,
+              "keepCompletedTransfers": false
+            }
+            """);
+
+        var repo = new ApplicationSettingsRepository(paths);
+        var result = await repo.GetAsync();
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(5, result.GetValueOrThrow().DefaultConcurrency);
+        Assert.False(result.GetValueOrThrow().EnableUploadFingerprintIndex);
     }
 
     [Fact]
