@@ -223,13 +223,18 @@ public sealed class RemoteBrowserAppService
 
         await using var provider = providerResult.GetValueOrThrow();
         return request.Kind == RemoteItemKind.Folder
-            ? await DeleteFolderRecursivelyAsync(provider, request.Path, cancellationToken).ConfigureAwait(false)
+            ? await DeleteFolderRecursivelyAsync(
+                provider,
+                request.Path,
+                ignoreMissingFolderMarker: accountResult.GetValueOrThrow().ProviderCategory == StorageProviderCategory.ObjectStorage,
+                cancellationToken).ConfigureAwait(false)
             : await provider.DeleteAsync(request.Path, cancellationToken).ConfigureAwait(false);
     }
 
     private static async Task<OperationResult> DeleteFolderRecursivelyAsync(
         IStorageProvider provider,
         RemotePath path,
+        bool ignoreMissingFolderMarker,
         CancellationToken cancellationToken)
     {
         if (path.IsRoot)
@@ -247,7 +252,7 @@ public sealed class RemoteBrowserAppService
         {
             cancellationToken.ThrowIfCancellationRequested();
             var deleteResult = item.Kind == RemoteItemKind.Folder
-                ? await DeleteFolderRecursivelyAsync(provider, item.Path, cancellationToken).ConfigureAwait(false)
+                ? await DeleteFolderRecursivelyAsync(provider, item.Path, ignoreMissingFolderMarker, cancellationToken).ConfigureAwait(false)
                 : await provider.DeleteAsync(item.Path, cancellationToken).ConfigureAwait(false);
             if (deleteResult.IsFailure)
             {
@@ -255,7 +260,15 @@ public sealed class RemoteBrowserAppService
             }
         }
 
-        return await provider.DeleteAsync(path, cancellationToken).ConfigureAwait(false);
+        var folderDeleteResult = await provider.DeleteAsync(path, cancellationToken).ConfigureAwait(false);
+        if (folderDeleteResult.IsFailure &&
+            ignoreMissingFolderMarker &&
+            folderDeleteResult.Error?.Category == StorageErrorCategory.NotFound)
+        {
+            return OperationResult.Success();
+        }
+
+        return folderDeleteResult;
     }
 
     private static async Task<OperationResult<IReadOnlyList<RemoteItem>>> ListAllChildrenAsync(
