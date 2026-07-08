@@ -9,7 +9,8 @@ public sealed class ApplicationSettingsRepository : IApplicationSettingsReposito
     private static readonly ApplicationSettings DefaultSettings = new(
         DefaultConcurrency: 3,
         DefaultOverwritePolicy: TransferOverwritePolicy.Ask,
-        KeepCompletedTransfers: true);
+        KeepCompletedTransfers: true,
+        EnableUploadFingerprintIndex: false);
 
     private readonly JsonFileStore<ApplicationSettings> _store;
 

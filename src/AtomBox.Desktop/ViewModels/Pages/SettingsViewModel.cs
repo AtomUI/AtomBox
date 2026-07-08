@@ -22,6 +22,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private decimal _defaultConcurrency = 3;
     private int _startupPageSelectedIndex;
     private int _closeBehaviorSelectedIndex;
+    private bool _enableUploadFingerprintIndex;
     private ApplicationSettings? _loadedSettings;
     private DesktopPreferences? _loadedPreferences;
     private bool _isLoading;
@@ -115,6 +116,18 @@ public sealed class SettingsViewModel : ViewModelBase
         set
         {
             if (SetProperty(ref _closeBehaviorSelectedIndex, Math.Clamp(value, 0, 1)))
+            {
+                MarkDirty();
+            }
+        }
+    }
+
+    public bool EnableUploadFingerprintIndex
+    {
+        get => _enableUploadFingerprintIndex;
+        set
+        {
+            if (SetProperty(ref _enableUploadFingerprintIndex, value))
             {
                 MarkDirty();
             }
@@ -230,7 +243,8 @@ public sealed class SettingsViewModel : ViewModelBase
         var settings = new ApplicationSettings(
             (int)DefaultConcurrency,
             _loadedSettings.DefaultOverwritePolicy,
-            _loadedSettings.KeepCompletedTransfers);
+            _loadedSettings.KeepCompletedTransfers,
+            EnableUploadFingerprintIndex);
         var preferences = new DesktopPreferences(
             ToStartupPage(StartupPageSelectedIndex),
             ToCloseBehavior(CloseBehaviorSelectedIndex),
@@ -262,6 +276,7 @@ public sealed class SettingsViewModel : ViewModelBase
         DefaultDownloadDirectory = preferences.DefaultDownloadDirectory;
         StartupPageSelectedIndex = ToStartupPageIndex(preferences.StartupPage);
         CloseBehaviorSelectedIndex = ToCloseBehaviorIndex(preferences.CloseWindowBehavior);
+        EnableUploadFingerprintIndex = result.Settings.EnableUploadFingerprintIndex;
         SettingsSummary = string.Empty;
         IsDirty = false;
         _isApplyingSettings = false;

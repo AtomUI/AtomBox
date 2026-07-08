@@ -42,6 +42,8 @@ public sealed class AtomBoxStoragePaths
 
     public string TransferProgressFile => Path.Combine(StateDirectory, "transfer-progress.json");
 
+    public string FileFingerprintIndexFile => Path.Combine(StateDirectory, "fingerprints", "file-fingerprint-index.json");
+
     public string CredentialIndexFile => Path.Combine(CredentialDirectory, "credential-index.json");
 
     public string CredentialKeyFile => Path.Combine(CredentialDirectory, "credential-key.bin");

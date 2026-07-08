@@ -1,5 +1,6 @@
 using AtomBox.Core.Accounts;
 using AtomBox.Core.Credentials;
+using AtomBox.Core.Fingerprints;
 using AtomBox.Core.Settings;
 using AtomBox.Core.Transfers;
 using AtomBox.Infrastructure.Caching;
@@ -31,7 +32,9 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<IStorageAccountRepository, StorageAccountRepository>();
         services.AddSingleton<IApplicationSettingsRepository, ApplicationSettingsRepository>();
         services.AddSingleton<ITransferTaskStore, TransferTaskStore>();
-        services.AddSingleton<ITransferStateStore, TransferStateStore>();
+        services.AddSingleton<TransferStateStore>();
+        services.AddSingleton<IFileFingerprintIndexStore, JsonFileFingerprintIndexStore>();
+        services.AddSingleton<ITransferStateStore, FingerprintAwareTransferStateStoreDecorator>();
         services.AddSingleton<ILocalTransferFileStore, LocalTransferFileStore>();
 
         services.AddSingleton<MetadataCache>();

@@ -5,7 +5,8 @@ public sealed record ApplicationSettings
     public ApplicationSettings(
         int DefaultConcurrency,
         TransferOverwritePolicy DefaultOverwritePolicy,
-        bool KeepCompletedTransfers)
+        bool KeepCompletedTransfers,
+        bool EnableUploadFingerprintIndex = false)
     {
         if (DefaultConcurrency <= 0)
         {
@@ -15,6 +16,7 @@ public sealed record ApplicationSettings
         this.DefaultConcurrency = DefaultConcurrency;
         this.DefaultOverwritePolicy = DefaultOverwritePolicy;
         this.KeepCompletedTransfers = KeepCompletedTransfers;
+        this.EnableUploadFingerprintIndex = EnableUploadFingerprintIndex;
     }
 
     public int DefaultConcurrency { get; }
@@ -22,4 +24,6 @@ public sealed record ApplicationSettings
     public TransferOverwritePolicy DefaultOverwritePolicy { get; }
 
     public bool KeepCompletedTransfers { get; }
+
+    public bool EnableUploadFingerprintIndex { get; }
 }

@@ -43,9 +43,11 @@
                     BorderThickness="1"
                     CornerRadius="6"
                     Padding="22,18">
-                <StackPanel Spacing="14"
-                            HorizontalAlignment="Stretch"
-                            MaxWidth="900">
+                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                              HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Spacing="14"
+                                HorizontalAlignment="Stretch"
+                                MaxWidth="900">
                     <Grid Classes="setting-row"
                           ColumnDefinitions="260,*">
                         <StackPanel Grid.Column="0"
@@ -143,6 +145,26 @@
                         </Grid>
                     </Grid>
 
+                    <Border Classes="setting-separator" />
+
+                    <Grid Classes="setting-row"
+                          ColumnDefinitions="260,*">
+                        <StackPanel Grid.Column="0"
+                                    Spacing="4"
+                                    VerticalAlignment="Center">
+                            <TextBlock Classes="setting-label"
+                                       Text="指纹索引" />
+                            <TextBlock Classes="setting-description"
+                                       Text="上传前检查当前账号是否曾经上传相同文件。" />
+                        </StackPanel>
+                        <Grid Grid.Column="1"
+                              MinHeight="32"
+                              VerticalAlignment="Center">
+                            <atom:ToggleSwitch IsChecked="{Binding EnableUploadFingerprintIndex, Mode=TwoWay}"
+                                               HorizontalAlignment="Left" />
+                        </Grid>
+                    </Grid>
+
                     <!--
                     缓存能力目前只有目录和 Infrastructure 占位类，尚未接入真实业务链路。
                     后续实现 MetadataCache / ThumbnailCache / 清理缓存用例后，可恢复缓存相关表单项。
@@ -210,7 +232,8 @@
                                          HorizontalAlignment="Left" />
                         </Grid>
                     </Grid>
-                </StackPanel>
+                    </StackPanel>
+                </ScrollViewer>
             </Border>
             <Grid Grid.Row="1"
                   Margin="0,12,0,0"

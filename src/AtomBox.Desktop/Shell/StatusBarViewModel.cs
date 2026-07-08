@@ -10,6 +10,7 @@ public sealed class StatusBarViewModel : ViewModelBase
     private readonly TransferAppService _transfers;
     private readonly DispatcherTimer _refreshTimer;
     private string _stateText = "就绪";
+    private int _activeTransferCount;
     private int _runningTransfers;
     private string _uploadSpeedText = "上传 0 KB/s";
     private string _downloadSpeedText = "下载 0 KB/s";
@@ -33,6 +34,23 @@ public sealed class StatusBarViewModel : ViewModelBase
         get => _stateText;
         private set => SetProperty(ref _stateText, value);
     }
+
+    public int ActiveTransferCount
+    {
+        get => _activeTransferCount;
+        private set
+        {
+            if (SetProperty(ref _activeTransferCount, value))
+            {
+                OnPropertyChanged(nameof(IsActiveTransferBadgeVisible));
+                OnPropertyChanged(nameof(ActiveTransferBadgeText));
+            }
+        }
+    }
+
+    public bool IsActiveTransferBadgeVisible => ActiveTransferCount > 0;
+
+    public string ActiveTransferBadgeText => ActiveTransferCount > 99 ? "99+" : ActiveTransferCount.ToString();
 
     public int RunningTransfers
     {
@@ -58,6 +76,16 @@ public sealed class StatusBarViewModel : ViewModelBase
         private set => SetProperty(ref _errorCount, value);
     }
 
+    public void ReportTransferTasksCreated(int createdCount)
+    {
+        if (createdCount <= 0)
+        {
+            return;
+        }
+
+        ActiveTransferCount += createdCount;
+    }
+
     private async Task RefreshAsync()
     {
         if (_isRefreshing)
@@ -72,10 +100,12 @@ public sealed class StatusBarViewModel : ViewModelBase
             if (result.IsFailure)
             {
                 StateText = result.Error?.Message ?? "传输状态读取失败";
+                ActiveTransferCount = 0;
                 return;
             }
 
             var tasks = result.GetValueOrThrow().Tasks;
+            ActiveTransferCount = tasks.Count;
             RunningTransfers = tasks.Count(item => item.Task.Status == TransferStatus.Running);
             ErrorCount = tasks.Count(item => item.Task.Status is TransferStatus.Failed or TransferStatus.Interrupted);
             UploadSpeedText = $"上传 {FormatSpeed(SumSpeed(tasks, TransferDirection.Upload))}";

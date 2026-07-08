@@ -1,6 +1,7 @@
 using AtomBox.Core.Settings;
 using AtomBox.Core.Transfers;
 using AtomBox.Core.ValueObjects;
+using AtomBox.Core.Fingerprints;
 
 namespace AtomBox.Application.Transfers;
 
@@ -10,12 +11,40 @@ public sealed record CreateUploadTasksRequest(
     RemotePath RemotePath,
     TransferOverwritePolicy OverwritePolicy);
 
-public sealed record UploadTaskTarget(LocalPath LocalPath, RemotePath RemotePath);
+public sealed record UploadTaskFingerprint(
+    string HashAlgorithm,
+    string HashValue,
+    long FileSize,
+    DateTimeOffset CalculatedAt);
+
+public sealed record UploadTaskTarget(
+    LocalPath LocalPath,
+    RemotePath RemotePath,
+    UploadTaskFingerprint? Fingerprint = null);
 
 public sealed record CreateBatchUploadTasksRequest(
     StorageAccountId StorageAccountId,
     IReadOnlyList<UploadTaskTarget> Targets,
     TransferOverwritePolicy OverwritePolicy);
+
+public sealed record PrepareBatchUploadTasksRequest(
+    StorageAccountId StorageAccountId,
+    IReadOnlyList<UploadTaskTarget> Targets);
+
+public sealed record UploadPreparationProgress(
+    int CurrentIndex,
+    int TotalCount,
+    string FileName);
+
+public sealed record PreparedUploadTaskTarget(
+    LocalPath LocalPath,
+    RemotePath RemotePath,
+    UploadTaskFingerprint? Fingerprint,
+    IReadOnlyList<FileFingerprintRecord> HistoricalRecords);
+
+public sealed record PrepareBatchUploadTasksResult(
+    bool IsFingerprintIndexEnabled,
+    IReadOnlyList<PreparedUploadTaskTarget> Targets);
 
 public sealed record CreateDownloadTasksRequest(
     StorageAccountId StorageAccountId,
