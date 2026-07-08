@@ -6,6 +6,7 @@ using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
 using Avalonia.Media.Imaging;
+using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using AtomBox.Application.Accounts;
 using AtomBox.Core.Accounts;
@@ -623,7 +624,6 @@ public sealed class DialogService : IDialogService
         private readonly AtomLineEdit _displayNameInput = CreateLineEdit();
         private readonly StackPanel _configFields = new() { Spacing = 8 };
         private readonly StackPanel _credentialFields = new() { Spacing = 8 };
-        private readonly TextBlock _validationMessage = new();
         private readonly AtomUI.Desktop.Controls.MessageCard _connectionMessage = new();
         private readonly AtomDialogButton _testButton = new();
         private readonly AtomDialogButton _testDetailsButton = new();
@@ -722,7 +722,6 @@ public sealed class DialogService : IDialogService
                 UpdateCredentialInputState();
                 ResetConnectionTestState();
             };
-            _validationMessage.Foreground = Brushes.Firebrick;
             _connectionMessage.IsVisible = false;
             _connectionMessage.HorizontalAlignment = HorizontalAlignment.Center;
             _connectionMessage.MaxWidth = 580;
@@ -780,8 +779,7 @@ public sealed class DialogService : IDialogService
                     }),
                     Section("基本信息", Field("显示名称", _displayNameInput)),
                     Section("连接配置", _configFields),
-                    Section("凭据", _credentialFields),
-                    _validationMessage
+                    Section("凭据", _credentialFields)
                 }
             };
 
@@ -937,11 +935,16 @@ public sealed class DialogService : IDialogService
             {
                 var input = CreateLineEdit();
                 input.PlaceholderText = GetCredentialPlaceholder(field);
-                input.PasswordChar = field.IsSecret ? '*' : default(char);
-                input.IsEnableRevealButton = field.IsSecret;
+                input.PasswordChar = field.IsSecret && field.Key != "privateKey" ? '*' : default(char);
+                input.IsEnableRevealButton = field.IsSecret && field.Key != "privateKey";
+                if (field.Key == "privateKey")
+                {
+                    input.IsReadOnly = true;
+                }
+
                 input.TextChanged += (_, _) => ResetConnectionTestState();
                 _credentialInputs[field.Key] = input;
-                var row = Field(field.DisplayName, input);
+                var row = Field(field.DisplayName, field.Key == "privateKey" ? CreatePrivateKeyPicker(input) : input);
                 _credentialRows[field.Key] = row;
                 _credentialFields.Children.Add(row);
             }
@@ -1089,11 +1092,39 @@ public sealed class DialogService : IDialogService
                 return null;
             }
 
-            var credentialValues = _credentialInputs
-                .Where(item => IsCredentialFieldActive(item.Key))
-                .Select(item => new KeyValuePair<string, string>(item.Key, NormalizeCredentialValue(item.Key, item.Value.Text?.Trim() ?? string.Empty)))
-                .Where(item => !string.IsNullOrWhiteSpace(item.Value))
-                .ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal);
+            var credentialValues = new Dictionary<string, string>(StringComparer.Ordinal);
+            foreach (var (key, input) in _credentialInputs.Where(item => IsCredentialFieldActive(item.Key)))
+            {
+                var value = input.Text?.Trim() ?? string.Empty;
+                if (string.IsNullOrWhiteSpace(value))
+                {
+                    continue;
+                }
+
+                if (string.Equals(key, "privateKey", StringComparison.Ordinal))
+                {
+                    if (!File.Exists(value))
+                    {
+                        SetValidation("请选择有效的私钥文件。");
+                        return null;
+                    }
+
+                    try
+                    {
+                        value = File.ReadAllText(value);
+                    }
+                    catch (Exception ex)
+                    {
+                        SetValidation($"读取私钥文件失败：{ex.Message}");
+                        return null;
+                    }
+                }
+
+                if (!string.IsNullOrWhiteSpace(value))
+                {
+                    credentialValues[key] = value;
+                }
+            }
             if (_request.ExistingAccount is null || credentialValues.Count > 0 || IsAnonymousFtp(provider) || IsAnonymousWebDav(provider))
             {
                 ApplyExplicitAuthMode(provider, credentialValues);
@@ -1233,7 +1264,7 @@ public sealed class DialogService : IDialogService
         {
             if (field.Key == "privateKey")
             {
-                return @"C:\Users\me\.ssh\id_rsa 或直接粘贴私钥内容";
+                return @"请选择本机 .ssh 目录下的私钥文件";
             }
 
             return field.IsSecret ? "已配置；留空不修改" : field.DisplayName;
@@ -1258,7 +1289,13 @@ public sealed class DialogService : IDialogService
 
         private void SetValidation(string message)
         {
-            _validationMessage.Text = message;
+            if (string.IsNullOrWhiteSpace(message))
+            {
+                HideConnectionMessage();
+                return;
+            }
+
+            ShowConnectionMessage(message, AtomUI.Desktop.Controls.MessageType.Error, autoDismiss: false);
         }
 
         private void ResetConnectionTestState()
@@ -1346,6 +1383,89 @@ public sealed class DialogService : IDialogService
                     input
                 }
             }.WithInputColumn(input);
+        }
+
+        private Grid CreatePrivateKeyPicker(AtomLineEdit input)
+        {
+            async Task SelectPrivateKeyAsync()
+            {
+                var selectedPath = await PickSftpPrivateKeyFileAsync().ConfigureAwait(true);
+                if (string.IsNullOrWhiteSpace(selectedPath))
+                {
+                    return;
+                }
+
+                input.Text = selectedPath;
+                ResetConnectionTestState();
+            }
+
+            var pickerButton = new AtomButton
+            {
+                Content = "选择",
+                ButtonType = AtomButtonType.Default,
+                SizeType = SizeType.Middle,
+                MinHeight = 34,
+                MinWidth = 72
+            };
+            pickerButton.Click += async (_, _) =>
+            {
+                await SelectPrivateKeyAsync().ConfigureAwait(true);
+            };
+            input.PointerPressed += async (_, _) =>
+            {
+                await SelectPrivateKeyAsync().ConfigureAwait(true);
+            };
+
+            return new Grid
+            {
+                ColumnDefinitions =
+                {
+                    new ColumnDefinition(1, GridUnitType.Star),
+                    new ColumnDefinition(GridLength.Auto)
+                },
+                ColumnSpacing = 8,
+                Children =
+                {
+                    input,
+                    pickerButton
+                }
+            }.WithColumn(pickerButton, 1);
+        }
+
+        private static async Task<string?> PickSftpPrivateKeyFileAsync()
+        {
+            if (GetMainWindow() is not { } mainWindow)
+            {
+                return null;
+            }
+
+            var userProfile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+            var sshDirectory = string.IsNullOrWhiteSpace(userProfile)
+                ? null
+                : Path.Combine(userProfile, ".ssh");
+            var suggestedPath = !string.IsNullOrWhiteSpace(sshDirectory) && Directory.Exists(sshDirectory)
+                ? sshDirectory
+                : userProfile;
+
+            IStorageFolder? suggestedFolder = null;
+            if (!string.IsNullOrWhiteSpace(suggestedPath) && Directory.Exists(suggestedPath))
+            {
+                suggestedFolder = await mainWindow.StorageProvider
+                    .TryGetFolderFromPathAsync(suggestedPath)
+                    .ConfigureAwait(true);
+            }
+
+            var files = await mainWindow.StorageProvider.OpenFilePickerAsync(
+                new FilePickerOpenOptions
+                {
+                    Title = "选择 SFTP 私钥文件",
+                    AllowMultiple = false,
+                    SuggestedStartLocation = suggestedFolder
+                }).ConfigureAwait(true);
+
+            return files
+                .Select(file => file.TryGetLocalPath())
+                .FirstOrDefault(path => !string.IsNullOrWhiteSpace(path));
         }
 
         private static void DetachFromCurrentParent(Control input)
@@ -1550,15 +1670,6 @@ public sealed class DialogService : IDialogService
             values["webDavProfile"] = GetSelectedWebDavProfile();
         }
 
-        private static string NormalizeCredentialValue(string key, string value)
-        {
-            if (!string.Equals(key, "privateKey", StringComparison.Ordinal) || string.IsNullOrWhiteSpace(value))
-            {
-                return value;
-            }
-
-            return File.Exists(value) ? File.ReadAllText(value) : value;
-        }
     }
 
     private sealed record CredentialField(string Key, string DisplayName, bool IsRequired, bool IsSecret);
@@ -1596,6 +1707,12 @@ file static class AccountDialogGridExtensions
 public static Grid WithInputColumn(this Grid grid, Control input)
 {
     Grid.SetColumn(input, 1);
+    return grid;
+}
+
+public static Grid WithColumn(this Grid grid, Control input, int column)
+{
+    Grid.SetColumn(input, column);
     return grid;
 }
 
