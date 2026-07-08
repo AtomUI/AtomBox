@@ -24,8 +24,14 @@
 | `Direction` | 上传或下载。 |
 | `Options` | 覆盖策略、重试偏好等传输选项。 |
 | `Status` | 任务状态。 |
+| `FingerprintHashAlgorithm` | 可选，上传前计算出的文件指纹算法。 |
+| `FingerprintHashValue` | 可选，上传前计算出的文件指纹值。 |
+| `FingerprintFileSize` | 可选，计算指纹时读取到的本地文件大小。 |
+| `FingerprintCalculatedAt` | 可选，指纹计算完成时间。 |
 
 不要使用 `SourcePath` / `TargetPath` 作为核心模型字段。上传时 `LocalPath` 是来源、`RemotePath` 是目标；下载时 `RemotePath` 是来源、`LocalPath` 是目标。字段语义固定，方向只决定数据流向。
+
+指纹字段是上传任务的可选元数据。Transfer worker 不计算指纹、不查询索引、不决定是否上传；它只按已有任务执行传输，并在状态变化时调用 `ITransferStateStore`。
 
 ## 2. 状态模型
 
@@ -115,6 +121,8 @@ TransferHistoryPage
 
 具体存储实现属于 Infrastructure。Transfer 可以调用 Core 端口，但不能引用具体数据库、文件或缓存实现。
 
+上传指纹索引的成功写入不属于 Transfer worker 职责。第一版通过 Infrastructure 提供的 `ITransferStateStore` 装饰器处理：Transfer worker 仍只调用 `ITransferStateStore.UpdateStatusAsync(Succeeded)`，装饰器在真实状态保存成功后，按上传成功和完整指纹元数据条件更新本地索引。
+
 ## 7. 错误与重试
 
 Provider SDK/API/协议异常必须先由 Providers 转换为 Core 统一错误模型。
@@ -138,3 +146,4 @@ Transfer 可以根据 Core 错误模型和 `TransferRetryPolicy` 判断是否重
 - 不用 `SourcePath` / `TargetPath` 作为持久化核心字段。
 - 不让 ViewModel 直接订阅进度事件。
 - 不把 `TransferQueue` 暴露为 Application 或 Presentation 可消费对象。
+- 不让 Transfer worker 直接依赖文件指纹索引端口或 JSON 实现。
