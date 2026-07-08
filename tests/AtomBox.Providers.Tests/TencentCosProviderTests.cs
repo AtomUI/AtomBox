@@ -160,6 +160,19 @@ public sealed class TencentCosProviderTests
     }
 
     [Fact]
+    public async Task DeleteAsync_FolderDeletesFolderMarkerKey()
+    {
+        var client = new FakeTencentCosClient();
+        await using var provider = CreateProvider(client);
+
+        var result = await provider.DeleteAsync(new RemotePath("bucket-a-1250000000/folder/child", RemotePathKind.Folder));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("bucket-a-1250000000", client.DeletedBucketName);
+        Assert.Equal("folder/child/", client.DeletedKey);
+    }
+
+    [Fact]
     public async Task Creator_ReturnsValidationFailureAndReleasesLease_WhenCredentialSecretIsIncomplete()
     {
         var descriptor = StorageProviderRegistry.CreateDefaultDescriptors()

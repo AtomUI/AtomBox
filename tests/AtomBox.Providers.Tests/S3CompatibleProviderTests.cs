@@ -26,6 +26,19 @@ public sealed class S3CompatibleProviderTests
     }
 
     [Fact]
+    public async Task DeleteAsync_FolderDeletesFolderMarkerKey()
+    {
+        var client = new FakeS3CompatibleClient();
+        await using var provider = CreateProvider(client);
+
+        var result = await provider.DeleteAsync(new RemotePath("bucket-a/folder/child", RemotePathKind.Folder));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("bucket-a", client.DeletedBucketName);
+        Assert.Equal("folder/child/", client.DeletedKey);
+    }
+
+    [Fact]
     public async Task MoveAsync_CopiesThenDeletesObject()
     {
         var client = new FakeS3CompatibleClient();

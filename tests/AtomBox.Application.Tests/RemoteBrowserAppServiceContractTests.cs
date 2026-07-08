@@ -443,6 +443,51 @@ public sealed class RemoteBrowserAppServiceContractTests
     }
 
     [Fact]
+    public async Task DeleteRemoteItemAsync_ObjectStorageFolder_IgnoresMissingFolderMarker()
+    {
+        var accountId = StorageAccountId.New();
+        var folderPath = new RemotePath("bucket/photos", RemotePathKind.Folder);
+        var providerFactory = new ProbeProviderFactory(
+            OperationResult<IReadOnlyList<RemoteItem>>.Success([]),
+            deleteHandler: path => path == folderPath
+                ? OperationResult.Failure(StorageError.NotFound("Remote resource was not found."))
+                : OperationResult.Success());
+        var service = new RemoteBrowserAppService(
+            new SingleAccountRepository(accountId, StorageProviderCategory.ObjectStorage),
+            providerFactory);
+
+        var result = await service.DeleteRemoteItemAsync(new DeleteRemoteItemRequest(
+            accountId,
+            folderPath,
+            RemoteItemKind.Folder));
+
+        Assert.True(result.IsSuccess);
+    }
+
+    [Fact]
+    public async Task DeleteRemoteItemAsync_FileTransferFolder_PropagatesMissingFolder()
+    {
+        var accountId = StorageAccountId.New();
+        var folderPath = new RemotePath("photos", RemotePathKind.Folder);
+        var providerFactory = new ProbeProviderFactory(
+            OperationResult<IReadOnlyList<RemoteItem>>.Success([]),
+            deleteHandler: path => path == folderPath
+                ? OperationResult.Failure(StorageError.NotFound("Remote folder was not found."))
+                : OperationResult.Success());
+        var service = new RemoteBrowserAppService(
+            new SingleAccountRepository(accountId, StorageProviderCategory.FileTransfer),
+            providerFactory);
+
+        var result = await service.DeleteRemoteItemAsync(new DeleteRemoteItemRequest(
+            accountId,
+            folderPath,
+            RemoteItemKind.Folder));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCategory.NotFound, result.Error?.Category);
+    }
+
+    [Fact]
     public async Task DeleteRemoteItemAsync_ProviderCreationFailure_PropagatesError()
     {
         var accountId = StorageAccountId.New();
@@ -656,9 +701,10 @@ public sealed class RemoteBrowserAppServiceContractTests
             RemotePageCursor? previousCursor = null,
             RemotePageCursor? nextCursor = null,
             byte[]? downloadPayload = null,
-            OperationResult? downloadResult = null)
+            OperationResult? downloadResult = null,
+            Func<RemotePath, OperationResult>? deleteHandler = null)
         {
-            _provider = new ProbeStorageProvider(probeResult, previousCursor, nextCursor, downloadPayload, downloadResult);
+            _provider = new ProbeStorageProvider(probeResult, previousCursor, nextCursor, downloadPayload, downloadResult, deleteHandler);
         }
 
         public ProbeStorageProvider Provider => _provider;
@@ -674,19 +720,22 @@ public sealed class RemoteBrowserAppServiceContractTests
         private readonly RemotePageCursor? _nextCursor;
         private readonly byte[] _downloadPayload;
         private readonly OperationResult _downloadResult;
+        private readonly Func<RemotePath, OperationResult>? _deleteHandler;
 
         public ProbeStorageProvider(
             OperationResult<IReadOnlyList<RemoteItem>> probeResult,
             RemotePageCursor? previousCursor = null,
             RemotePageCursor? nextCursor = null,
             byte[]? downloadPayload = null,
-            OperationResult? downloadResult = null)
+            OperationResult? downloadResult = null,
+            Func<RemotePath, OperationResult>? deleteHandler = null)
         {
             _probeResult = probeResult;
             _previousCursor = previousCursor;
             _nextCursor = nextCursor;
             _downloadPayload = downloadPayload ?? [];
             _downloadResult = downloadResult ?? OperationResult.Success();
+            _deleteHandler = deleteHandler;
         }
 
         public StorageCapabilitySet Capabilities => StorageCapabilitySet.Empty;
@@ -716,7 +765,7 @@ public sealed class RemoteBrowserAppServiceContractTests
         }
 
         public Task<OperationResult> DeleteAsync(RemotePath path, CancellationToken cancellationToken = default)
-            => Task.FromResult(OperationResult.Success());
+            => Task.FromResult(_deleteHandler?.Invoke(path) ?? OperationResult.Success());
 
         public Task<OperationResult> UploadAsync(RemotePath path, Stream content, long? contentLength,
             IProgress<TransferProgress>? progress = null, CancellationToken cancellationToken = default)
