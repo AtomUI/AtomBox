@@ -24,6 +24,7 @@ Infrastructure 是仓库和存储实现，不是业务流程控制器。
 | 应用设置 | `IApplicationSettingsRepository` | 保存应用设置快照，不保存 UI 临时状态。 |
 | 传输任务 | `ITransferTaskStore` | 保存任务事实，例如账号 ID、本地路径、远程路径、方向、选项和状态。 |
 | 传输状态 | `ITransferStateStore` | 保存或查询状态快照，供 Application 组织队列和历史结果。 |
+| 上传指纹索引 | `IFileFingerprintIndexStore` | 保存本机历史上传指纹和远端目标位置，不保存 secret material。 |
 | 凭据引用 | `IStorageAccountRepository` / `ICredentialStore` 协作 | 账号只保存 `CredentialRef`，secret payload 由 Credential Store 管。 |
 
 本地持久化模型可以与 Core 模型分离。需要持久化优化字段时，必须通过 mapper 转换，不能把数据库表结构反向塞进 Core。
@@ -78,7 +79,36 @@ Infrastructure 是仓库和存储实现，不是业务流程控制器。
 - metadata cache。
 - 目录浏览临时缓存。
 
+上传指纹索引介于业务辅助状态和本地缓存之间：它可以被用户清空，丢失后不影响远端数据正确性，但只要存在就必须按 schema version、原子写入和结构化错误处理，不能写成随意追加的临时文件。
+
 关键状态不能按普通缓存处理。
+
+## 4.1 上传指纹索引
+
+第一版上传指纹索引使用普通 JSON 文件，不引入 SQLite 或 JSONL。
+
+推荐路径：
+
+```text
+{AtomBoxStoragePaths.StateDirectory}/fingerprints/file-fingerprint-index.json
+```
+
+Infrastructure 负责：
+
+- 通过 `AtomBoxStoragePaths` 管理索引文件位置。
+- 创建索引目录。
+- 读取和写入 JSON 文档。
+- 保留 `schemaVersion`。
+- 按账号范围查询历史上传记录。
+- 上传成功后写入或更新索引记录。
+- 返回索引统计信息。
+- 清空全部索引。
+
+索引文件禁止保存 secret material。`etag` 等 provider 返回值只能作为参考字段，不能作为跨 provider 的文件内容指纹。
+
+上传成功后的索引写入通过 `FingerprintAwareTransferStateStoreDecorator` 完成。装饰器必须先调用真实 `TransferStateStore` 保存状态；只有真实状态保存成功，且任务为 `Upload + Succeeded + 完整指纹元数据 + 设置开启` 时，才允许写入索引。
+
+索引写入失败不得把已经成功的上传任务改成失败。该失败属于非阻塞本地辅助状态失败。
 
 ## 5. 迁移策略
 

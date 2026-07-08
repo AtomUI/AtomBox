@@ -120,6 +120,14 @@ src/AtomBox.Desktop/
 - UI 专用类型不能被 Core、Application、Transfer、Providers、Infrastructure 引用。
 - 桌面端错误展示应消费 Application 返回的统一错误结果，不能直接展示 SDK 原始异常。
 
+上传指纹索引 UI 规则：
+
+- Settings 页面只展示“指纹索引”开关；索引文件路径、记录数量、最近更新时间和清空全部索引入口暂不显示。
+- Remote Browser 页面可以在底部状态区域展示上传前指纹计算文案。
+- 指纹计算期间可以禁用上传入口，避免同一个页面并发启动多个上传准备会话。
+- 历史命中确认弹窗由 Presentation 调用统一对话框服务展示。
+- ViewModel 不直接读写索引 JSON 文件，不直接访问 `IFileFingerprintIndexStore` 的 Infrastructure 实现。
+
 ## 7. 生命周期约束
 
 Presentation / Desktop 是唯一组合根，负责应用启动、依赖注册、主窗口创建和关闭协调。

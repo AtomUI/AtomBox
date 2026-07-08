@@ -198,6 +198,41 @@ Image
 
 Core 不能引用 Avalonia、AtomUI、Bitmap、Image 或任何 UI 类型。
 
+## 5.2 文件指纹索引模型
+
+文件指纹索引用于表达“本机曾经向某个存储账号上传过某个文件”的业务事实。它不是远端 provider 能力，也不是对象存储协议的一部分。
+
+第一版主指纹算法为 `sha256`，主匹配条件为：
+
+```text
+hashAlgorithm + hashValue + fileSize + storageAccountId
+```
+
+`FileFingerprintQuery` 表示一次账号范围内的历史上传查询：
+
+| 字段 | 含义 |
+| --- | --- |
+| `HashAlgorithm` | 指纹算法，第一版为 `sha256`。 |
+| `HashValue` | 指纹值。 |
+| `FileSize` | 计算指纹时读取到的本地文件大小。 |
+| `StorageAccountId` | 查询范围限定到当前存储账号。 |
+
+`FileFingerprintRecord` 表示一条历史上传记录：
+
+| 字段 | 含义 |
+| --- | --- |
+| `HashAlgorithm` | 指纹算法。 |
+| `HashValue` | 指纹值。 |
+| `FileSize` | 本地文件大小。 |
+| `StorageAccountId` | 上传目标账号。 |
+| `ProviderId` | 上传目标 Provider。 |
+| `RemotePath` | 上传成功后的远端路径。 |
+| `ETag` | provider 返回的可选版本标识，只作参考。 |
+| `UploadedAt` | 上传成功时间。 |
+| `LastSeenAt` | 最近一次查询或更新命中时间。 |
+
+`ETag` 不参与主匹配判断。分片上传、服务端加密或不同厂商实现都可能让 ETag 不等于文件内容 MD5。
+
 ## 6. 传输模型
 
 `TransferTaskId` 是传输任务稳定标识。
@@ -217,6 +252,10 @@ Core 不能引用 Avalonia、AtomUI、Bitmap、Image 或任何 UI 类型。
 | `Options` | `TransferOptions`。 |
 | `CreatedAt` | 创建时间。 |
 | `UpdatedAt` | 最近更新时间。 |
+| `FingerprintHashAlgorithm` | 可选，上传前计算出的指纹算法。 |
+| `FingerprintHashValue` | 可选，上传前计算出的指纹值。 |
+| `FingerprintFileSize` | 可选，计算指纹时读取到的本地文件大小。 |
+| `FingerprintCalculatedAt` | 可选，指纹计算完成时间。 |
 
 `TransferTask` 禁止保存：
 
@@ -235,6 +274,8 @@ Download
 ```
 
 `TransferDirection` 只表示传输方向，不用来反向解释 `SourcePath` / `TargetPath` 这种含糊字段。上传时 `LocalPath` 是来源、`RemotePath` 是目标；下载时 `RemotePath` 是来源、`LocalPath` 是目标。字段语义必须固定，方向只决定数据流向。
+
+`TransferTask` 中的指纹字段是可选上传元数据，只用于上传成功后写入本地文件指纹索引。下载任务、设置关闭时创建的上传任务、用户取消历史命中提示时，都可以不携带这些字段。
 
 `TransferStatus` 第一版建议：
 
@@ -270,6 +311,7 @@ Canceled
 - 默认并发数。
 - 默认覆盖策略。
 - 传输完成后的基础行为偏好。
+- 是否启用上传指纹索引。
 
 不应进入 Core 的设置示例：
 

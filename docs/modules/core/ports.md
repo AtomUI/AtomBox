@@ -102,6 +102,7 @@ Registry 边界：
 ```text
 IStorageAccountRepository
 IApplicationSettingsRepository
+IFileFingerprintIndexStore
 ```
 
 `IStorageAccountRepository` 负责账号配置事实的持久化读写。
@@ -131,6 +132,25 @@ IApplicationSettingsRepository
 - 保存 provider SDK 原始配置对象。
 
 设置保存流程必须由 Application 用例显式触发。
+
+`IFileFingerprintIndexStore` 负责本地上传指纹索引的读取和维护。
+
+它可以提供：
+
+- 按 `hashAlgorithm + hashValue + fileSize + storageAccountId` 查询历史上传记录。
+- 上传成功后写入或更新历史记录。
+- 返回索引文件路径、记录数量和最近更新时间等统计信息。
+- 清空全部索引。
+
+它不能负责：
+
+- 计算文件指纹。
+- 决定用户是否继续上传。
+- 访问远端 provider。
+- 弹确认框。
+- 保存 secret material。
+
+指纹计算和上传前命中确认属于 Application / Presentation 协作流程；本地 JSON、目录创建和损坏文件处理属于 Infrastructure 实现细节。
 
 ## 5. 凭据端口
 

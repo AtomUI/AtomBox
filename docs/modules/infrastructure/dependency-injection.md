@@ -57,6 +57,7 @@ Infrastructure 可以注册 Core 端口实现：
 - `ICredentialStore`
 - `ITransferTaskStore`
 - `ITransferStateStore`
+- `IFileFingerprintIndexStore`
 
 Infrastructure 可以注册技术服务：
 
@@ -96,6 +97,7 @@ Infrastructure 禁止注册：
 | `IApplicationSettingsRepository` | Singleton | 应用级设置仓储；返回设置快照，不长期持有写入事务。 |
 | `ITransferTaskStore` | Singleton | 应用级任务存储；不能持有 Transfer worker 或运行时队列。 |
 | `ITransferStateStore` | Singleton | 应用级状态存储；只暴露可查询状态快照，不暴露 Transfer Runtime 内部对象。 |
+| `IFileFingerprintIndexStore` | Singleton | 应用级本地指纹索引；按操作读写 JSON 文件，不能保存 secret material。 |
 | `ICredentialStore` | Singleton | 应用级凭据服务；不能缓存 plaintext secret。 |
 | `CredentialProtectionService` | Singleton | 无状态或轻状态加密适配服务；不能持有 plaintext secret。 |
 | `LoggingInitializer` | Singleton | 启动初始化对象，由 Desktop 协调初始化和关闭 flush。 |
@@ -105,6 +107,16 @@ Infrastructure 禁止注册：
 Singleton 不等于全局资源常驻。
 
 Repository / Store 可以是 Singleton，但文件句柄、数据库连接、事务、锁必须按操作创建和释放。Credential Store 可以是 Singleton，但 secret material 不能成为字段缓存。Cache 可以是 Singleton，但必须有容量和清理策略。
+
+`ITransferStateStore` 可以绑定为装饰器实现，用于在真实状态保存成功后维护辅助索引。第一版上传指纹索引的推荐装配方式是：
+
+```text
+TransferStateStore
+IFileFingerprintIndexStore -> JsonFileFingerprintIndexStore
+ITransferStateStore -> FingerprintAwareTransferStateStoreDecorator
+```
+
+装饰器仍属于 Infrastructure；Transfer worker 只依赖 `ITransferStateStore`，不需要知道装饰器、JSON 文件或索引端口的存在。
 
 ## 6. 启动与关闭
 
