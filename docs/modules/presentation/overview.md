@@ -128,6 +128,14 @@ src/AtomBox.Desktop/
 - 历史命中确认弹窗由 Presentation 调用统一对话框服务展示。
 - ViewModel 不直接读写索引 JSON 文件，不直接访问 `IFileFingerprintIndexStore` 的 Infrastructure 实现。
 
+账号弹窗 UI 规则：
+
+- 添加或编辑 Provider 账号时，必填项、格式和凭据文件读取等校验错误统一通过弹窗顶部 Message 展示，不在表单底部显示单独校验文本。
+- 校验错误 Message 不自动消失；用户修改字段、切换 Provider 或重新发起连接测试时清除。
+- SFTP 私钥认证不允许用户直接粘贴私钥文本内容。
+- 私钥字段使用只读路径框加文件选择按钮，文件选择器优先打开当前用户家目录下的 `.ssh` 目录；如果 `.ssh` 不存在，则退回用户家目录。
+- Presentation 只负责选择本机私钥文件和展示校验错误；私钥文件内容仍作为凭据材料进入既有凭据保存流程，不把本机私钥文件路径作为账号配置持久化。
+
 ## 7. 生命周期约束
 
 Presentation / Desktop 是唯一组合根，负责应用启动、依赖注册、主窗口创建和关闭协调。
