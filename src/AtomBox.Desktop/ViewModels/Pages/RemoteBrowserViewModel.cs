@@ -1233,7 +1233,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             return;
         }
 
-        if (IsObjectStorageFolderOperationDisabled(kind))
+        if (IsObjectStorageFolderRenameDisabled(kind))
         {
             _messages.Info("OSS 文件夹重命名暂未开放。");
             return;
@@ -1642,12 +1642,6 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             return;
         }
 
-        if (IsObjectStorageFolderOperationDisabled(kind))
-        {
-            _messages.Info("OSS 文件夹删除暂未开放。");
-            return;
-        }
-
         var objectType = kind == RemoteItemKind.Folder ? "文件夹" : "文件";
         var extraWarning = kind == RemoteItemKind.Folder
             ? "\n\n该文件夹内的所有子文件夹和文件都会被删除。"
@@ -1671,9 +1665,12 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         if (result.IsFailure)
         {
             StatusMessage = result.Error?.Message ?? "删除远程对象失败。";
+            var failureSummary = kind == RemoteItemKind.Folder
+                ? "删除远程文件夹失败；部分对象可能已经删除，请刷新后确认远端实际状态。"
+                : "删除远程对象失败。";
             SetErrorDetails(
                 "删除远程对象失败",
-                "删除远程对象失败。",
+                failureSummary,
                 result.Error,
                 new Dictionary<string, string>
                 {
@@ -1692,14 +1689,13 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
     private bool CanDeleteItem(RemoteItem item)
     {
         return (_pathContext.CanDeleteSelectedFile || CanWriteAtCurrentFileTransferLocation()) &&
-               item.Kind is RemoteItemKind.File or RemoteItemKind.Folder &&
-               !IsObjectStorageFolderOperationDisabled(item.Kind);
+               item.Kind is RemoteItemKind.File or RemoteItemKind.Folder;
     }
 
     private bool CanRenameItem(RemoteItem item)
     {
         return item.Kind is RemoteItemKind.File or RemoteItemKind.Folder &&
-               !IsObjectStorageFolderOperationDisabled(item.Kind);
+               !IsObjectStorageFolderRenameDisabled(item.Kind);
     }
 
     private static bool CanPreviewItem(RemoteItem item)
@@ -1719,7 +1715,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         return maxBytes > 0 && (item.Size is null || item.Size <= maxBytes);
     }
 
-    private bool IsObjectStorageFolderOperationDisabled(RemoteItemKind kind)
+    private bool IsObjectStorageFolderRenameDisabled(RemoteItemKind kind)
     {
         return kind == RemoteItemKind.Folder &&
                _currentAccount?.ProviderCategory == StorageProviderCategory.ObjectStorage;
