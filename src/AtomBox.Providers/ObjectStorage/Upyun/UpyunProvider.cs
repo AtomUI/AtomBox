@@ -91,7 +91,10 @@ public sealed class UpyunProvider : IStorageProvider
                     StorageError.Validation("Bucket root cannot be deleted as an object.")));
             }
 
-            _client.DeleteObject(upyunPath.BucketName, upyunPath.KeyPrefix);
+            var deleteKey = path.Kind == RemotePathKind.Folder
+                ? upyunPath.ToFolderPrefix()
+                : upyunPath.KeyPrefix;
+            _client.DeleteObject(upyunPath.BucketName, deleteKey);
             return Task.FromResult(OperationResult.Success());
         }
         catch (Exception exception)

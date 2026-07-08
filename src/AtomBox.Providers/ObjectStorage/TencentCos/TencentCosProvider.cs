@@ -125,7 +125,10 @@ public sealed class TencentCosProvider : IStorageProvider
                     StorageError.Validation("Bucket root cannot be deleted as an object.")));
             }
 
-            _client.DeleteObject(cosPath.BucketName, cosPath.KeyPrefix);
+            var deleteKey = path.Kind == RemotePathKind.Folder
+                ? cosPath.ToFolderPrefix()
+                : cosPath.KeyPrefix;
+            _client.DeleteObject(cosPath.BucketName, deleteKey);
             return Task.FromResult(OperationResult.Success());
         }
         catch (Exception exception)

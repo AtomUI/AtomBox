@@ -124,7 +124,10 @@ public sealed class AliyunOssProvider : IStorageProvider
                     StorageError.Validation("Bucket root cannot be deleted as an object.")));
             }
 
-            _client.DeleteObject(ossPath.BucketName, ossPath.KeyPrefix);
+            var deleteKey = path.Kind == RemotePathKind.Folder
+                ? ossPath.ToFolderPrefix()
+                : ossPath.KeyPrefix;
+            _client.DeleteObject(ossPath.BucketName, deleteKey);
             return Task.FromResult(OperationResult.Success());
         }
         catch (Exception exception)

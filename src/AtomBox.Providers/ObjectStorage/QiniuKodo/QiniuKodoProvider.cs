@@ -124,7 +124,10 @@ public sealed class QiniuKodoProvider : IStorageProvider
                     StorageError.Validation("Bucket root cannot be deleted as an object.")));
             }
 
-            _client.DeleteObject(kodoPath.BucketName, kodoPath.KeyPrefix);
+            var deleteKey = path.Kind == RemotePathKind.Folder
+                ? kodoPath.ToFolderPrefix()
+                : kodoPath.KeyPrefix;
+            _client.DeleteObject(kodoPath.BucketName, deleteKey);
             return Task.FromResult(OperationResult.Success());
         }
         catch (Exception exception)

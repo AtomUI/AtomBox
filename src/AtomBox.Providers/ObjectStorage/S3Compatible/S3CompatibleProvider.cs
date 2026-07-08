@@ -120,7 +120,10 @@ public class S3CompatibleProvider : IStorageProvider
                     StorageError.Validation("Bucket root cannot be deleted as an object.")));
             }
 
-            _client.DeleteObject(objectPath.BucketName, objectPath.KeyPrefix);
+            var deleteKey = path.Kind == RemotePathKind.Folder
+                ? objectPath.ToFolderPrefix()
+                : objectPath.KeyPrefix;
+            _client.DeleteObject(objectPath.BucketName, deleteKey);
             return Task.FromResult(OperationResult.Success());
         }
         catch (Exception exception)
