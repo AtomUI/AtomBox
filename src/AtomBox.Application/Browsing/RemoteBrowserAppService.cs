@@ -139,6 +139,17 @@ public sealed class RemoteBrowserAppService
             return OperationResult<PreviewRemoteFileResult>.Failure(accountResult.Error!);
         }
 
+        if (previewKind == RemotePreviewKind.Image)
+        {
+            return OperationResult<PreviewRemoteFileResult>.Success(new PreviewRemoteFileResult(
+                RemotePreviewKind.Image,
+                fileName,
+                contentType,
+                request.Size ?? 0,
+                Text: null,
+                EncodingName: null));
+        }
+
         var providerResult = await _providerFactory.CreateAsync(accountResult.GetValueOrThrow(), cancellationToken).ConfigureAwait(false);
         if (providerResult.IsFailure)
         {
@@ -167,18 +178,6 @@ public sealed class RemoteBrowserAppService
             return OperationResult<PreviewRemoteFileResult>.Failure(StorageError.NotSupported("This file is too large to preview. Please download it to view."));
         }
 
-        if (previewKind == RemotePreviewKind.Image)
-        {
-            return OperationResult<PreviewRemoteFileResult>.Success(new PreviewRemoteFileResult(
-                RemotePreviewKind.Image,
-                fileName,
-                contentType,
-                content.LongLength,
-                content,
-                Text: null,
-                EncodingName: null));
-        }
-
         var textResult = TryDecodeText(content);
         if (textResult is null)
         {
@@ -190,9 +189,101 @@ public sealed class RemoteBrowserAppService
             fileName,
             contentType,
             content.LongLength,
-            content,
             textResult.Value.Text,
             textResult.Value.EncodingName));
+    }
+
+    public async Task<OperationResult<RemotePreviewStreamResult>> OpenRemoteImagePreviewStreamAsync(
+        PreviewRemoteFileRequest request,
+        RemotePreviewOptions? options = null,
+        CancellationToken cancellationToken = default)
+    {
+        options ??= RemotePreviewOptions.Default;
+
+        if (request.StorageAccountId.IsEmpty)
+        {
+            return OperationResult<RemotePreviewStreamResult>.Failure(StorageError.Validation("Storage account id is required."));
+        }
+
+        if (request.Kind != RemoteItemKind.File)
+        {
+            return OperationResult<RemotePreviewStreamResult>.Failure(StorageError.NotSupported("Only remote files can be previewed."));
+        }
+
+        var fileName = request.FileName.Trim();
+        if (string.IsNullOrWhiteSpace(fileName))
+        {
+            return OperationResult<RemotePreviewStreamResult>.Failure(StorageError.Validation("Remote file name is required."));
+        }
+
+        if (request.Size < 0)
+        {
+            return OperationResult<RemotePreviewStreamResult>.Failure(StorageError.Validation("Remote file size cannot be negative."));
+        }
+
+        if (!TryResolvePreviewType(fileName, out var previewKind, out _) || previewKind != RemotePreviewKind.Image)
+        {
+            return OperationResult<RemotePreviewStreamResult>.Failure(StorageError.NotSupported("Only supported image files can be opened as preview streams."));
+        }
+
+        if (request.Size is > 0 && request.Size > options.MaxImageBytes)
+        {
+            return OperationResult<RemotePreviewStreamResult>.Failure(StorageError.NotSupported("This file is too large to preview. Please download it to view."));
+        }
+
+        var accountResult = await _accounts.GetByIdAsync(request.StorageAccountId, cancellationToken).ConfigureAwait(false);
+        if (accountResult.IsFailure)
+        {
+            return OperationResult<RemotePreviewStreamResult>.Failure(accountResult.Error!);
+        }
+
+        var providerResult = await _providerFactory.CreateAsync(accountResult.GetValueOrThrow(), cancellationToken).ConfigureAwait(false);
+        if (providerResult.IsFailure)
+        {
+            return OperationResult<RemotePreviewStreamResult>.Failure(providerResult.Error!);
+        }
+
+        await using var provider = providerResult.GetValueOrThrow();
+        var destination = new LimitedMemoryStream(options.MaxImageBytes);
+        var returnDestination = false;
+        try
+        {
+            OperationResult downloadResult;
+            try
+            {
+                downloadResult = await provider.DownloadAsync(
+                    request.Path,
+                    destination,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+            }
+            catch (InvalidOperationException ex) when (ex.Message.Contains("preview content exceeded", StringComparison.OrdinalIgnoreCase))
+            {
+                return OperationResult<RemotePreviewStreamResult>.Failure(StorageError.NotSupported("This file is too large to preview. Please download it to view."));
+            }
+
+            if (downloadResult.IsFailure)
+            {
+                return OperationResult<RemotePreviewStreamResult>.Failure(downloadResult.Error!);
+            }
+
+            if (destination.Length > options.MaxImageBytes)
+            {
+                return OperationResult<RemotePreviewStreamResult>.Failure(StorageError.NotSupported("This file is too large to preview. Please download it to view."));
+            }
+
+            destination.Position = 0;
+            returnDestination = true;
+            return OperationResult<RemotePreviewStreamResult>.Success(new RemotePreviewStreamResult(
+                destination,
+                destination.Length));
+        }
+        finally
+        {
+            if (!returnDestination)
+            {
+                await destination.DisposeAsync().ConfigureAwait(false);
+            }
+        }
     }
 
     public async Task<OperationResult> DeleteRemoteItemAsync(
