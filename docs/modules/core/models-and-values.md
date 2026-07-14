@@ -189,10 +189,18 @@ Image
 | `Kind` | 文本或图片。 |
 | `FileName` | 文件名。 |
 | `ContentType` | 根据扩展名推断的 MIME 类型。 |
-| `Size` | 实际读取到的字节数。 |
-| `Content` | 原始字节。 |
+| `Size` | 图片为列表返回大小，文本为实际读取字节数。 |
 | `Text` | 文本预览解码结果；图片预览为空。 |
 | `EncodingName` | 文本编码名称；图片预览为空。 |
+
+`RemotePreviewStreamResult` 表示按需打开的远程图片内容：
+
+| 字段 | 含义 |
+| --- | --- |
+| `Content` | 位置为 `0` 的可读 Stream，由调用方负责释放。 |
+| `Size` | 实际读取到的图片字节数。 |
+
+图片预检结果不携带 `byte[]`。Desktop 在 ImagePreviewer 请求来源时，通过 Application 单独取得 `RemotePreviewStreamResult`。Core 只引用 BCL `Stream`，不能引用 AtomUI 的 `IImagePreviewSource`。
 
 不支持预览、文件超限、编码不支持、疑似二进制内容等情况通过 `OperationResult<PreviewRemoteFileResult>.Failure(...)` 返回。失败状态不写入 `PreviewRemoteFileResult`。
 
