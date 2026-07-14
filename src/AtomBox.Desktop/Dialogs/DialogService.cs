@@ -5,7 +5,6 @@ using Avalonia.Controls.Primitives;
 using Avalonia.Controls.Templates;
 using Avalonia.Layout;
 using Avalonia.Media;
-using Avalonia.Media.Imaging;
 using Avalonia.Platform.Storage;
 using Avalonia.Threading;
 using AtomBox.Application.Accounts;
@@ -34,6 +33,8 @@ using AtomDialogButton = AtomUI.Desktop.Controls.DialogButton;
 using AtomDialogButtonRole = AtomUI.Desktop.Controls.DialogButtonRole;
 using AtomLineEdit = AtomUI.Desktop.Controls.LineEdit;
 using AtomTextArea = AtomUI.Desktop.Controls.TextArea;
+using AtomImagePreviewer = AtomUI.Desktop.Controls.ImagePreviewer;
+using AtomStreamImagePreviewSource = AtomUI.Desktop.Controls.StreamImagePreviewSource;
 
 namespace AtomBox.Desktop.Dialogs;
 
@@ -207,6 +208,12 @@ public sealed class DialogService : IDialogService
 
         try
         {
+            if (request.Kind == RemotePreviewKind.Image)
+            {
+                await ShowImagePreviewAsync(request, mainWindow).ConfigureAwait(true);
+                return;
+            }
+
             await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
             await AtomDialog.ShowDialogModalAsync(
                 new PreviewDialogContent(request),
@@ -248,6 +255,50 @@ public sealed class DialogService : IDialogService
         }
     }
 
+    private static async Task ShowImagePreviewAsync(PreviewDialogRequest request, Window mainWindow)
+    {
+        if (request.OpenImageStreamAsync is null)
+        {
+            throw new InvalidOperationException("Image preview stream factory is required.");
+        }
+
+        var previewer = mainWindow.FindControl<AtomImagePreviewer>("RemoteImagePreviewer")
+            ?? throw new InvalidOperationException("Remote image previewer host was not found.");
+        var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        void HandleDialogClosed(object? sender, EventArgs args)
+        {
+            completion.TrySetResult();
+        }
+
+        try
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                previewer.DialogClosed += HandleDialogClosed;
+                previewer.Source = new AtomStreamImagePreviewSource(
+                    request.OpenImageStreamAsync,
+                    displayName: request.FileName,
+                    contentType: request.ContentType);
+                previewer.PreviewTitle = request.FileName;
+                previewer.IsDialogModal = true;
+                previewer.IsOpen = true;
+            }, DispatcherPriority.Background);
+
+            await completion.Task.ConfigureAwait(true);
+        }
+        finally
+        {
+            await Dispatcher.UIThread.InvokeAsync(() =>
+            {
+                previewer.DialogClosed -= HandleDialogClosed;
+                previewer.IsOpen = false;
+                previewer.Source = null;
+                previewer.PreviewTitle = null;
+            }, DispatcherPriority.Background);
+        }
+    }
+
     private static Window? GetMainWindow()
     {
         return Avalonia.Application.Current?.ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop
@@ -260,7 +311,7 @@ public sealed class DialogService : IDialogService
         private readonly AtomLineEdit _input = new()
         {
             StyleVariant = InputControlStyleVariant.Outlined,
-            SizeType = SizeType.Middle,
+            SizeType = CustomizableSizeType.Middle,
             MinHeight = 34
         };
 
@@ -545,30 +596,6 @@ public sealed class DialogService : IDialogService
 
         private static Control BuildPreviewContent(PreviewDialogRequest request)
         {
-            if (request.Kind == RemotePreviewKind.Image)
-            {
-                using var stream = new MemoryStream(request.Content);
-                return new Border
-                {
-                    BorderBrush = Brushes.LightGray,
-                    BorderThickness = new Thickness(1),
-                    Background = Brushes.White,
-                    Padding = new Thickness(12),
-                    Child = new ScrollViewer
-                    {
-                        HorizontalScrollBarVisibility = ScrollBarVisibility.Auto,
-                        VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                        Content = new Image
-                        {
-                            Source = new Bitmap(stream),
-                            Stretch = Stretch.Uniform,
-                            HorizontalAlignment = HorizontalAlignment.Center,
-                            VerticalAlignment = VerticalAlignment.Center
-                        }
-                    }
-                };
-            }
-
             return new AtomTextArea
             {
                 Text = request.Text ?? string.Empty,
@@ -583,7 +610,7 @@ public sealed class DialogService : IDialogService
                 IsAutoSize = false,
                 IsResizable = false,
                 StyleVariant = InputControlStyleVariant.Outlined,
-                SizeType = SizeType.Middle
+                SizeType = CustomizableSizeType.Middle
             };
         }
 
@@ -1356,7 +1383,7 @@ public sealed class DialogService : IDialogService
             return new AtomLineEdit
             {
                 StyleVariant = InputControlStyleVariant.Outlined,
-                SizeType = SizeType.Middle,
+                SizeType = CustomizableSizeType.Middle,
                 MinHeight = 34
             };
         }
@@ -1403,7 +1430,7 @@ public sealed class DialogService : IDialogService
             {
                 Content = "选择",
                 ButtonType = AtomButtonType.Default,
-                SizeType = SizeType.Middle,
+                SizeType = CustomizableSizeType.Middle,
                 MinHeight = 34,
                 MinWidth = 72
             };

@@ -7,6 +7,6 @@ public sealed record PreviewDialogRequest(
     string FileName,
     string ContentType,
     long Size,
-    byte[] Content,
+    Func<CancellationToken, ValueTask<Stream>>? OpenImageStreamAsync,
     string? Text,
     string? EncodingName);

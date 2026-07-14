@@ -86,6 +86,13 @@
                            Foreground="{StaticResource AtomBoxStatusTextBrush}" />
             </StackPanel>
         </Border>
+
+        <atom:ImagePreviewer Grid.Row="0"
+                             Name="RemoteImagePreviewer"
+                             Width="0"
+                             Height="0"
+                             Opacity="0"
+                             IsHitTestVisible="False" />
     </Grid>
     </Border>
 </atom:Window>

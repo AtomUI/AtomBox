@@ -1189,12 +1189,13 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         }
 
         StatusMessage = $"正在预览：{name}";
-        var result = await RunWithLoadingAsync(() => _browser.PreviewRemoteFileAsync(new PreviewRemoteFileRequest(
+        var previewRequest = new PreviewRemoteFileRequest(
             _storageAccountId.Value,
             path,
             name,
             sizeBytes,
-            kind))).ConfigureAwait(true);
+            kind);
+        var result = await RunWithLoadingAsync(() => _browser.PreviewRemoteFileAsync(previewRequest)).ConfigureAwait(true);
 
         if (result.IsFailure)
         {
@@ -1219,7 +1220,21 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             preview.FileName,
             preview.ContentType,
             preview.Size,
-            preview.Content,
+            preview.Kind == RemotePreviewKind.Image
+                ? async cancellationToken =>
+                {
+                    var streamResult = await _browser.OpenRemoteImagePreviewStreamAsync(
+                        previewRequest,
+                        cancellationToken: cancellationToken).ConfigureAwait(false);
+                    if (streamResult.IsFailure)
+                    {
+                        throw new InvalidOperationException(
+                            streamResult.Error?.Message ?? "Remote image preview could not be loaded.");
+                    }
+
+                    return streamResult.GetValueOrThrow().Content;
+                }
+                : null,
             preview.Text,
             preview.EncodingName)).ConfigureAwait(true);
         StatusMessage = $"已打开预览：{name}";
