@@ -1,12 +1,14 @@
 # 远程文件预览
 
-> 状态：In Progress
+> 状态：Done
 >
 > 目标版本：v0.1.3
 >
 > 创建时间：2026-07-05
 >
 > 影响模块：Core / Application / Desktop
+
+> 后续演进：本文记录 v0.1.3 首次实现。图片预览的数据契约和渲染方式已由 v0.1.5 的 `atomui-image-previewer.md` 替代；文本预览规则继续有效。
 
 ## 背景
 

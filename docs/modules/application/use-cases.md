@@ -56,7 +56,8 @@ Application 不能退化成 Provider、Transfer、Infrastructure 的机械转发
 | --- | --- | --- | --- |
 | 解析资源入口 | `ResolveRemoteEntryRequest` | `OperationResult<RemoteEntryResult>` | 处理资源类型节点进入右侧页面时的账号选择、空状态或上次账号。 |
 | 列出远程资源 | `ListRemoteItemsRequest` | `OperationResult<ListRemoteItemsResult>` | 返回 `RemoteItem` 快照列表。 |
-| 预览远程文件 | `PreviewRemoteFileRequest` | `OperationResult<PreviewRemoteFileResult>` | 读取图片或小文本文件到内存结果；不创建下载任务。 |
+| 预检远程文件预览 | `PreviewRemoteFileRequest` | `OperationResult<PreviewRemoteFileResult>` | 图片返回元数据，小文本完成读取和解码；不创建下载任务。 |
+| 打开远程图片预览流 | `PreviewRemoteFileRequest` | `OperationResult<RemotePreviewStreamResult>` | ImagePreviewer 按需调用，返回受大小限制的图片 Stream。 |
 | 删除远程资源 | `DeleteRemoteItemRequest` | `OperationResult` | 删除文件或对象；文件夹第一版只打开不删除。 |
 | 获取路径上下文 | `GetRemotePathContextRequest` | `OperationResult<RemotePathContextResult>` | 组织当前路径、是否可上传、是否 bucket 列表等页面所需状态。 |
 
@@ -68,8 +69,11 @@ Application 不能退化成 Provider、Transfer、Infrastructure 的机械转发
 - 只支持 Core 预览模型定义的图片和小文本格式。
 - 通过文件名扩展名判断预览类型和 content type。
 - 根据请求中的 `Size` 做读取前大小预检；超限时不得创建 provider。
-- 创建短生命周期 provider 后，复用 `IStorageProvider.DownloadAsync(RemotePath, Stream, ...)` 写入 Application 创建的 `MemoryStream`。
-- 读取完成后再次校验实际字节数，避免远程 size 缺失或不准确导致大文件进入内存。
+- 图片预检只读取账号和请求元数据，不创建 provider、不提前下载图片。
+- `OpenRemoteImagePreviewStreamAsync` 由 ImagePreviewer 的 Stream 工厂按需调用。它创建短生命周期 provider，复用 `IStorageProvider.DownloadAsync(RemotePath, Stream, ...)` 写入受限 `MemoryStream`。
+- 图片流读取完成后再次校验实际字节数并把 Position 重置为 `0`；返回 Stream 由调用方负责释放。
+- 文本预览继续创建短生命周期 provider，将内容写入受限 `MemoryStream` 后完成编码识别。
+- 图片和文本都必须在读取完成后校验实际字节数，避免远程 size 缺失或不准确导致大文件进入内存。
 - 文本预览只支持 UTF-8、UTF-8 BOM、UTF-16 LE、UTF-16 BE；无法识别编码或疑似二进制内容时返回失败。
 - 预览不是 Transfer 任务，不进入传输队列，不写传输历史。
 - Application 不返回 Avalonia、AtomUI、Bitmap 或任何 UI 类型。

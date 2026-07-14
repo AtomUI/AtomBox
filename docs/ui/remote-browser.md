@@ -222,7 +222,8 @@ FTP/SFTP 规则：
 - 图片最大 `10 MB`。
 - 文本编码支持 UTF-8、UTF-8 BOM、UTF-16 LE、UTF-16 BE。
 - bucket、文件夹、未知格式、超限文件不开放可用预览动作。
-- 图片预览弹窗展示图片、文件名和大小。
+- 图片预览使用 AtomUI `ImagePreviewer`，标题栏只显示文件名，并提供加载、失败、缩放、旋转、翻转、拖动和适应窗口能力。
+- ImagePreviewer 通过 `StreamImagePreviewSource` 按需调用 Application 读取远程图片；关闭预览时取消未完成读取并释放 Stream。
 - 文本预览弹窗展示只读文本、文件名、大小和编码。
 - 预览失败时复用统一错误提示或错误详情入口。
 - 预览必须通过 Application 用例进入系统，不能由 ViewModel 直接调用 Provider。
@@ -281,3 +282,4 @@ FTP/SFTP 规则：
 | 搜索输入 | `LineEdit` + `Button` |
 | 确认弹窗 | `Modal` |
 | 文件类型图标 | AtomUI AntDesign 图标 |
+| 图片预览 | `ImagePreviewer` + `StreamImagePreviewSource` |
