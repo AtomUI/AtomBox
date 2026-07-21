@@ -224,6 +224,7 @@ public sealed record AccountRowViewModel(
     StorageAccountId Id,
     string DisplayName,
     string ProviderType,
+    string ProviderTagColor,
     string AddressOrProvider)
 {
     public static AccountRowViewModel From(StorageAccountSummary account)
@@ -233,6 +234,7 @@ public sealed record AccountRowViewModel(
             account.Id,
             account.DisplayName,
             FormatCategory(account),
+            FormatCategoryTagColor(account),
             FormatAddressOrProvider(account));
     }
 
@@ -269,5 +271,21 @@ public sealed record AccountRowViewModel(
         }
 
         return account.ProviderId.ToString();
+    }
+
+    private static string FormatCategoryTagColor(StorageAccountSummary account)
+    {
+        if (account.ProviderCategory == StorageProviderCategory.FileTransfer &&
+            account.ProviderId.Value.Equals("webdav", StringComparison.OrdinalIgnoreCase))
+        {
+            return "Purple";
+        }
+
+        return account.ProviderCategory switch
+        {
+            StorageProviderCategory.ObjectStorage => "Blue",
+            StorageProviderCategory.FileTransfer => "Cyan",
+            _ => "Info"
+        };
     }
 }

@@ -151,6 +151,7 @@ public sealed record HomeRecentTransferViewModel(
     string FileName,
     string Direction,
     string Result,
+    string ResultTagColor,
     string CompletedAt)
 {
     public static HomeRecentTransferViewModel From(TransferStateSnapshot snapshot)
@@ -164,6 +165,7 @@ public sealed record HomeRecentTransferViewModel(
             string.IsNullOrWhiteSpace(fileName) ? "(未命名)" : fileName,
             task.Direction == TransferDirection.Upload ? "上传" : "下载",
             FormatStatus(task.Status),
+            FormatStatusTagColor(task.Status),
             task.UpdatedAt.LocalDateTime.ToString("MM-dd HH:mm"));
     }
 
@@ -176,6 +178,18 @@ public sealed record HomeRecentTransferViewModel(
             TransferStatus.Canceled => "取消",
             TransferStatus.Interrupted => "已中断",
             _ => status.ToString()
+        };
+    }
+
+    private static string FormatStatusTagColor(TransferStatus status)
+    {
+        return status switch
+        {
+            TransferStatus.Succeeded => "Success",
+            TransferStatus.Failed => "Error",
+            TransferStatus.Interrupted => "Warning",
+            TransferStatus.Canceled => "Grey",
+            _ => "Info"
         };
     }
 }

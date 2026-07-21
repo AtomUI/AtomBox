@@ -19,10 +19,6 @@
             <Setter Property="FontSize" Value="12" />
             <Setter Property="TextWrapping" Value="Wrap" />
         </Style>
-        <Style Selector="Border.setting-separator">
-            <Setter Property="Height" Value="1" />
-            <Setter Property="Background" Value="{StaticResource AtomBoxSubtleBorderBrush}" />
-        </Style>
     </UserControl.Styles>
     <Grid RowDefinitions="56,*">
         <Border Grid.Row="0"
@@ -71,7 +67,7 @@
                         </Grid>
                     </Grid>
 
-                    <Border Classes="setting-separator" />
+                    <atom:Separator SizeType="Small" />
 
                     <Grid Classes="setting-row"
                           ColumnDefinitions="260,*">
@@ -94,7 +90,7 @@
                         </Grid>
                     </Grid>
 
-                    <Border Classes="setting-separator" />
+                    <atom:Separator SizeType="Small" />
 
                     <Grid Classes="setting-row"
                           ColumnDefinitions="260,*">
@@ -120,7 +116,7 @@
                         </Grid>
                     </Grid>
 
-                    <Border Classes="setting-separator" />
+                    <atom:Separator SizeType="Small" />
 
                     <Grid Classes="setting-row"
                           ColumnDefinitions="260,*">
@@ -145,7 +141,7 @@
                         </Grid>
                     </Grid>
 
-                    <Border Classes="setting-separator" />
+                    <atom:Separator SizeType="Small" />
 
                     <Grid Classes="setting-row"
                           ColumnDefinitions="260,*">
@@ -170,7 +166,7 @@
                     后续实现 MetadataCache / ThumbnailCache / 清理缓存用例后，可恢复缓存相关表单项。
                     -->
 
-                    <Border Classes="setting-separator" />
+                    <atom:Separator SizeType="Small" />
 
                     <Grid Classes="setting-row"
                           ColumnDefinitions="260,*">
@@ -191,7 +187,7 @@
                         </Grid>
                     </Grid>
 
-                    <Border Classes="setting-separator" />
+                    <atom:Separator SizeType="Small" />
 
                     <Grid Classes="setting-row"
                           ColumnDefinitions="260,*">
@@ -212,7 +208,7 @@
                         </Grid>
                     </Grid>
 
-                    <Border Classes="setting-separator" />
+                    <atom:Separator SizeType="Small" />
 
                     <Grid Classes="setting-row"
                           ColumnDefinitions="260,*">

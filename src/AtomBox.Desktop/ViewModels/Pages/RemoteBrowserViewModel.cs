@@ -264,6 +264,8 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
     public bool HasErrorDetails => _lastErrorDetails is not null;
 
+    public bool IsStatusBarMessageVisible => !HasErrorDetails;
+
     public bool IsBucketSelectorVisible =>
         _currentAccount?.ProviderCategory == StorageProviderCategory.ObjectStorage &&
         _storageAccountId is not null &&
@@ -1976,6 +1978,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
     {
         _lastErrorDetails = ErrorDialogRequest.FromError(title, fallbackSummary, error, details);
         OnPropertyChanged(nameof(HasErrorDetails));
+        OnPropertyChanged(nameof(IsStatusBarMessageVisible));
         ShowErrorDetailsCommand.RaiseCanExecuteChanged();
     }
 
@@ -1988,6 +1991,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
         _lastErrorDetails = null;
         OnPropertyChanged(nameof(HasErrorDetails));
+        OnPropertyChanged(nameof(IsStatusBarMessageVisible));
         ShowErrorDetailsCommand.RaiseCanExecuteChanged();
     }
 }

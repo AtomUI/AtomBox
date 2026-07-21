@@ -32,7 +32,7 @@
                 <Border Classes="app-list-surface">
                     <Grid RowDefinitions="40,*">
                         <Grid Grid.Row="0"
-                              ColumnDefinitions="1.4*,90,2*,90,90,90"
+                              ColumnDefinitions="1.4*,90,2*,130,90,90"
                               Classes="app-list-header">
                             <TextBlock Grid.Column="0" Text="文件名" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" />
                             <TextBlock Grid.Column="1" Text="方向" VerticalAlignment="Center" FontWeight="SemiBold" />
@@ -55,7 +55,7 @@
                                                     PointerMoved="HandleTransferRowPointerMoved"
                                                     PointerExited="HandleTransferRowPointerExited">
                                                 <Grid Classes="transfer-row-content"
-                                                      ColumnDefinitions="1.4*,90,2*,90,90,90"
+                                                      ColumnDefinitions="1.4*,90,2*,130,90,90"
                                                       Background="Transparent">
                                                     <TextBlock Grid.Column="0" Text="{Binding FileName}" Margin="12,0" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                                     <TextBlock Grid.Column="1" Text="{Binding Direction}" VerticalAlignment="Center" />
@@ -63,26 +63,42 @@
                                                                Text="{Binding TargetOrSource}"
                                                                VerticalAlignment="Center"
                                                                TextTrimming="CharacterEllipsis" />
-                                                    <TextBlock Grid.Column="3" Text="{Binding Progress}" VerticalAlignment="Center" />
+                                                    <Grid Grid.Column="3"
+                                                          Margin="0,0,12,0"
+                                                          VerticalAlignment="Center">
+                                                        <atom:ProgressBar Value="{Binding ProgressValue}"
+                                                                          Minimum="0"
+                                                                          Maximum="100"
+                                                                          SizeType="Small"
+                                                                          Status="Active"
+                                                                          IsProgressInfoVisible="True"
+                                                                          IsVisible="{Binding IsProgressBarVisible}"
+                                                                          HorizontalAlignment="Stretch"
+                                                                          VerticalAlignment="Center" />
+                                                        <TextBlock Text="{Binding Progress}"
+                                                                   IsVisible="{Binding IsProgressTextVisible}"
+                                                                   VerticalAlignment="Center" />
+                                                    </Grid>
                                                     <TextBlock Grid.Column="4" Text="{Binding Speed}" VerticalAlignment="Center" />
-                                                    <Button Grid.Column="5"
-                                                            Content="{Binding Action}"
-                                                            Command="{Binding ActionCommand}"
-                                                            CommandParameter="{Binding}"
-                                                            Margin="0,0,8,0"
-                                                            VerticalAlignment="Center"
-                                                            HorizontalAlignment="Stretch" />
+                                                    <atom:Button Grid.Column="5"
+                                                                 Content="{Binding Action}"
+                                                                 Command="{Binding ActionCommand}"
+                                                                 CommandParameter="{Binding}"
+                                                                 Margin="0,0,8,0"
+                                                                 VerticalAlignment="Center"
+                                                                 HorizontalAlignment="Stretch" />
                                                 </Grid>
                                             </Border>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                             </ScrollViewer>
-                            <TextBlock Text="暂无传输任务。"
-                                       IsVisible="{Binding IsEmptyStateVisible}"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       Classes="app-muted-text" />
+                            <atom:Empty PresetImage="Simple"
+                                        SizeType="Middle"
+                                        Description="暂无传输任务。"
+                                        IsVisible="{Binding IsEmptyStateVisible}"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center" />
                         </Grid>
                     </Grid>
                 </Border>

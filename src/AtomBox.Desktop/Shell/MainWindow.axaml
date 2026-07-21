@@ -93,6 +93,12 @@
                              Height="0"
                              Opacity="0"
                              IsHitTestVisible="False" />
+        <atom:MessageBox Grid.Row="0"
+                         Name="ConfirmMessageBox"
+                         Width="0"
+                         Height="0"
+                         Opacity="0"
+                         IsHitTestVisible="False" />
     </Grid>
     </Border>
 </atom:Window>

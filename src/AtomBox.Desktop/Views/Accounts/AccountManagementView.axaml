@@ -42,18 +42,24 @@
                                             <Grid ColumnDefinitions="1.4*,130,2*,150"
                                                   Classes="app-list-row-content">
                                                 <TextBlock Grid.Column="0" Classes="app-primary-text" Text="{Binding DisplayName}" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
-                                                <TextBlock Grid.Column="1" Classes="app-secondary-text" Text="{Binding ProviderType}" VerticalAlignment="Center" />
+                                                <atom:Tag Grid.Column="1"
+                                                          Text="{Binding ProviderType}"
+                                                          TagColor="{Binding ProviderTagColor}"
+                                                          HorizontalAlignment="Left"
+                                                          VerticalAlignment="Center" />
                                                 <TextBlock Grid.Column="2" Classes="app-secondary-text" Text="{Binding AddressOrProvider}" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" />
                                                 <StackPanel Grid.Column="3"
                                                             Orientation="Horizontal"
                                                             Spacing="8"
                                                             VerticalAlignment="Center">
-                                                    <Button Content="编辑"
-                                                            Command="{Binding #Root.DataContext.EditAccountCommand}"
-                                                            CommandParameter="{Binding}" />
-                                                    <Button Content="删除"
-                                                            Command="{Binding #Root.DataContext.DeleteAccountCommand}"
-                                                            CommandParameter="{Binding}" />
+                                                    <atom:Button Content="编辑"
+                                                                 Icon="{antdicons:AntDesignIconProvider EditOutlined}"
+                                                                 Command="{Binding #Root.DataContext.EditAccountCommand}"
+                                                                 CommandParameter="{Binding}" />
+                                                    <atom:Button Content="删除"
+                                                                 Icon="{antdicons:AntDesignIconProvider DeleteOutlined}"
+                                                                 Command="{Binding #Root.DataContext.DeleteAccountCommand}"
+                                                                 CommandParameter="{Binding}" />
                                                 </StackPanel>
                                             </Grid>
                                         </Border>

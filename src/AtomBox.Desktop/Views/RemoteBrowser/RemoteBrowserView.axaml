@@ -6,33 +6,6 @@
              x:Class="AtomBox.Desktop.Views.RemoteBrowser.RemoteBrowserView"
     x:DataType="pages:RemoteBrowserViewModel"
     x:Name="Root">
-    <UserControl.Styles>
-        <Style Selector="Border.remote-search-frame">
-            <Setter Property="Width" Value="190" />
-            <Setter Property="Height" Value="30" />
-            <Setter Property="MinHeight" Value="30" />
-            <Setter Property="CornerRadius" Value="6" />
-            <Setter Property="BorderBrush" Value="{StaticResource AtomBoxInputBorderBrush}" />
-            <Setter Property="BorderThickness" Value="1" />
-            <Setter Property="Background" Value="{StaticResource AtomBoxSurfaceBrush}" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-        <Style Selector="atom|LineEdit.remote-search-input">
-            <Setter Property="Height" Value="30" />
-            <Setter Property="MinHeight" Value="30" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-            <Setter Property="BorderThickness" Value="0" />
-            <Setter Property="Background" Value="Transparent" />
-        </Style>
-        <Style Selector="atom|Button.remote-search-button">
-            <Setter Property="Width" Value="32" />
-            <Setter Property="Height" Value="28" />
-            <Setter Property="MinHeight" Value="28" />
-            <Setter Property="Padding" Value="0" />
-            <Setter Property="ButtonType" Value="Text" />
-            <Setter Property="VerticalAlignment" Value="Center" />
-        </Style>
-    </UserControl.Styles>
     <Grid RowDefinitions="84,*">
         <Border Grid.Row="0"
                 Classes="app-page-header"
@@ -49,9 +22,10 @@
                             Orientation="Horizontal"
                             Spacing="8"
                             VerticalAlignment="Center">
-                    <Button Content="添加账号"
-                            Command="{Binding AddAccountCommand}"
-                            IsVisible="{Binding IsAddAccountVisible}" />
+                    <atom:Button Content="添加账号"
+                                 Icon="{antdicons:AntDesignIconProvider UserAddOutlined}"
+                                 Command="{Binding AddAccountCommand}"
+                                 IsVisible="{Binding IsAddAccountVisible}" />
                 </StackPanel>
                 <Grid Grid.Row="1"
                       Grid.Column="0"
@@ -100,26 +74,18 @@
                             </DataTemplate>
                         </atom:Breadcrumb.ItemTemplate>
                     </atom:Breadcrumb>
-                    <Border Grid.Column="2"
-                            Classes="remote-search-frame"
-                            IsVisible="{Binding IsSearchVisible}">
-                        <Grid ColumnDefinitions="*,32">
-                            <atom:LineEdit Grid.Column="0"
-                                           Classes="remote-search-input"
-                                           PlaceholderText="按名称前缀搜索"
-                                           Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                           SizeType="Small"
-                                           StyleVariant="Borderless" />
-                            <Border Grid.Column="1"
-                                    BorderBrush="{StaticResource AtomBoxInputBorderBrush}"
-                                    BorderThickness="1,0,0,0"
-                                    Height="30">
-                                <atom:Button Classes="remote-search-button"
-                                             Icon="{antdicons:AntDesignIconProvider SearchOutlined}"
-                                             Click="HandleSearchButtonClick" />
-                            </Border>
-                        </Grid>
-                    </Border>
+                    <atom:SearchEdit Grid.Column="2"
+                                     Width="190"
+                                     Height="30"
+                                     MinHeight="30"
+                                     VerticalAlignment="Center"
+                                     IsVisible="{Binding IsSearchVisible}"
+                                     IsOperating="{Binding IsLoading}"
+                                     IsAllowClear="True"
+                                     PlaceholderText="按名称前缀搜索"
+                                     Text="{Binding SearchText, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                     SizeType="Small"
+                                     SearchButtonClick="HandleSearchButtonClick" />
                 </Grid>
                 <atom:Breadcrumb Grid.Row="1"
                                  Grid.Column="0"
@@ -140,19 +106,29 @@
         <Grid Grid.Row="1"
               Classes="app-page-content"
               RowDefinitions="Auto,*,48">
-            <StackPanel Grid.Row="0"
-                        Spacing="8"
+            <atom:Alert Grid.Row="0"
+                        Type="Error"
+                        Message="{Binding StatusMessage}"
+                        IsShowIcon="True"
+                        IsClosable="False"
+                        IsVisible="{Binding HasErrorDetails}"
                         Margin="0,0,0,12">
-                <StackPanel Orientation="Horizontal"
-                            Spacing="8">
-                    <Button Content="查看详情"
-                            Command="{Binding ShowErrorDetailsCommand}"
-                            IsVisible="{Binding HasErrorDetails}" />
-                    <Button Content="重试"
-                            Command="{Binding RetryLoadCommand}"
-                            IsVisible="{Binding HasErrorDetails}" />
-                </StackPanel>
-            </StackPanel>
+                <atom:Alert.ExtraAction>
+                    <StackPanel Orientation="Horizontal"
+                                Spacing="4">
+                        <atom:Button Content="查看详情"
+                                     Icon="{antdicons:AntDesignIconProvider InfoCircleOutlined}"
+                                     ButtonType="Text"
+                                     SizeType="Small"
+                                     Command="{Binding ShowErrorDetailsCommand}" />
+                        <atom:Button Content="重试"
+                                     Icon="{antdicons:AntDesignIconProvider ReloadOutlined}"
+                                     ButtonType="Text"
+                                     SizeType="Small"
+                                     Command="{Binding RetryLoadCommand}" />
+                    </StackPanel>
+                </atom:Alert.ExtraAction>
+            </atom:Alert>
             <atom:ScopeAwareOverlayLayerPanel Grid.Row="1"
                                               ClipToBounds="False">
             <Border Classes="app-list-surface"
@@ -235,11 +211,12 @@
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
                         </ScrollViewer>
-                        <TextBlock Text="{Binding EmptyStateText}"
-                                   IsVisible="{Binding IsEmptyStateVisible}"
-                                   HorizontalAlignment="Center"
-                                   VerticalAlignment="Center"
-                                   Classes="app-muted-text" />
+                        <atom:Empty PresetImage="Simple"
+                                    SizeType="Middle"
+                                    Description="{Binding EmptyStateText}"
+                                    IsVisible="{Binding IsEmptyStateVisible}"
+                                    HorizontalAlignment="Center"
+                                    VerticalAlignment="Center" />
                     </Grid>
                 </Grid>
                 </atom:Spin>
@@ -506,18 +483,21 @@
                        LastChildFill="False">
                 <TextBlock DockPanel.Dock="Left"
                            Text="{Binding StatusMessage}"
+                           IsVisible="{Binding IsStatusBarMessageVisible}"
                            Classes="app-muted-text"
                            VerticalAlignment="Center" />
                 <StackPanel DockPanel.Dock="Right"
                             Orientation="Horizontal"
                             Spacing="8"
                             IsVisible="{Binding IsPaginationVisible}">
-                    <Button Content="上一页"
-                            Command="{Binding PreviousPageCommand}"
-                            IsEnabled="{Binding CanGoPreviousPage}" />
-                    <Button Content="下一页"
-                            Command="{Binding NextPageCommand}"
-                            IsEnabled="{Binding CanGoNextPage}" />
+                    <atom:Button Content="上一页"
+                                 Icon="{antdicons:AntDesignIconProvider LeftOutlined}"
+                                 Command="{Binding PreviousPageCommand}"
+                                 IsEnabled="{Binding CanGoPreviousPage}" />
+                    <atom:Button Content="下一页"
+                                 Icon="{antdicons:AntDesignIconProvider RightOutlined}"
+                                 Command="{Binding NextPageCommand}"
+                                 IsEnabled="{Binding CanGoNextPage}" />
                 </StackPanel>
             </DockPanel>
         </Grid>

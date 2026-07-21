@@ -42,15 +42,9 @@ public sealed class StatusBarViewModel : ViewModelBase
         {
             if (SetProperty(ref _activeTransferCount, value))
             {
-                OnPropertyChanged(nameof(IsActiveTransferBadgeVisible));
-                OnPropertyChanged(nameof(ActiveTransferBadgeText));
             }
         }
     }
-
-    public bool IsActiveTransferBadgeVisible => ActiveTransferCount > 0;
-
-    public string ActiveTransferBadgeText => ActiveTransferCount > 99 ? "99+" : ActiveTransferCount.ToString();
 
     public int RunningTransfers
     {

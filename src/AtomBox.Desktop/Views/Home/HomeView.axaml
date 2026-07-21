@@ -102,10 +102,11 @@
                                                            Text="{Binding Direction}"
                                                            VerticalAlignment="Center"
                                                            Classes="app-secondary-text" />
-                                                <TextBlock Grid.Column="2"
-                                                           Text="{Binding Result}"
-                                                           VerticalAlignment="Center"
-                                                           Classes="app-secondary-text" />
+                                                <atom:Tag Grid.Column="2"
+                                                          Text="{Binding Result}"
+                                                          TagColor="{Binding ResultTagColor}"
+                                                          HorizontalAlignment="Left"
+                                                          VerticalAlignment="Center" />
                                                 <TextBlock Grid.Column="3"
                                                            Text="{Binding CompletedAt}"
                                                            VerticalAlignment="Center"
@@ -115,11 +116,12 @@
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>
-                            <TextBlock Text="暂无传输记录。"
-                                       IsVisible="{Binding IsRecentHistoryEmpty}"
-                                       HorizontalAlignment="Center"
-                                       VerticalAlignment="Center"
-                                       Classes="app-muted-text" />
+                            <atom:Empty PresetImage="Simple"
+                                        SizeType="Small"
+                                        Description="暂无传输记录。"
+                                        IsVisible="{Binding IsRecentHistoryEmpty}"
+                                        HorizontalAlignment="Center"
+                                        VerticalAlignment="Center" />
                         </Grid>
                     </Grid>
                 </Border>

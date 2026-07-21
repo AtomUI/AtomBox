@@ -235,6 +235,7 @@ public sealed record TransferHistoryRowViewModel(
     string Direction,
     string TargetOrSource,
     string Result,
+    string ResultTagColor,
     string CompletedAt,
     string? Reason,
     bool HasDetails,
@@ -254,6 +255,7 @@ public sealed record TransferHistoryRowViewModel(
             task.Direction == TransferDirection.Upload ? "上传" : "下载",
             string.IsNullOrWhiteSpace(targetOrSource) ? "/" : targetOrSource,
             FormatResult(task.Status),
+            FormatResultTagColor(task.Status),
             task.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm"),
             task.StatusReason,
             !string.IsNullOrWhiteSpace(task.StatusReason) || task.Status is TransferStatus.Failed or TransferStatus.Interrupted,
@@ -278,6 +280,18 @@ public sealed record TransferHistoryRowViewModel(
             TransferStatus.Canceled => "取消",
             TransferStatus.Interrupted => "已中断",
             _ => status.ToString()
+        };
+    }
+
+    private static string FormatResultTagColor(TransferStatus status)
+    {
+        return status switch
+        {
+            TransferStatus.Succeeded => "Success",
+            TransferStatus.Failed => "Error",
+            TransferStatus.Interrupted => "Warning",
+            TransferStatus.Canceled => "Grey",
+            _ => "Info"
         };
     }
 }

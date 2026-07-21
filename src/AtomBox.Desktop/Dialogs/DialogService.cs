@@ -34,6 +34,11 @@ using AtomDialogButtonRole = AtomUI.Desktop.Controls.DialogButtonRole;
 using AtomLineEdit = AtomUI.Desktop.Controls.LineEdit;
 using AtomTextArea = AtomUI.Desktop.Controls.TextArea;
 using AtomImagePreviewer = AtomUI.Desktop.Controls.ImagePreviewer;
+using AtomMessageBox = AtomUI.Desktop.Controls.MessageBox;
+using AtomMessageBoxStyle = AtomUI.Desktop.Controls.MessageBoxStyle;
+using AtomDescriptions = AtomUI.Desktop.Controls.Descriptions;
+using AtomDescriptionItem = AtomUI.Desktop.Controls.DescriptionItem;
+using AtomSelectableTextBlock = AtomUI.Desktop.Controls.SelectableTextBlock;
 using AtomStreamImagePreviewSource = AtomUI.Desktop.Controls.StreamImagePreviewSource;
 
 namespace AtomBox.Desktop.Dialogs;
@@ -108,35 +113,60 @@ public sealed class DialogService : IDialogService
         try
         {
             await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
-            var result = await AtomDialog.ShowDialogModalAsync(
-                new ConfirmDialogContent(request),
-                null,
-                new AtomDialogOptions
-                {
-                    Title = request.Title,
-                    DialogHostType = AtomDialogHostType.Overlay,
-                    IsResizable = false,
-                    IsClosable = true,
-                    IsDragMovable = true,
-                    IsMaximizable = false,
-                    IsMinimizable = false,
-                    IsFooterVisible = false,
-                    HorizontalStartupLocation = AtomDialogHorizontalAnchor.Center,
-                    VerticalStartupLocation = AtomDialogVerticalAnchor.Center,
-                    HostWidth = 420,
-                    HostMinWidth = 380,
-                    HostMinHeight = 220,
-                    HostMaxWidth = 520,
-                    HostMaxHeight = 420
-                },
-                mainWindow).ConfigureAwait(true);
+            var messageBox = mainWindow.FindControl<AtomMessageBox>("ConfirmMessageBox")
+                ?? throw new InvalidOperationException("Confirm message box host was not found.");
 
-            return result is true;
+            messageBox.Title = request.Title;
+            messageBox.Content = new TextBlock
+            {
+                Text = request.Message,
+                TextWrapping = TextWrapping.Wrap,
+                MaxWidth = 360
+            };
+            messageBox.Style = AtomMessageBoxStyle.Confirm;
+            messageBox.DialogHostType = AtomDialogHostType.Overlay;
+            messageBox.IsModal = true;
+            messageBox.IsDragMovable = true;
+            messageBox.IsCenterOnStartup = true;
+            messageBox.HostWidth = 420;
+            messageBox.HostMinWidth = 380;
+            messageBox.HostMinHeight = 200;
+            messageBox.HostMaxWidth = 520;
+            messageBox.HostMaxHeight = 420;
+            messageBox.Result = null;
+            messageBox.ButtonsConfigure = buttons =>
+            {
+                foreach (var button in buttons)
+                {
+                    if (button.Role == AtomDialogButtonRole.AcceptRole)
+                    {
+                        button.Content = request.ConfirmText;
+                    }
+                    else if (button.Role == AtomDialogButtonRole.RejectRole)
+                    {
+                        button.Content = request.CancelText;
+                    }
+                }
+            };
+
+            await messageBox.OpenAsync().ConfigureAwait(true);
+
+            return messageBox.Result is AtomDialogCode.Accepted;
         }
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine(ex);
             return false;
+        }
+        finally
+        {
+            if (mainWindow.FindControl<AtomMessageBox>("ConfirmMessageBox") is { } messageBox)
+            {
+                messageBox.ButtonsConfigure = null;
+                messageBox.Content = null;
+                messageBox.Title = null;
+                messageBox.Result = null;
+            }
         }
     }
 
@@ -370,62 +400,6 @@ public sealed class DialogService : IDialogService
         }
     }
 
-    private sealed class ConfirmDialogContent : UserControl
-    {
-        public ConfirmDialogContent(ConfirmDialogRequest request)
-        {
-            var cancelButton = new AtomButton
-            {
-                Content = request.CancelText,
-                ButtonType = AtomButtonType.Default,
-                MinWidth = 88
-            };
-            cancelButton.Click += (_, _) => Close(false);
-
-            var confirmButton = new AtomButton
-            {
-                Content = request.ConfirmText,
-                ButtonType = AtomButtonType.Primary,
-                MinWidth = 88
-            };
-            confirmButton.Click += (_, _) => Close(true);
-
-            var actions = new StackPanel
-            {
-                Orientation = Orientation.Horizontal,
-                Spacing = 8,
-                HorizontalAlignment = HorizontalAlignment.Right,
-                Children = { cancelButton, confirmButton }
-            };
-
-            Content = new Grid
-            {
-                Margin = new Thickness(20),
-                RowDefinitions = new RowDefinitions("*,Auto"),
-                RowSpacing = 18,
-                Children =
-                {
-                    new TextBlock
-                    {
-                        Text = request.Message,
-                        TextWrapping = TextWrapping.Wrap,
-                        VerticalAlignment = VerticalAlignment.Top
-                    },
-                    actions
-                }
-            };
-            Grid.SetRow(actions, 1);
-        }
-
-        private void Close(bool result)
-        {
-            if (TemplatedParent is AtomDialog dialog)
-            {
-                dialog.Done(result);
-            }
-        }
-    }
-
     private static async Task ShowErrorDetailsOverlayAsync(ErrorDialogRequest request, TopLevel mainWindow)
     {
         try
@@ -485,15 +459,23 @@ public sealed class DialogService : IDialogService
 
         private static Control BuildDetails(ErrorDialogRequest request)
         {
-            var details = new StackPanel { Spacing = 8 };
+            var details = new AtomDescriptions
+            {
+                IsBordered = true,
+                IsShowColon = false,
+                ColumnInfo = new ResponsiveInt(1),
+                Layout = Orientation.Horizontal,
+                SizeType = SizeType.Middle
+            };
+
             if (request.Error is { } error)
             {
-                details.Children.Add(DetailRow("类别", error.Category.ToString()));
-                details.Children.Add(DetailRow("错误码", error.Code.ToString()));
-                details.Children.Add(DetailRow("可重试", error.IsRetryable ? "是" : "否"));
+                details.Items.Add(DetailItem("类别", error.Category.ToString()));
+                details.Items.Add(DetailItem("错误码", error.Code.ToString()));
+                details.Items.Add(DetailItem("可重试", error.IsRetryable ? "是" : "否"));
                 if (!string.IsNullOrWhiteSpace(error.ProviderErrorCode))
                 {
-                    details.Children.Add(DetailRow("Provider 错误码", error.ProviderErrorCode));
+                    details.Items.Add(DetailItem("Provider 错误码", error.ProviderErrorCode));
                 }
             }
 
@@ -501,54 +483,34 @@ public sealed class DialogService : IDialogService
             {
                 foreach (var item in request.Details)
                 {
-                    details.Children.Add(DetailRow(item.Key, string.IsNullOrWhiteSpace(item.Value) ? "-" : item.Value));
+                    details.Items.Add(DetailItem(item.Key, string.IsNullOrWhiteSpace(item.Value) ? "-" : item.Value));
                 }
             }
 
-            if (details.Children.Count == 0)
+            if (details.Items.Count == 0)
             {
-                details.Children.Add(new TextBlock
-                {
-                    Text = "没有更多详情。",
-                    Foreground = Brushes.DimGray
-                });
+                details.Items.Add(DetailItem("详情", "没有更多详情。"));
             }
 
-            return new Border
+            return new ScrollViewer
             {
-                BorderBrush = Brushes.LightGray,
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(12),
-                Child = new ScrollViewer { Content = details }
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                Content = details
             };
         }
 
-        private static Grid DetailRow(string label, string value)
+        private static AtomDescriptionItem DetailItem(string label, string value)
         {
-            var valueText = new TextBlock
+            return new AtomDescriptionItem
             {
-                Text = value,
-                TextWrapping = TextWrapping.Wrap
-            };
-
-            return new Grid
-            {
-                ColumnDefinitions =
+                Label = label,
+                Content = new AtomSelectableTextBlock
                 {
-                    new ColumnDefinition(132, GridUnitType.Pixel),
-                    new ColumnDefinition(1, GridUnitType.Star)
-                },
-                Children =
-                {
-                    new TextBlock
-                    {
-                        Text = label,
-                        Foreground = Brushes.DimGray,
-                        VerticalAlignment = VerticalAlignment.Top
-                    },
-                    valueText
+                    Text = value,
+                    TextWrapping = TextWrapping.Wrap
                 }
-            }.WithInputColumn(valueText);
+            };
         }
     }
 

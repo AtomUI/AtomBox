@@ -349,6 +349,8 @@ public sealed record TransferTaskRowViewModel(
     string Direction,
     string TargetOrSource,
     string Progress,
+    double ProgressValue,
+    bool IsProgressBarVisible,
     string Speed,
     string? Reason,
     bool HasDetails,
@@ -357,6 +359,8 @@ public sealed record TransferTaskRowViewModel(
     ICommand ActionCommand,
     ICommand DetailsCommand)
 {
+    public bool IsProgressTextVisible => !IsProgressBarVisible;
+
     public static TransferTaskRowViewModel From(
         TransferStateSnapshot snapshot,
         ICommand actionCommand,
@@ -374,6 +378,8 @@ public sealed record TransferTaskRowViewModel(
             FormatDirection(task.Direction),
             string.IsNullOrWhiteSpace(targetOrSource) ? "/" : targetOrSource,
             FormatProgress(task.Status, snapshot.Progress),
+            snapshot.Progress?.Percent ?? 0,
+            task.Status == TransferStatus.Running && snapshot.Progress?.Percent is not null,
             FormatSpeed(task.Status, snapshot.Progress),
             task.StatusReason,
             !string.IsNullOrWhiteSpace(task.StatusReason) || task.Status is TransferStatus.Failed or TransferStatus.Interrupted,
@@ -399,15 +405,12 @@ public sealed record TransferTaskRowViewModel(
 
     private static string FormatProgress(TransferStatus status, TransferProgress? progress)
     {
-        if (progress?.Percent is { } percent)
-        {
-            return $"{percent:0}%";
-        }
-
         return status switch
         {
             TransferStatus.Pending => "等待中",
+            TransferStatus.Running when progress?.Percent is { } percent => $"{percent:0}%",
             TransferStatus.Running => "运行中",
+            TransferStatus.Paused when progress?.Percent is { } percent => $"暂停 {percent:0}%",
             TransferStatus.Paused => "暂停",
             TransferStatus.Interrupted => "已中断",
             TransferStatus.Succeeded => "100%",

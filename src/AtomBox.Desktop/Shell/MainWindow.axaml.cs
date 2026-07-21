@@ -31,9 +31,6 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
     private const double NavigationBaseChromeWidth = 112;
     private const double NavigationDisplayUnitWidth = 7.5;
     private static readonly Uri TrayIconUri = new("avares://AtomBox.Desktop/Assets/logo.ico");
-    private static readonly IBrush TransferQueueBadgeBackground = Brush.Parse("#1677FF");
-    private static readonly IBrush TransferQueueBadgeForeground = Brushes.White;
-
     private readonly MainWindowViewModel? _viewModel;
     private readonly IDesktopPreferencesService? _preferences;
     private TrayIcon? _trayIcon;
@@ -330,33 +327,16 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
             Grid.SetColumn(title, 0);
             panel.Children.Add(title);
 
-            var badgeText = new Avalonia.Controls.TextBlock
+            var badge = new CountBadge
             {
-                FontSize = 10,
-                FontWeight = FontWeight.SemiBold,
-                Foreground = TransferQueueBadgeForeground,
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                TextAlignment = TextAlignment.Center
-            };
-            badgeText.Bind(Avalonia.Controls.TextBlock.TextProperty, new Binding(nameof(StatusBarViewModel.ActiveTransferBadgeText))
-            {
-                Source = statusBar
-            });
-
-            var badge = new Border
-            {
-                MinWidth = 18,
-                Height = 18,
-                Padding = new Thickness(5, 0),
                 Margin = new Thickness(8, 0, 0, 0),
-                CornerRadius = new CornerRadius(9),
-                Background = TransferQueueBadgeBackground,
                 HorizontalAlignment = HorizontalAlignment.Right,
                 VerticalAlignment = VerticalAlignment.Center,
-                Child = badgeText
+                Size = AtomUI.Controls.Commons.CountBadgeSize.Small,
+                OverflowCount = 99,
+                IsZeroVisible = false
             };
-            badge.Bind(IsVisibleProperty, new Binding(nameof(StatusBarViewModel.IsActiveTransferBadgeVisible))
+            badge.Bind(CountBadge.CountProperty, new Binding(nameof(StatusBarViewModel.ActiveTransferCount))
             {
                 Source = statusBar
             });
