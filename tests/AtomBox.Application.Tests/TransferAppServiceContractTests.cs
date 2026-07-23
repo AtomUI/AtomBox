@@ -330,6 +330,44 @@ public sealed class TransferAppServiceContractTests
     }
 
     [Fact]
+    public async Task CreateDownloadAsync_MultipleTargets_PreservesEachPathMapping()
+    {
+        var scheduler = new CountingScheduler();
+        var service = new TransferAppService(
+            scheduler, new EmptyStateStore(), new EmptyTaskStore());
+        var firstRemotePath = new RemotePath("bucket/first.txt");
+        var secondRemotePath = new RemotePath("bucket/second.txt");
+        var firstLocalPath = new LocalPath(@"C:\Downloads\first.txt");
+        var secondLocalPath = new LocalPath(@"C:\Downloads\second.txt");
+
+        var result = await service.CreateDownloadTasksAsync(new CreateDownloadTasksRequest(
+            StorageAccountId.New(),
+            [
+                new DownloadTaskTarget(firstRemotePath, firstLocalPath),
+                new DownloadTaskTarget(secondRemotePath, secondLocalPath)
+            ],
+            TransferOverwritePolicy.Rename));
+
+        Assert.True(result.IsSuccess);
+        var tasks = result.GetValueOrThrow().Tasks;
+        Assert.Equal(2, tasks.Count);
+        Assert.Collection(
+            tasks,
+            task =>
+            {
+                Assert.Equal(firstRemotePath, task.RemotePath);
+                Assert.Equal(firstLocalPath, task.LocalPath);
+            },
+            task =>
+            {
+                Assert.Equal(secondRemotePath, task.RemotePath);
+                Assert.Equal(secondLocalPath, task.LocalPath);
+            });
+        Assert.Equal(2, scheduler.SubmitCalls);
+        Assert.Equal(1, scheduler.WakeCalls);
+    }
+
+    [Fact]
     public async Task GetQueueAsync_EmptyQueue_ReturnsEmptyList()
     {
         var service = new TransferAppService(

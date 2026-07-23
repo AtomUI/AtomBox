@@ -161,12 +161,12 @@ public sealed class TransferAppService
             return Task.FromResult(OperationResult<CreateTransferTasksResult>.Failure(validation));
         }
 
-        var tasks = request.RemotePaths
-            .Select(remotePath => CreateTask(
+        var tasks = request.Targets
+            .Select(target => CreateTask(
                 request.StorageAccountId,
                 TransferDirection.Download,
-                request.LocalPath,
-                remotePath,
+                target.LocalPath,
+                target.RemotePath,
                 request.OverwritePolicy))
             .ToArray();
 
@@ -424,18 +424,24 @@ public sealed class TransferAppService
             return StorageError.Validation("Storage account id is required.");
         }
 
-        if (request.LocalPath.IsEmpty)
+        if (request.Targets is null || request.Targets.Count == 0)
         {
-            return StorageError.Validation("Local path is required.");
+            return StorageError.Validation("At least one download target is required.");
         }
 
-        if (request.RemotePaths is null || request.RemotePaths.Count == 0)
+        foreach (var target in request.Targets)
         {
-            return StorageError.Validation("At least one remote path is required.");
+            if (target.LocalPath.IsEmpty)
+            {
+                return StorageError.Validation("Local path is required.");
+            }
+
+            if (target.RemotePath.IsRoot)
+            {
+                return StorageError.Validation("Remote file path is required.");
+            }
         }
 
-        return request.RemotePaths.Any(path => path.IsRoot)
-            ? StorageError.Validation("Remote file path is required.")
-            : null;
+        return null;
     }
 }

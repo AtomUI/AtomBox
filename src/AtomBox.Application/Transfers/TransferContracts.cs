@@ -46,11 +46,27 @@ public sealed record PrepareBatchUploadTasksResult(
     bool IsFingerprintIndexEnabled,
     IReadOnlyList<PreparedUploadTaskTarget> Targets);
 
+public sealed record DownloadTaskTarget(RemotePath RemotePath, LocalPath LocalPath);
+
 public sealed record CreateDownloadTasksRequest(
     StorageAccountId StorageAccountId,
-    IReadOnlyList<RemotePath> RemotePaths,
-    LocalPath LocalPath,
-    TransferOverwritePolicy OverwritePolicy);
+    IReadOnlyList<DownloadTaskTarget> Targets,
+    TransferOverwritePolicy OverwritePolicy)
+{
+    public CreateDownloadTasksRequest(
+        StorageAccountId storageAccountId,
+        IReadOnlyList<RemotePath> remotePaths,
+        LocalPath localPath,
+        TransferOverwritePolicy overwritePolicy)
+        : this(
+            storageAccountId,
+            remotePaths is null
+                ? null!
+                : remotePaths.Select(path => new DownloadTaskTarget(path, localPath)).ToArray(),
+            overwritePolicy)
+    {
+    }
+}
 
 public sealed record CreateTransferTasksResult(IReadOnlyList<TransferTask> Tasks);
 

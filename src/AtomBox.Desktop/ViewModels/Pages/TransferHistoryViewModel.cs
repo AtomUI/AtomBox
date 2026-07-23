@@ -5,6 +5,7 @@ using AtomBox.Desktop.Dialogs;
 using AtomBox.Core.Transfers;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Services;
+using AtomBox.Desktop.Shell;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
@@ -13,6 +14,7 @@ public sealed class TransferHistoryViewModel : ViewModelBase
     private readonly TransferAppService _transfers;
     private readonly IMessageService _messages;
     private readonly IDialogService _dialogs;
+    private readonly StatusBarViewModel _statusBar;
     private ErrorDialogRequest? _lastErrorDetails;
     private int _pageIndex = 1;
     private string _statusMessage = "正在加载历史记录...";
@@ -22,11 +24,13 @@ public sealed class TransferHistoryViewModel : ViewModelBase
     public TransferHistoryViewModel(
         TransferAppService transfers,
         IMessageService messages,
-        IDialogService dialogs)
+        IDialogService dialogs,
+        StatusBarViewModel statusBar)
     {
         _transfers = transfers;
         _messages = messages;
         _dialogs = dialogs;
+        _statusBar = statusBar;
         RefreshCommand = new AsyncRelayCommand(_ => RefreshAsync());
         ClearHistoryCommand = new AsyncRelayCommand(_ => ClearHistoryAsync(), _ => HasTasks);
         ShowErrorDetailsCommand = new AsyncRelayCommand(_ => ShowErrorDetailsAsync(), _ => HasErrorDetails);
@@ -178,6 +182,7 @@ public sealed class TransferHistoryViewModel : ViewModelBase
         }
 
         _messages.Info("传输历史已清理。");
+        _statusBar.RequestQueueRefresh();
         PageIndex = 1;
         await RefreshAsync().ConfigureAwait(true);
     }

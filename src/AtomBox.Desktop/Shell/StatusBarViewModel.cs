@@ -16,6 +16,7 @@ public sealed class StatusBarViewModel : ViewModelBase
     private string _downloadSpeedText = "下载 0 KB/s";
     private int _errorCount;
     private bool _isRefreshing;
+    private bool _refreshPending;
 
     public StatusBarViewModel(TransferAppService transfers)
     {
@@ -24,9 +25,9 @@ public sealed class StatusBarViewModel : ViewModelBase
         {
             Interval = TimeSpan.FromSeconds(1)
         };
-        _refreshTimer.Tick += async (_, _) => await RefreshAsync().ConfigureAwait(true);
+        _refreshTimer.Tick += (_, _) => RequestQueueRefresh();
         _refreshTimer.Start();
-        _ = RefreshAsync();
+        RequestQueueRefresh();
     }
 
     public string StateText
@@ -70,41 +71,44 @@ public sealed class StatusBarViewModel : ViewModelBase
         private set => SetProperty(ref _errorCount, value);
     }
 
-    public void ReportTransferTasksCreated(int createdCount)
+    public void RequestQueueRefresh()
     {
-        if (createdCount <= 0)
+        if (!Dispatcher.UIThread.CheckAccess())
         {
+            Dispatcher.UIThread.Post(RequestQueueRefresh);
             return;
         }
 
-        ActiveTransferCount += createdCount;
+        _refreshPending = true;
+        if (!_isRefreshing)
+        {
+            _ = RefreshUntilSettledAsync();
+        }
     }
 
-    private async Task RefreshAsync()
+    private async Task RefreshUntilSettledAsync()
     {
-        if (_isRefreshing)
-        {
-            return;
-        }
-
         _isRefreshing = true;
         try
         {
-            var result = await _transfers.GetQueueAsync(new GetTransferQueueRequest()).ConfigureAwait(true);
-            if (result.IsFailure)
+            while (_refreshPending)
             {
-                StateText = result.Error?.Message ?? "传输状态读取失败";
-                ActiveTransferCount = 0;
-                return;
-            }
+                _refreshPending = false;
+                var result = await _transfers.GetQueueAsync(new GetTransferQueueRequest()).ConfigureAwait(true);
+                if (result.IsFailure)
+                {
+                    StateText = result.Error?.Message ?? "传输状态读取失败";
+                    continue;
+                }
 
-            var tasks = result.GetValueOrThrow().Tasks;
-            ActiveTransferCount = tasks.Count;
-            RunningTransfers = tasks.Count(item => item.Task.Status == TransferStatus.Running);
-            ErrorCount = tasks.Count(item => item.Task.Status is TransferStatus.Failed or TransferStatus.Interrupted);
-            UploadSpeedText = $"上传 {FormatSpeed(SumSpeed(tasks, TransferDirection.Upload))}";
-            DownloadSpeedText = $"下载 {FormatSpeed(SumSpeed(tasks, TransferDirection.Download))}";
-            StateText = RunningTransfers > 0 ? "传输中" : "就绪";
+                var tasks = result.GetValueOrThrow().Tasks;
+                ActiveTransferCount = tasks.Count;
+                RunningTransfers = tasks.Count(item => item.Task.Status == TransferStatus.Running);
+                ErrorCount = tasks.Count(item => item.Task.Status is TransferStatus.Failed or TransferStatus.Interrupted);
+                UploadSpeedText = $"上传 {FormatSpeed(SumSpeed(tasks, TransferDirection.Upload))}";
+                DownloadSpeedText = $"下载 {FormatSpeed(SumSpeed(tasks, TransferDirection.Download))}";
+                StateText = RunningTransfers > 0 ? "传输中" : "就绪";
+            }
         }
         finally
         {

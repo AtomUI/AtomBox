@@ -5,6 +5,7 @@ using AtomBox.Core.Transfers;
 using AtomBox.Core.ValueObjects;
 using AtomBox.Desktop.Dialogs;
 using AtomBox.Desktop.Services;
+using AtomBox.Desktop.Shell;
 using Avalonia.Threading;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
@@ -14,6 +15,7 @@ public sealed class TransferQueueViewModel : ViewModelBase
     private readonly TransferAppService _transfers;
     private readonly IMessageService _messages;
     private readonly IDialogService _dialogs;
+    private readonly StatusBarViewModel _statusBar;
     private readonly DispatcherTimer _refreshTimer;
     private static readonly Lock CompletionNotificationLock = new();
     private static readonly HashSet<TransferTaskId> CompletionNotificationsShown = [];
@@ -26,11 +28,13 @@ public sealed class TransferQueueViewModel : ViewModelBase
     public TransferQueueViewModel(
         TransferAppService transfers,
         IMessageService messages,
-        IDialogService dialogs)
+        IDialogService dialogs,
+        StatusBarViewModel statusBar)
     {
         _transfers = transfers;
         _messages = messages;
         _dialogs = dialogs;
+        _statusBar = statusBar;
         RefreshCommand = new AsyncRelayCommand(_ => RefreshAsync());
         ExecuteTaskActionCommand = new AsyncRelayCommand(
             ExecuteTaskActionAsync,
@@ -265,6 +269,7 @@ public sealed class TransferQueueViewModel : ViewModelBase
             return;
         }
 
+        _statusBar.RequestQueueRefresh();
         await RefreshAsync().ConfigureAwait(true);
     }
 
@@ -291,6 +296,7 @@ public sealed class TransferQueueViewModel : ViewModelBase
             }
         }
 
+        _statusBar.RequestQueueRefresh();
         await RefreshAsync().ConfigureAwait(true);
     }
 
@@ -317,6 +323,7 @@ public sealed class TransferQueueViewModel : ViewModelBase
             }
         }
 
+        _statusBar.RequestQueueRefresh();
         await RefreshAsync().ConfigureAwait(true);
     }
 
