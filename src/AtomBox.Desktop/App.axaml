@@ -5,7 +5,7 @@
     <Application.Resources>
         <SolidColorBrush x:Key="AtomBoxSurfaceBrush" Color="#FFFFFF" />
         <SolidColorBrush x:Key="AtomBoxSubtleSurfaceBrush" Color="#F8FAFC" />
-        <SolidColorBrush x:Key="AtomBoxNavigationSurfaceBrush" Color="#FAFAFA" />
+        <SolidColorBrush x:Key="AtomBoxNavigationSurfaceBrush" Color="#FFFFFF" />
         <SolidColorBrush x:Key="AtomBoxStatusBarSurfaceBrush" Color="#F7F8FA" />
         <SolidColorBrush x:Key="AtomBoxBorderBrush" Color="#E6E8EB" />
         <SolidColorBrush x:Key="AtomBoxSubtleBorderBrush" Color="#EEF2F7" />

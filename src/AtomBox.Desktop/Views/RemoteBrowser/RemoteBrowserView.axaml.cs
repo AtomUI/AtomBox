@@ -26,7 +26,8 @@ public sealed partial class RemoteBrowserView : UserControl
 
     private void HandleRowDoubleTapped(object? sender, TappedEventArgs e)
     {
-        if (DataContext is not RemoteBrowserViewModel viewModel ||
+        if (e.Source is AtomUI.Desktop.Controls.CheckBox ||
+            DataContext is not RemoteBrowserViewModel viewModel ||
             sender is not Control { DataContext: RemoteListRowViewModel row })
         {
             return;
@@ -144,6 +145,25 @@ public sealed partial class RemoteBrowserView : UserControl
         }
 
         e.Handled = true;
+    }
+
+    private async void HandleSearchKeyDown(object? sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter || DataContext is not RemoteBrowserViewModel viewModel)
+        {
+            return;
+        }
+
+        await viewModel.ApplySearchAsync().ConfigureAwait(true);
+        e.Handled = true;
+    }
+
+    private async void HandleSearchTextChanged(object? sender, TextChangedEventArgs e)
+    {
+        if (DataContext is RemoteBrowserViewModel viewModel)
+        {
+            await viewModel.RestoreListWhenSearchClearedAsync().ConfigureAwait(true);
+        }
     }
 
     private void HandleRefreshFloatButtonClick(object? sender, RoutedEventArgs e)

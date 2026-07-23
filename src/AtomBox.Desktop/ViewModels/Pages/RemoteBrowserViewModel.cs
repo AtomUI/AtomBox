@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Windows.Input;
 using AtomBox.Application.Accounts;
 using AtomBox.Application.Browsing;
@@ -17,6 +18,7 @@ using AtomBox.Desktop.Shell;
 using AtomUI.Controls;
 using AtomUI.Desktop.Controls;
 using AtomUI.Icons.AntDesign;
+using Avalonia.Controls;
 using Avalonia.Threading;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
@@ -56,7 +58,10 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
     private ListRemoteItemsRequest? _lastFailedListRequest;
     private ErrorDialogRequest? _lastErrorDetails;
     private bool _isSyncingBucketSelection;
+    private bool _isUpdatingFileSelection;
     private string _searchText = string.Empty;
+    private string _appliedSearchText = string.Empty;
+    private bool _restoreListAfterSearchLoad;
     private bool _isUploadPreparing;
 
     public RemoteBrowserViewModel(
@@ -106,6 +111,15 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             parameter => _storageAccountId is not null &&
                 !IsLoading &&
                 TryGetDeletableRow(parameter, out _, out _, out _));
+        DownloadSelectedFilesCommand = new AsyncRelayCommand(
+            _ => DownloadSelectedFilesAsync(),
+            _ => _storageAccountId is not null && !IsLoading && HasSelectedFiles);
+        DeleteSelectedFilesCommand = new AsyncRelayCommand(
+            _ => DeleteSelectedFilesAsync(),
+            _ => _storageAccountId is not null && !IsLoading && CanDeleteSelectedFiles);
+        ClearSelectedFilesCommand = new RelayCommand(
+            _ => ClearSelectedFiles(),
+            _ => HasSelectedFiles);
         ShowErrorDetailsCommand = new AsyncRelayCommand(_ => ShowErrorDetailsAsync(), _ => HasErrorDetails);
     }
 
@@ -150,6 +164,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
                 OnPropertyChanged(nameof(CanCreateBucket));
                 OnPropertyChanged(nameof(CanCreateFolder));
                 RaiseUploadStateChanged();
+                RaiseFileSelectionStateChanged();
             }
         }
     }
@@ -341,7 +356,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
     public string SearchText
     {
         get => _searchText;
-        set => SetProperty(ref _searchText, value);
+        set => SetProperty(ref _searchText, value ?? string.Empty);
     }
 
     public AsyncRelayCommand RefreshCommand { get; }
@@ -372,7 +387,53 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
     public AsyncRelayCommand DeleteSelectedCommand { get; }
 
+    public AsyncRelayCommand DownloadSelectedFilesCommand { get; }
+
+    public AsyncRelayCommand DeleteSelectedFilesCommand { get; }
+
+    public RelayCommand ClearSelectedFilesCommand { get; }
+
     public AsyncRelayCommand ShowErrorDetailsCommand { get; }
+
+    public int SelectedFileCount => Rows.Count(row => row.IsFile && row.IsSelected);
+
+    public bool HasSelectedFiles => SelectedFileCount > 0;
+
+    public bool IsBatchSelectionEnabled => RemoteBrowserFeatureFlags.BatchFileSelectionEnabled;
+
+    public GridLength BatchSelectionColumnWidth =>
+        IsBatchSelectionEnabled ? new GridLength(44) : new GridLength(0);
+
+    public bool IsBatchSelectionBarVisible => IsBatchSelectionEnabled && HasSelectedFiles;
+
+    public bool HasSelectableFiles => Rows.Any(row => row.IsFile);
+
+    public bool CanDeleteSelectedFiles =>
+        HasSelectedFiles &&
+        Rows.Where(row => row.IsFile && row.IsSelected).All(row => row.CanDelete);
+
+    public bool? AllFilesSelectionState
+    {
+        get
+        {
+            var files = Rows.Where(row => row.IsFile).ToArray();
+            if (files.Length == 0 || files.All(row => !row.IsSelected))
+            {
+                return false;
+            }
+
+            return files.All(row => row.IsSelected) ? true : null;
+        }
+        set
+        {
+            if (_isUpdatingFileSelection)
+            {
+                return;
+            }
+
+            SetAllFilesSelected(value == true);
+        }
+    }
 
     public RemoteItemRowViewModel? SelectedItem
     {
@@ -524,6 +585,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         SetAccountSelection(false);
         Items.Clear();
         Rows.Clear();
+        RaiseFileSelectionStateChanged();
         Accounts.Clear();
         ObjectStorageAccounts.Clear();
         FileTransferAccounts.Clear();
@@ -612,14 +674,21 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         return LoadItemsAsync();
     }
 
-    private Task LoadItemsAsync()
+    private async Task LoadItemsAsync()
     {
         if (_storageAccountId is null)
         {
-            return LoadEntryAsync();
+            await LoadEntryAsync().ConfigureAwait(true);
+            return;
         }
 
-        return RunWithLoadingAsync(LoadItemsCoreAsync);
+        await RunWithLoadingAsync(LoadItemsCoreAsync).ConfigureAwait(true);
+
+        if (_restoreListAfterSearchLoad)
+        {
+            _restoreListAfterSearchLoad = false;
+            await RestoreListWhenSearchClearedAsync().ConfigureAwait(true);
+        }
     }
 
     private async Task LoadItemsCoreAsync()
@@ -632,6 +701,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         SetAccountSelection(false);
         Items.Clear();
         Rows.Clear();
+        RaiseFileSelectionStateChanged();
         Accounts.Clear();
         ObjectStorageAccounts.Clear();
         FileTransferAccounts.Clear();
@@ -643,12 +713,13 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         _lastFailedListRequest = null;
         RetryLoadCommand.RaiseCanExecuteChanged();
 
+        var appliedSearchText = GetAppliedSearchText();
         var result = await _browser.ListRemoteItemsAsync(
             new ListRemoteItemsRequest(
                 storageAccountId,
                 _remotePath,
                 new RemotePageRequest(100, _requestedCursor),
-                IsSearchVisible ? SearchText : null)).ConfigureAwait(true);
+                appliedSearchText)).ConfigureAwait(true);
 
         if (result.IsFailure)
         {
@@ -657,7 +728,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
                 storageAccountId,
                 _remotePath,
                 new RemotePageRequest(100, _requestedCursor),
-                IsSearchVisible ? SearchText : null);
+                appliedSearchText);
             RetryLoadCommand.RaiseCanExecuteChanged();
             SetErrorDetails(
                 "远程文件列表加载失败",
@@ -712,7 +783,8 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
                 DeleteSelectedCommand,
                 CanPreviewItem(item),
                 CanRenameItem(item),
-                CanDeleteItem(item)));
+                CanDeleteItem(item),
+                RaiseFileSelectionStateChanged));
         }
 
         if (_currentAccount?.ProviderCategory == StorageProviderCategory.ObjectStorage && _pathContext.IsRoot)
@@ -725,8 +797,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             SyncSelectedBucketForPath(_remotePath);
         }
 
-        StatusMessage = Rows.Count == 0 ? "当前目录暂无可显示内容。" : $"当前目录项目 {Rows.Count} 个。";
-        RaiseCollectionStateChanged();
+        RefreshCurrentListStatus();
     }
 
     private async Task RunWithLoadingAsync(Func<Task> operation)
@@ -843,6 +914,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsPlainBreadcrumbNavigationVisible));
         OnPropertyChanged(nameof(IsRemoteNavigationVisible));
         RaiseUploadStateChanged();
+        RaiseFileSelectionStateChanged();
     }
 
     private void RaiseUploadStateChanged()
@@ -935,6 +1007,9 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
     private void ClearSearch()
     {
+        _appliedSearchText = string.Empty;
+        _restoreListAfterSearchLoad = false;
+
         if (string.IsNullOrEmpty(_searchText))
         {
             return;
@@ -1073,13 +1148,84 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
     public Task ApplySearchAsync()
     {
+        if (!IsSearchVisible || IsLoading)
+        {
+            return Task.CompletedTask;
+        }
+
+        _appliedSearchText = SearchText.Trim();
+        ResetPaging();
+        return LoadItemsAsync();
+    }
+
+    public Task RestoreListWhenSearchClearedAsync()
+    {
         if (!IsSearchVisible)
         {
             return Task.CompletedTask;
         }
 
+        if (!string.IsNullOrWhiteSpace(SearchText))
+        {
+            _restoreListAfterSearchLoad = false;
+            return Task.CompletedTask;
+        }
+
+        if (string.IsNullOrWhiteSpace(_appliedSearchText))
+        {
+            return Task.CompletedTask;
+        }
+
+        if (IsLoading)
+        {
+            _restoreListAfterSearchLoad = true;
+            return Task.CompletedTask;
+        }
+
+        _appliedSearchText = string.Empty;
         ResetPaging();
         return LoadItemsAsync();
+    }
+
+    private void SetAllFilesSelected(bool isSelected)
+    {
+        _isUpdatingFileSelection = true;
+        try
+        {
+            foreach (var row in Rows.Where(row => row.IsFile))
+            {
+                row.IsSelected = isSelected;
+            }
+        }
+        finally
+        {
+            _isUpdatingFileSelection = false;
+        }
+
+        RaiseFileSelectionStateChanged();
+    }
+
+    private void ClearSelectedFiles()
+    {
+        SetAllFilesSelected(false);
+    }
+
+    private void RaiseFileSelectionStateChanged()
+    {
+        if (_isUpdatingFileSelection)
+        {
+            return;
+        }
+
+        OnPropertyChanged(nameof(SelectedFileCount));
+        OnPropertyChanged(nameof(HasSelectedFiles));
+        OnPropertyChanged(nameof(IsBatchSelectionBarVisible));
+        OnPropertyChanged(nameof(HasSelectableFiles));
+        OnPropertyChanged(nameof(CanDeleteSelectedFiles));
+        OnPropertyChanged(nameof(AllFilesSelectionState));
+        DownloadSelectedFilesCommand.RaiseCanExecuteChanged();
+        DeleteSelectedFilesCommand.RaiseCanExecuteChanged();
+        ClearSelectedFilesCommand.RaiseCanExecuteChanged();
     }
 
     private void RebuildBreadcrumbItems()
@@ -1154,7 +1300,6 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         var storageAccountId = _storageAccountId.Value;
         var preferences = await _preferences.GetAsync().ConfigureAwait(true);
         var localPath = new LocalPath(Path.Combine(preferences.DefaultDownloadDirectory, name));
-        await _navigation.NavigateAsync(NavigationTarget.TransferQueue).ConfigureAwait(true);
         _messages.Info($"正在创建下载任务：{localPath.Value}");
 
         _ = Task.Run(async () =>
@@ -1177,9 +1322,64 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
                     return;
                 }
 
+                _statusBar.RequestQueueRefresh();
                 StatusMessage = $"下载任务已创建，保存到：{localPath.Value}";
+                _messages.Success("下载任务已创建。");
             });
         });
+    }
+
+    private async Task DownloadSelectedFilesAsync()
+    {
+        if (_storageAccountId is not { } storageAccountId)
+        {
+            return;
+        }
+
+        var selectedFiles = Rows
+            .Where(row => row.IsFile && row.IsSelected)
+            .ToArray();
+        if (selectedFiles.Length == 0)
+        {
+            return;
+        }
+
+        var preferences = await _preferences.GetAsync().ConfigureAwait(true);
+        var targets = selectedFiles
+            .Select(row => new DownloadTaskTarget(
+                row.Path,
+                new LocalPath(Path.Combine(preferences.DefaultDownloadDirectory, row.Name))))
+            .ToArray();
+
+        StatusMessage = $"正在创建 {targets.Length} 个下载任务...";
+        var result = await _transfers.CreateDownloadTasksAsync(
+            new CreateDownloadTasksRequest(
+                storageAccountId,
+                targets,
+                TransferOverwritePolicy.Rename)).ConfigureAwait(true);
+
+        if (result.IsFailure)
+        {
+            var message = result.Error?.Message ?? "创建批量下载任务失败。";
+            StatusMessage = message;
+            SetErrorDetails(
+                "创建批量下载任务失败",
+                "创建批量下载任务失败。",
+                result.Error,
+                new Dictionary<string, string>
+                {
+                    ["文件数量"] = targets.Length.ToString(),
+                    ["保存目录"] = preferences.DefaultDownloadDirectory
+                });
+            _messages.Error(message);
+            return;
+        }
+
+        var createdCount = result.GetValueOrThrow().Tasks.Count;
+        _statusBar.RequestQueueRefresh();
+        ClearSelectedFiles();
+        StatusMessage = $"已创建 {createdCount} 个下载任务，保存到：{preferences.DefaultDownloadDirectory}";
+        _messages.Success($"已创建 {createdCount} 个下载任务。");
     }
 
     private async Task PreviewSelectedAsync(object? parameter)
@@ -1309,11 +1509,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
                 continue;
             }
 
-            Rows[index] = row with
-            {
-                Path = newPath,
-                Name = newName
-            };
+            Rows[index] = row.WithPathAndName(newPath, newName);
             break;
         }
 
@@ -1367,7 +1563,8 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             DeleteSelectedCommand,
             CanPreviewItem(item),
             CanRenameItem(item),
-            CanDeleteItem(item));
+            CanDeleteItem(item),
+            RaiseFileSelectionStateChanged);
 
         var insertIndex = Rows
             .Select((row, index) => new { row, index })
@@ -1391,8 +1588,8 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
     private void RefreshCurrentListStatus()
     {
-        var query = SearchText.Trim();
-        if (IsSearchVisible && !string.IsNullOrWhiteSpace(query))
+        var query = GetAppliedSearchText();
+        if (!string.IsNullOrWhiteSpace(query))
         {
             StatusMessage = Rows.Count == 0
                 ? $"未找到以 \"{query}\" 开头的内容。"
@@ -1404,6 +1601,13 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         }
 
         RaiseCollectionStateChanged();
+    }
+
+    private string? GetAppliedSearchText()
+    {
+        return IsSearchVisible && !string.IsNullOrWhiteSpace(_appliedSearchText)
+            ? _appliedSearchText
+            : null;
     }
 
     private static void RemoveFirst<T>(ObservableCollection<T> collection, Predicate<T> predicate)
@@ -1532,7 +1736,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
                 }
 
                 var createdCount = result.GetValueOrThrow().Tasks.Count;
-                _statusBar.ReportTransferTasksCreated(createdCount);
+                _statusBar.RequestQueueRefresh();
                 StatusMessage = createdCount <= 1
                     ? "上传任务已创建，等待传输完成。"
                     : $"已创建 {createdCount} 个上传任务，等待传输完成。";
@@ -1701,6 +1905,79 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         _messages.Info($"{name}已删除");
         StatusMessage = $"已删除：{name}";
         RemoveRow(path);
+    }
+
+    private async Task DeleteSelectedFilesAsync()
+    {
+        if (_storageAccountId is not { } storageAccountId)
+        {
+            return;
+        }
+
+        var selectedFiles = Rows
+            .Where(row => row.IsFile && row.IsSelected && row.CanDelete)
+            .ToArray();
+        if (selectedFiles.Length == 0)
+        {
+            return;
+        }
+
+        var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogRequest(
+            "批量删除远程文件",
+            $"确定要删除选中的 {selectedFiles.Length} 个远程文件吗？\n\n当前位置：{CurrentPath}\n此操作不可撤销。",
+            "删除",
+            "取消")).ConfigureAwait(true);
+        if (!confirmed)
+        {
+            return;
+        }
+
+        var failures = new List<(RemoteListRowViewModel Row, StorageError Error)>();
+        var deletedCount = 0;
+        await RunWithLoadingAsync(async () =>
+        {
+            for (var index = 0; index < selectedFiles.Length; index++)
+            {
+                var row = selectedFiles[index];
+                StatusMessage = $"正在删除 {index + 1}/{selectedFiles.Length}：{row.Name}";
+                var result = await _browser.DeleteRemoteItemAsync(new DeleteRemoteItemRequest(
+                    storageAccountId,
+                    row.Path,
+                    RemoteItemKind.File)).ConfigureAwait(true);
+                if (result.IsFailure)
+                {
+                    failures.Add((row, result.Error!));
+                }
+                else
+                {
+                    deletedCount++;
+                }
+            }
+
+            await LoadItemsCoreAsync().ConfigureAwait(true);
+        }).ConfigureAwait(true);
+
+        if (failures.Count == 0)
+        {
+            StatusMessage = $"已删除 {deletedCount} 个文件。";
+            _messages.Info(StatusMessage);
+            return;
+        }
+
+        var summary = $"批量删除完成：成功 {deletedCount} 个，失败 {failures.Count} 个。";
+        StatusMessage = summary;
+        SetErrorDetails(
+            "批量删除部分失败",
+            summary,
+            failures[0].Error,
+            new Dictionary<string, string>
+            {
+                ["当前位置"] = CurrentPath,
+                ["失败文件"] = string.Join(
+                    Environment.NewLine,
+                    failures.Select(item => $"{item.Row.Name}：{item.Error.Message}"))
+            });
+        _messages.Error(summary);
     }
 
     private bool CanDeleteItem(RemoteItem item)
@@ -2081,11 +2358,64 @@ public sealed record RemoteListRowViewModel(
     ICommand DeleteCommand,
     bool CanPreview,
     bool CanRename,
-    bool CanDelete)
+    bool CanDelete,
+    Action SelectionChanged) : INotifyPropertyChanged
 {
+    private bool _isSelected;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
     public bool IsFile => Kind == RemoteItemKind.File;
 
     public bool IsFolderLike => Kind is RemoteItemKind.Folder or RemoteItemKind.Bucket;
+
+    public bool CanSelect => IsFile;
+
+    public bool IsBatchSelectionVisible =>
+        RemoteBrowserFeatureFlags.BatchFileSelectionEnabled && CanSelect;
+
+    public GridLength BatchSelectionColumnWidth =>
+        RemoteBrowserFeatureFlags.BatchFileSelectionEnabled ? new GridLength(44) : new GridLength(0);
+
+    public bool IsSelected
+    {
+        get => _isSelected;
+        set
+        {
+            var nextValue = IsFile && value;
+            if (_isSelected == nextValue)
+            {
+                return;
+            }
+
+            _isSelected = nextValue;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(IsSelected)));
+            SelectionChanged();
+        }
+    }
+
+    public RemoteListRowViewModel WithPathAndName(RemotePath path, string name)
+    {
+        var renamedRow = new RemoteListRowViewModel(
+            path,
+            Icon,
+            name,
+            SizeBytes,
+            Size,
+            UpdatedAt,
+            Kind,
+            OpenCommand,
+            PreviewCommand,
+            DownloadCommand,
+            RenameCommand,
+            DeleteCommand,
+            CanPreview,
+            CanRename,
+            CanDelete,
+            SelectionChanged);
+        renamedRow._isSelected = _isSelected;
+        return renamedRow;
+    }
 
     public static RemoteListRowViewModel From(
         RemoteItem item,
@@ -2096,7 +2426,8 @@ public sealed record RemoteListRowViewModel(
         ICommand deleteCommand,
         bool canPreview,
         bool canRename,
-        bool canDelete)
+        bool canDelete,
+        Action selectionChanged)
     {
         return new RemoteListRowViewModel(
             item.Path,
@@ -2113,7 +2444,8 @@ public sealed record RemoteListRowViewModel(
             deleteCommand,
             canPreview,
             canRename,
-            canDelete);
+            canDelete,
+            selectionChanged);
     }
 
     private static string FormatSize(long? size, RemoteItemKind kind)
@@ -2134,6 +2466,11 @@ public sealed record RemoteListRowViewModel(
 
         return $"{value:0.#} {units[unitIndex]}";
     }
+}
+
+internal static class RemoteBrowserFeatureFlags
+{
+    public const bool BatchFileSelectionEnabled = false;
 }
 
 internal static class RemoteItemIconFactory
