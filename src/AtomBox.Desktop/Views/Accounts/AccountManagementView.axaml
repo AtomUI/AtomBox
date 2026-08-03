@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
+             xmlns:loc="using:AtomBox.Desktop.Localization"
              xmlns:antdicons="https://atomui.net/icons/antdesign"
              xmlns:pages="using:AtomBox.Desktop.ViewModels.Pages"
              x:Class="AtomBox.Desktop.Views.Accounts.AccountManagementView"
@@ -23,15 +24,18 @@
                 <Border Classes="app-list-surface">
                     <Grid RowDefinitions="40,*">
                         <Grid Grid.Row="0"
-                              ColumnDefinitions="1.4*,130,2*,150"
+                              ColumnDefinitions="1.4*,130,2*,180"
                               Classes="app-list-header">
-                            <TextBlock Grid.Column="0" Text="名称" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" />
-                            <TextBlock Grid.Column="1" Text="类型" VerticalAlignment="Center" FontWeight="SemiBold" />
-                            <TextBlock Grid.Column="2" Text="地址 / Provider" VerticalAlignment="Center" FontWeight="SemiBold" />
-                            <TextBlock Grid.Column="3" Text="操作" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="0" Text="{loc:Loc Common.Name}" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="1" Text="{loc:Loc Common.Type}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="2" Text="{loc:Loc Common.AddressProvider}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="3" Text="{loc:Loc Common.Action}" VerticalAlignment="Center" FontWeight="SemiBold" />
                         </Grid>
-                        <ScrollViewer Grid.Row="1">
-                            <ItemsControl ItemsSource="{Binding Accounts}">
+                        <ScrollViewer Grid.Row="1"
+                                      HorizontalScrollBarVisibility="Disabled"
+                                      VerticalScrollBarVisibility="Auto">
+                            <ItemsControl ItemsSource="{Binding Accounts}"
+                                          HorizontalAlignment="Stretch">
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate x:DataType="pages:AccountRowViewModel">
                                         <Border MinHeight="44"
@@ -39,7 +43,7 @@
                                                 PointerEntered="HandleAccountRowPointerEntered"
                                                 PointerExited="HandleAccountRowPointerExited"
                                                 PointerMoved="HandleAccountRowPointerMoved">
-                                            <Grid ColumnDefinitions="1.4*,130,2*,150"
+                                            <Grid ColumnDefinitions="1.4*,130,2*,180"
                                                   Classes="app-list-row-content">
                                                 <TextBlock Grid.Column="0" Classes="app-primary-text" Text="{Binding DisplayName}" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
                                                 <atom:Tag Grid.Column="1"
@@ -51,12 +55,13 @@
                                                 <StackPanel Grid.Column="3"
                                                             Orientation="Horizontal"
                                                             Spacing="8"
+                                                            Margin="0,0,12,0"
                                                             VerticalAlignment="Center">
-                                                    <atom:Button Content="编辑"
+                                                    <atom:Button Content="{loc:Loc Common.Edit}"
                                                                  Icon="{antdicons:AntDesignIconProvider EditOutlined}"
                                                                  Command="{Binding #Root.DataContext.EditAccountCommand}"
                                                                  CommandParameter="{Binding}" />
-                                                    <atom:Button Content="删除"
+                                                    <atom:Button Content="{loc:Loc Common.Delete}"
                                                                  Icon="{antdicons:AntDesignIconProvider DeleteOutlined}"
                                                                  Command="{Binding #Root.DataContext.DeleteAccountCommand}"
                                                                  CommandParameter="{Binding}" />
