@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="AddAccount" xml:space="preserve"><value>添加账号</value></data>
+  <data name="Open" xml:space="preserve"><value>打开</value></data>
+  <data name="Preview" xml:space="preserve"><value>预览</value></data>
+  <data name="Download" xml:space="preserve"><value>下载</value></data>
+  <data name="Rename" xml:space="preserve"><value>重命名</value></data>
+  <data name="Delete" xml:space="preserve"><value>删除</value></data>
+  <data name="Retry" xml:space="preserve"><value>重试</value></data>
+  <data name="ViewDetails" xml:space="preserve"><value>查看详情</value></data>
+  <data name="PreviousPage" xml:space="preserve"><value>上一页</value></data>
+  <data name="NextPage" xml:space="preserve"><value>下一页</value></data>
+  <data name="Edit" xml:space="preserve"><value>编辑</value></data>
+  <data name="Save" xml:space="preserve"><value>保存</value></data>
+  <data name="Reset" xml:space="preserve"><value>重置</value></data>
+  <data name="Cancel" xml:space="preserve"><value>取消</value></data>
+  <data name="Modify" xml:space="preserve"><value>修改</value></data>
+  <data name="FileName" xml:space="preserve"><value>文件名</value></data>
+  <data name="Direction" xml:space="preserve"><value>方向</value></data>
+  <data name="TargetSource" xml:space="preserve"><value>目标 / 来源</value></data>
+  <data name="Progress" xml:space="preserve"><value>进度</value></data>
+  <data name="Speed" xml:space="preserve"><value>速度</value></data>
+  <data name="Action" xml:space="preserve"><value>操作</value></data>
+  <data name="Result" xml:space="preserve"><value>结果</value></data>
+  <data name="CompletedAt" xml:space="preserve"><value>完成时间</value></data>
+  <data name="Name" xml:space="preserve"><value>名称</value></data>
+  <data name="Type" xml:space="preserve"><value>类型</value></data>
+  <data name="AddressProvider" xml:space="preserve"><value>地址 / Provider</value></data>
+  <data name="FileSize" xml:space="preserve"><value>文件大小</value></data>
+  <data name="ModifiedAt" xml:space="preserve"><value>修改时间</value></data>
+  <data name="Thumbnail" xml:space="preserve"><value>缩略图</value></data>
+  <data name="Upload" xml:space="preserve"><value>上传</value></data>
+  <data name="Close" xml:space="preserve"><value>关闭</value></data>
+  <data name="Confirm" xml:space="preserve"><value>确认</value></data>
+  <data name="Yes" xml:space="preserve"><value>是</value></data>
+  <data name="No" xml:space="preserve"><value>否</value></data>
+  <data name="Task" xml:space="preserve"><value>任务</value></data>
+  <data name="Status" xml:space="preserve"><value>状态</value></data>
+  <data name="Reason" xml:space="preserve"><value>原因</value></data>
+  <data name="Retryable" xml:space="preserve"><value>可重试</value></data>
+  <data name="Account" xml:space="preserve"><value>账号</value></data>
+  <data name="Path" xml:space="preserve"><value>路径</value></data>
+  <data name="FileCount" xml:space="preserve"><value>文件数量</value></data>
+  <data name="SaveDirectory" xml:space="preserve"><value>保存目录</value></data>
+  <data name="File" xml:space="preserve"><value>文件</value></data>
+  <data name="Object" xml:space="preserve"><value>对象</value></data>
+  <data name="NewName" xml:space="preserve"><value>新名称</value></data>
+  <data name="Folder" xml:space="preserve"><value>文件夹</value></data>
+  <data name="CurrentLocation" xml:space="preserve"><value>当前位置</value></data>
+  <data name="FailedFiles" xml:space="preserve"><value>失败文件</value></data>
+</root>

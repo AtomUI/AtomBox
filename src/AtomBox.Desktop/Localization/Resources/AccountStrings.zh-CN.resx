@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Title" xml:space="preserve"><value>账号管理</value></data>
+  <data name="AccountListLoadFailed" xml:space="preserve"><value>账号列表加载失败。</value></data>
+  <data name="AccountSaveFailed" xml:space="preserve"><value>账号保存失败。</value></data>
+  <data name="AccountDeleteFailed" xml:space="preserve"><value>账号删除失败。</value></data>
+  <data name="AccountAdded" xml:space="preserve"><value>已新增账号：{0}</value></data>
+  <data name="AccountUpdated" xml:space="preserve"><value>已更新账号：{0}</value></data>
+  <data name="AccountDeleted" xml:space="preserve"><value>已删除账号：{0}</value></data>
+  <data name="DeleteConnectionTitle" xml:space="preserve"><value>删除远程连接</value></data>
+  <data name="DeleteConnectionMessage" xml:space="preserve"><value>确定要删除账号“{0}”吗？&#xA;&#xA;Provider：{1}&#xA;此操作会移除账号配置，并安排对应凭据清理。</value></data>
+  <data name="AddRemoteConnection" xml:space="preserve"><value>添加远程连接</value></data>
+  <data name="EditRemoteConnection" xml:space="preserve"><value>编辑远程连接</value></data>
+  <data name="AccountDialogOpenFailed" xml:space="preserve"><value>账号弹窗打开失败。</value></data>
+  <data name="ExceptionType" xml:space="preserve"><value>异常类型</value></data>
+  <data name="Stage" xml:space="preserve"><value>阶段</value></data>
+  <data name="AddAccountStage" xml:space="preserve"><value>新增账号</value></data>
+  <data name="EditAccountStage" xml:space="preserve"><value>编辑账号</value></data>
+  <data name="PreviewTitle" xml:space="preserve"><value>预览 - {0}</value></data>
+  <data name="PreviewOpenFailed" xml:space="preserve"><value>预览打开失败。</value></data>
+  <data name="ContentType" xml:space="preserve"><value>类型</value></data>
+  <data name="Category" xml:space="preserve"><value>类别</value></data>
+  <data name="ErrorCode" xml:space="preserve"><value>错误码</value></data>
+  <data name="ProviderErrorCode" xml:space="preserve"><value>Provider 错误码</value></data>
+  <data name="Details" xml:space="preserve"><value>详情</value></data>
+  <data name="NoMoreDetails" xml:space="preserve"><value>没有更多详情。</value></data>
+  <data name="NextSuggestion" xml:space="preserve"><value>下一步建议</value></data>
+  <data name="SuggestionAuthentication" xml:space="preserve"><value>检查 AccessKey、AccessKeySecret、Token 或临时凭据是否正确且未过期。</value></data>
+  <data name="SuggestionAuthorization" xml:space="preserve"><value>检查账号是否具备 Bucket、路径或对象的访问权限；对象存储账号请检查访问策略。</value></data>
+  <data name="SuggestionNetwork" xml:space="preserve"><value>检查 endpoint、网络连接、代理、防火墙或 DNS 解析是否正常。</value></data>
+  <data name="SuggestionNotFound" xml:space="preserve"><value>检查 Bucket、远程路径或对象是否存在；如果刚删除或移动过，请刷新当前目录。</value></data>
+  <data name="SuggestionConflict" xml:space="preserve"><value>检查是否存在同名文件、重复任务或当前任务状态是否允许该操作。</value></data>
+  <data name="SuggestionProvider" xml:space="preserve"><value>查看 Provider 错误码和服务状态；如果标记为可重试，可以稍后重试。</value></data>
+  <data name="SuggestionInfrastructure" xml:space="preserve"><value>检查本地配置目录、状态目录、凭据目录和磁盘权限。</value></data>
+  <data name="SuggestionValidation" xml:space="preserve"><value>检查表单必填项、endpoint、Bucket、路径或端口格式是否正确。</value></data>
+  <data name="AnonymousAccess" xml:space="preserve"><value>匿名访问</value></data>
+  <data name="Password" xml:space="preserve"><value>密码</value></data>
+  <data name="PrivateKey" xml:space="preserve"><value>私钥</value></data>
+  <data name="TestConnection" xml:space="preserve"><value>测试连接</value></data>
+  <data name="ConnectionTestException" xml:space="preserve"><value>连接测试异常：{0}</value></data>
+  <data name="ConnectionType" xml:space="preserve"><value>连接类型</value></data>
+  <data name="ProviderProtocol" xml:space="preserve"><value>Provider / 协议</value></data>
+  <data name="BasicInformation" xml:space="preserve"><value>基本信息</value></data>
+  <data name="DisplayName" xml:space="preserve"><value>显示名称</value></data>
+  <data name="ConnectionConfiguration" xml:space="preserve"><value>连接配置</value></data>
+  <data name="Credentials" xml:space="preserve"><value>凭据</value></data>
+  <data name="GenericWebDav" xml:space="preserve"><value>通用 WebDAV</value></data>
+  <data name="AuthenticationMethod" xml:space="preserve"><value>认证方式</value></data>
+  <data name="TestingConnection" xml:space="preserve"><value>正在测试连接...</value></data>
+  <data name="ConnectionAvailable" xml:space="preserve"><value>连接可用：{0}</value></data>
+  <data name="ConnectionFailed" xml:space="preserve"><value>连接失败。</value></data>
+  <data name="ConnectionTestFailed" xml:space="preserve"><value>连接测试失败</value></data>
+  <data name="ConnectionTestSucceeded" xml:space="preserve"><value>连接测试成功</value></data>
+  <data name="SelectProviderValidation" xml:space="preserve"><value>请选择 Provider。</value></data>
+  <data name="DisplayNameRequired" xml:space="preserve"><value>显示名称不能为空。</value></data>
+  <data name="SelectPrivateKeyValidation" xml:space="preserve"><value>请选择有效的私钥文件。</value></data>
+  <data name="ReadPrivateKeyFailed" xml:space="preserve"><value>读取私钥文件失败：{0}</value></data>
+  <data name="FieldRequired" xml:space="preserve"><value>{0} 不能为空。</value></data>
+  <data name="AllCredentialsRequired" xml:space="preserve"><value>修改凭据时必须填写当前类型的全部必填凭据字段。</value></data>
+  <data name="PortValidation" xml:space="preserve"><value>Port 必须是 1 到 65535 之间的数字。</value></data>
+  <data name="Username" xml:space="preserve"><value>用户名</value></data>
+  <data name="OptionalBucket" xml:space="preserve"><value>可选；留空进入 Bucket 列表</value></data>
+  <data name="OptionalRootPath" xml:space="preserve"><value>可选；留空使用远端默认根路径</value></data>
+  <data name="OptionalAutoFill" xml:space="preserve"><value>可选；连接测试成功后自动填入</value></data>
+  <data name="OptionalPort" xml:space="preserve"><value>可选；例如 22 或 21</value></data>
+  <data name="ConfiguredSecret" xml:space="preserve"><value>已配置；留空不修改</value></data>
+  <data name="SelectPrivateKeyHint" xml:space="preserve"><value>请选择本机 .ssh 目录下的私钥文件</value></data>
+  <data name="Select" xml:space="preserve"><value>选择</value></data>
+  <data name="SelectSftpPrivateKey" xml:space="preserve"><value>选择 SFTP 私钥文件</value></data>
+  <data name="OriginalMessage" xml:space="preserve"><value>原始消息</value></data>
+</root>
