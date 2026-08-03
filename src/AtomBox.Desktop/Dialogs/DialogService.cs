@@ -13,7 +13,9 @@ using AtomBox.Core.Capabilities;
 using AtomBox.Core.Previews;
 using AtomBox.Core.Providers;
 using AtomBox.Core.Results;
+using AtomBox.Core.Errors;
 using AtomBox.Core.ValueObjects;
+using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Services;
 using AtomUI;
 using AtomUI.Controls;
@@ -45,6 +47,13 @@ namespace AtomBox.Desktop.Dialogs;
 
 public sealed class DialogService : IDialogService
 {
+    private readonly ILocalizationService _localization;
+
+    public DialogService(ILocalizationService localization)
+    {
+        _localization = localization;
+    }
+
     public async Task<AccountDialogResult?> ShowAccountDialogAsync(AccountDialogRequest request)
     {
         ArgumentNullException.ThrowIfNull(request);
@@ -56,7 +65,7 @@ public sealed class DialogService : IDialogService
 
         try
         {
-            var content = new AccountDialogWindow(request);
+            var content = new AccountDialogWindow(request, _localization);
             await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
             var result = await AtomDialog.ShowDialogModalAsync(
                 content,
@@ -89,14 +98,14 @@ public sealed class DialogService : IDialogService
         {
             System.Diagnostics.Debug.WriteLine(ex);
             await ShowErrorDetailsOverlayAsync(new ErrorDialogRequest(
-                "账号弹窗打开失败",
-                $"账号弹窗打开失败：{ex.Message}",
+                L("AccountDialogOpenFailed"),
+                L("AccountDialogOpenFailed"),
                 Details: new Dictionary<string, string>
                 {
-                    ["异常类型"] = ex.GetType().FullName ?? ex.GetType().Name,
-                    ["阶段"] = request.ExistingAccount is null ? "新增账号" : "编辑账号",
+                    [L("ExceptionType")] = ex.GetType().FullName ?? ex.GetType().Name,
+                    [L("Stage")] = L(request.ExistingAccount is null ? "AddAccountStage" : "EditAccountStage"),
                     ["Provider"] = request.ExistingAccount?.ProviderId.ToString() ?? "-"
-                }), mainWindow).ConfigureAwait(true);
+                }), mainWindow, _localization).ConfigureAwait(true);
             return null;
         }
     }
@@ -224,7 +233,7 @@ public sealed class DialogService : IDialogService
             return Task.CompletedTask;
         }
 
-        return ShowErrorDetailsOverlayAsync(request, mainWindow);
+        return ShowErrorDetailsOverlayAsync(request, mainWindow, _localization);
     }
 
     public async Task ShowPreviewAsync(PreviewDialogRequest request)
@@ -250,7 +259,7 @@ public sealed class DialogService : IDialogService
                 null,
                 new AtomDialogOptions
                 {
-                    Title = $"预览 - {request.FileName}",
+                    Title = F("PreviewTitle", request.FileName),
                     DialogHostType = AtomDialogHostType.Overlay,
                     IsResizable = true,
                     IsClosable = true,
@@ -274,14 +283,14 @@ public sealed class DialogService : IDialogService
         {
             System.Diagnostics.Debug.WriteLine(ex);
             await ShowErrorDetailsOverlayAsync(new ErrorDialogRequest(
-                "预览打开失败",
-                $"预览打开失败：{ex.Message}",
+                L("PreviewOpenFailed"),
+                L("PreviewOpenFailed"),
                 Details: new Dictionary<string, string>
                 {
-                    ["文件"] = request.FileName,
-                    ["类型"] = request.ContentType,
-                    ["异常类型"] = ex.GetType().FullName ?? ex.GetType().Name
-                }), mainWindow).ConfigureAwait(true);
+                    [_localization.GetString("Common", "File")] = request.FileName,
+                    [L("ContentType")] = request.ContentType,
+                    [L("ExceptionType")] = ex.GetType().FullName ?? ex.GetType().Name
+                }), mainWindow, _localization).ConfigureAwait(true);
         }
     }
 
@@ -328,6 +337,11 @@ public sealed class DialogService : IDialogService
             }, DispatcherPriority.Background);
         }
     }
+
+    private string L(string key) => _localization.GetString("Account", key);
+
+    private string F(string key, params object[] arguments) =>
+        _localization.Format("Account", key, arguments);
 
     private static Window? GetMainWindow()
     {
@@ -400,13 +414,16 @@ public sealed class DialogService : IDialogService
         }
     }
 
-    private static async Task ShowErrorDetailsOverlayAsync(ErrorDialogRequest request, TopLevel mainWindow)
+    private static async Task ShowErrorDetailsOverlayAsync(
+        ErrorDialogRequest request,
+        TopLevel mainWindow,
+        ILocalizationService localization)
     {
         try
         {
             await Dispatcher.UIThread.InvokeAsync(() => { }, DispatcherPriority.Background);
             await AtomDialog.ShowDialogModalAsync(
-                new ErrorDetailsDialogContent(request),
+                new ErrorDetailsDialogContent(request, localization),
                 null,
                 new AtomDialogOptions
                 {
@@ -438,8 +455,11 @@ public sealed class DialogService : IDialogService
 
     private sealed class ErrorDetailsDialogContent : UserControl
     {
-        public ErrorDetailsDialogContent(ErrorDialogRequest request)
+        private readonly ILocalizationService _localization;
+
+        public ErrorDetailsDialogContent(ErrorDialogRequest request, ILocalizationService localization)
         {
+            _localization = localization;
             Content = new StackPanel
             {
                 Margin = new Thickness(20),
@@ -457,7 +477,7 @@ public sealed class DialogService : IDialogService
             };
         }
 
-        private static Control BuildDetails(ErrorDialogRequest request)
+        private Control BuildDetails(ErrorDialogRequest request)
         {
             var details = new AtomDescriptions
             {
@@ -470,12 +490,21 @@ public sealed class DialogService : IDialogService
 
             if (request.Error is { } error)
             {
-                details.Items.Add(DetailItem("类别", error.Category.ToString()));
-                details.Items.Add(DetailItem("错误码", error.Code.ToString()));
-                details.Items.Add(DetailItem("可重试", error.IsRetryable ? "是" : "否"));
+                details.Items.Add(DetailItem(L("Category"), error.Category.ToString()));
+                details.Items.Add(DetailItem(L("ErrorCode"), error.Code.ToString()));
+                details.Items.Add(DetailItem(_localization.GetString("Common", "Retryable"), _localization.GetString("Common", error.IsRetryable ? "Yes" : "No")));
                 if (!string.IsNullOrWhiteSpace(error.ProviderErrorCode))
                 {
-                    details.Items.Add(DetailItem("Provider 错误码", error.ProviderErrorCode));
+                    details.Items.Add(DetailItem(L("ProviderErrorCode"), error.ProviderErrorCode));
+                }
+                if (!string.IsNullOrWhiteSpace(error.Message))
+                {
+                    details.Items.Add(DetailItem(L("OriginalMessage"), error.Message));
+                }
+
+                if (GetSuggestionKey(error.Category) is { } suggestionKey)
+                {
+                    details.Items.Add(DetailItem(L("NextSuggestion"), L(suggestionKey)));
                 }
             }
 
@@ -489,7 +518,7 @@ public sealed class DialogService : IDialogService
 
             if (details.Items.Count == 0)
             {
-                details.Items.Add(DetailItem("详情", "没有更多详情。"));
+                details.Items.Add(DetailItem(L("Details"), L("NoMoreDetails")));
             }
 
             return new ScrollViewer
@@ -510,6 +539,24 @@ public sealed class DialogService : IDialogService
                     Text = value,
                     TextWrapping = TextWrapping.Wrap
                 }
+            };
+        }
+
+        private string L(string key) => _localization.GetString("Account", key);
+
+        private static string? GetSuggestionKey(StorageErrorCategory category)
+        {
+            return category switch
+            {
+                StorageErrorCategory.Authentication => "SuggestionAuthentication",
+                StorageErrorCategory.Authorization => "SuggestionAuthorization",
+                StorageErrorCategory.Network => "SuggestionNetwork",
+                StorageErrorCategory.NotFound => "SuggestionNotFound",
+                StorageErrorCategory.Conflict => "SuggestionConflict",
+                StorageErrorCategory.Provider => "SuggestionProvider",
+                StorageErrorCategory.Infrastructure => "SuggestionInfrastructure",
+                StorageErrorCategory.Validation => "SuggestionValidation",
+                _ => null
             };
         }
     }
@@ -605,6 +652,7 @@ public sealed class DialogService : IDialogService
     private sealed class AccountDialogWindow : UserControl
     {
         private readonly AccountDialogRequest _request;
+        private readonly ILocalizationService _localization;
         private readonly AtomComboBox _categoryInput = new();
         private readonly AtomComboBox _providerInput = new();
         private readonly AtomComboBox _sftpAuthModeInput = new();
@@ -630,9 +678,10 @@ public sealed class DialogService : IDialogService
         private bool _footerButtonsAttached;
         private IDisposable? _connectionMessageDismissTimer;
 
-        public AccountDialogWindow(AccountDialogRequest request)
+        public AccountDialogWindow(AccountDialogRequest request, ILocalizationService localization)
         {
             _request = request;
+            _localization = localization;
             Content = BuildContent();
             SelectInitialCategory();
             RebuildProviderChoices();
@@ -686,13 +735,13 @@ public sealed class DialogService : IDialogService
             _displayNameInput.PlaceholderText = "Aliyun OSS - production";
             _displayNameInput.Text = _request.ExistingAccount?.DisplayName;
             _displayNameInput.TextChanged += (_, _) => ResetConnectionTestState();
-            _ftpAnonymousInput.Content = "匿名访问";
+            _ftpAnonymousInput.Content = L("AnonymousAccess");
             _ftpAnonymousInput.IsCheckedChanged += (_, _) =>
             {
                 UpdateCredentialInputState();
                 ResetConnectionTestState();
             };
-            _webDavAnonymousInput.Content = "匿名访问";
+            _webDavAnonymousInput.Content = L("AnonymousAccess");
             _webDavAnonymousInput.IsCheckedChanged += (_, _) =>
             {
                 UpdateCredentialInputState();
@@ -700,8 +749,8 @@ public sealed class DialogService : IDialogService
             };
             _sftpAuthModeInput.ItemsSource = new[]
             {
-                new AuthModeOption("password", "密码"),
-                new AuthModeOption("privateKey", "私钥")
+                new AuthModeOption("password", L("Password")),
+                new AuthModeOption("privateKey", L("PrivateKey"))
             };
             _sftpAuthModeInput.ItemTemplate = new FuncDataTemplate<AuthModeOption>((option, _) =>
                 new TextBlock { Text = option?.DisplayName ?? string.Empty });
@@ -714,7 +763,7 @@ public sealed class DialogService : IDialogService
             _connectionMessage.IsVisible = false;
             _connectionMessage.HorizontalAlignment = HorizontalAlignment.Center;
             _connectionMessage.MaxWidth = 580;
-            _testButton.Content = "测试连接";
+            _testButton.Content = L("TestConnection");
             _testButton.ButtonType = AtomButtonType.Default;
             _testButton.MinWidth = 88;
             _testButton.IsEnabled = _request.TestConnectionAsync is not null;
@@ -729,12 +778,12 @@ public sealed class DialogService : IDialogService
                 {
                     if (!_isClosed)
                     {
-                        ShowConnectionMessage($"连接测试异常：{ex.Message}", AtomUI.Desktop.Controls.MessageType.Error);
+                        ShowConnectionMessage(F("ConnectionTestException", ex.Message), AtomUI.Desktop.Controls.MessageType.Error);
                         _testButton.IsEnabled = true;
                     }
                 }
             };
-            _testDetailsButton.Content = "详情";
+            _testDetailsButton.Content = L("Details");
             _testDetailsButton.ButtonType = AtomButtonType.Default;
             _testDetailsButton.MinWidth = 72;
             _testDetailsButton.IsEnabled = false;
@@ -757,18 +806,18 @@ public sealed class DialogService : IDialogService
                 Spacing = 14,
                 Children =
                 {
-                    Section("连接类型", new StackPanel
+                    Section(L("ConnectionType"), new StackPanel
                     {
                         Spacing = 8,
                         Children =
                         {
-                            Field("类型", _categoryInput),
-                            Field("Provider / 协议", _providerInput)
+                            Field(_localization.GetString("Common", "Type"), _categoryInput),
+                            Field(L("ProviderProtocol"), _providerInput)
                         }
                     }),
-                    Section("基本信息", Field("显示名称", _displayNameInput)),
-                    Section("连接配置", _configFields),
-                    Section("凭据", _credentialFields)
+                    Section(L("BasicInformation"), Field(L("DisplayName"), _displayNameInput)),
+                    Section(L("ConnectionConfiguration"), _configFields),
+                    Section(L("Credentials"), _credentialFields)
                 }
             };
 
@@ -844,7 +893,7 @@ public sealed class DialogService : IDialogService
                 providers.FirstOrDefault();
         }
 
-        private static IEnumerable<ProviderDescriptor> CreateWebDavProviderChoices(ProviderDescriptor provider)
+        private IEnumerable<ProviderDescriptor> CreateWebDavProviderChoices(ProviderDescriptor provider)
         {
             if (!IsWebDav(provider))
             {
@@ -852,7 +901,7 @@ public sealed class DialogService : IDialogService
                 yield break;
             }
 
-            yield return CreateWebDavProviderChoice(provider, "通用 WebDAV");
+            yield return CreateWebDavProviderChoice(provider, L("GenericWebDav"));
             yield return CreateWebDavProviderChoice(provider, "坚果云");
         }
 
@@ -906,18 +955,18 @@ public sealed class DialogService : IDialogService
             if (IsFtp(provider))
             {
                 _ftpAnonymousInput.IsChecked = IsExistingAnonymousAuthMode();
-                _credentialFields.Children.Add(Field("匿名访问", _ftpAnonymousInput));
+                _credentialFields.Children.Add(Field(L("AnonymousAccess"), _ftpAnonymousInput));
             }
             else if (IsWebDav(provider))
             {
                 ApplySelectedWebDavProfileDefaults();
                 _webDavAnonymousInput.IsChecked = IsExistingAnonymousAuthMode();
-                _credentialFields.Children.Add(Field("匿名访问", _webDavAnonymousInput));
+                _credentialFields.Children.Add(Field(L("AnonymousAccess"), _webDavAnonymousInput));
             }
             else if (IsSftp(provider))
             {
                 SelectInitialSftpAuthMode();
-                _credentialFields.Children.Add(Field("认证方式", _sftpAuthModeInput));
+                _credentialFields.Children.Add(Field(L("AuthenticationMethod"), _sftpAuthModeInput));
             }
 
             foreach (var field in GetCredentialFields(provider))
@@ -957,7 +1006,7 @@ public sealed class DialogService : IDialogService
             _testButton.IsEnabled = false;
             _testDetailsButton.IsEnabled = false;
             _lastTestDetails = null;
-            ShowConnectionMessage("正在测试连接...", AtomUI.Desktop.Controls.MessageType.Loading, autoDismiss: false);
+            ShowConnectionMessage(L("TestingConnection"), AtomUI.Desktop.Controls.MessageType.Loading, autoDismiss: false);
             try
             {
                 var testResult = await _request.TestConnectionAsync(result, CancellationToken.None).ConfigureAwait(true);
@@ -972,13 +1021,13 @@ public sealed class DialogService : IDialogService
             {
                 ApplyConnectionTestResult(result, testResult.Value);
                 ShowConnectionMessage(
-                    $"连接可用：{testResult.Value.TargetSummary}",
+                    F("ConnectionAvailable", testResult.Value.TargetSummary),
                     AtomUI.Desktop.Controls.MessageType.Success);
                 }
                 else
                 {
                     ShowConnectionMessage(
-                        testResult.Error?.Message ?? "连接失败。",
+                        L("ConnectionFailed"),
                         AtomUI.Desktop.Controls.MessageType.Error);
                 }
             }
@@ -1017,18 +1066,18 @@ public sealed class DialogService : IDialogService
                 return Task.CompletedTask;
             }
 
-            return ShowErrorDetailsOverlayAsync(_lastTestDetails, mainWindow);
+            return ShowErrorDetailsOverlayAsync(_lastTestDetails, mainWindow, _localization);
         }
 
-        private static ErrorDialogRequest BuildConnectionTestDetails(
+        private ErrorDialogRequest BuildConnectionTestDetails(
             AccountDialogResult dialogResult,
             OperationResult<TestConnectionResult> testResult)
         {
             if (testResult.IsFailure)
             {
                 return ErrorDialogRequest.FromError(
-                    "连接测试失败",
-                    "连接测试失败。",
+                    L("ConnectionTestFailed"),
+                    L("ConnectionFailed"),
                     testResult.Error,
                     new Dictionary<string, string>
                     {
@@ -1041,8 +1090,8 @@ public sealed class DialogService : IDialogService
 
             var value = testResult.GetValueOrThrow();
             return new ErrorDialogRequest(
-                "连接测试成功",
-                "连接测试成功。",
+                L("ConnectionTestSucceeded"),
+                L("ConnectionTestSucceeded"),
                 Details: new Dictionary<string, string>
                 {
                     ["Provider"] = value.ProviderId.ToString(),
@@ -1070,14 +1119,14 @@ public sealed class DialogService : IDialogService
         {
             if (_providerInput.SelectedItem is not ProviderDescriptor provider)
             {
-                SetValidation("请选择 Provider。");
+                SetValidation(L("SelectProviderValidation"));
                 return null;
             }
 
             var displayName = _displayNameInput.Text?.Trim();
             if (string.IsNullOrWhiteSpace(displayName))
             {
-                SetValidation("显示名称不能为空。");
+                SetValidation(L("DisplayNameRequired"));
                 return null;
             }
 
@@ -1094,7 +1143,7 @@ public sealed class DialogService : IDialogService
                 {
                     if (!File.Exists(value))
                     {
-                        SetValidation("请选择有效的私钥文件。");
+                        SetValidation(L("SelectPrivateKeyValidation"));
                         return null;
                     }
 
@@ -1104,7 +1153,7 @@ public sealed class DialogService : IDialogService
                     }
                     catch (Exception ex)
                     {
-                        SetValidation($"读取私钥文件失败：{ex.Message}");
+                        SetValidation(F("ReadPrivateKeyFailed", ex.Message));
                         return null;
                     }
                 }
@@ -1125,7 +1174,7 @@ public sealed class DialogService : IDialogService
                 {
                     if (!credentialValues.ContainsKey(field.Key))
                     {
-                        SetValidation($"{field.DisplayName} 不能为空。");
+                        SetValidation(F("FieldRequired", field.DisplayName));
                         return null;
                     }
                 }
@@ -1136,7 +1185,7 @@ public sealed class DialogService : IDialogService
                 {
                     if (!credentialValues.ContainsKey(field.Key))
                     {
-                        SetValidation("修改凭据时必须填写当前类型的全部必填凭据字段。");
+                        SetValidation(L("AllCredentialsRequired"));
                         return null;
                     }
                 }
@@ -1146,7 +1195,7 @@ public sealed class DialogService : IDialogService
             {
                 if (!_configInputs.TryGetValue(field.Key, out var input) || string.IsNullOrWhiteSpace(input.Text))
                 {
-                    SetValidation($"{field.DisplayName} 不能为空。");
+                    SetValidation(F("FieldRequired", field.DisplayName));
                     return null;
                 }
             }
@@ -1161,7 +1210,7 @@ public sealed class DialogService : IDialogService
             if (config.TryGetValue("port", out var portText) &&
                 (!int.TryParse(portText, out var port) || port is < 1 or > 65535))
             {
-                SetValidation("Port 必须是 1 到 65535 之间的数字。");
+                SetValidation(L("PortValidation"));
                 return null;
             }
 
@@ -1191,7 +1240,7 @@ public sealed class DialogService : IDialogService
             return GetSelectedCategoryOption()?.Category ?? _request.PreferredCategory ?? StorageProviderCategory.ObjectStorage;
         }
 
-        private static IReadOnlyList<CredentialField> GetCredentialFields(ProviderDescriptor provider)
+        private IReadOnlyList<CredentialField> GetCredentialFields(ProviderDescriptor provider)
         {
             if (provider.Category == StorageProviderCategory.ObjectStorage)
             {
@@ -1206,8 +1255,8 @@ public sealed class DialogService : IDialogService
             {
                 return
                 [
-                    new CredentialField("username", "用户名", true, false),
-                    new CredentialField("password", "密码", true, true)
+                    new CredentialField("username", L("Username"), true, false),
+                    new CredentialField("password", L("Password"), true, true)
                 ];
             }
 
@@ -1215,48 +1264,48 @@ public sealed class DialogService : IDialogService
             {
                 return
                 [
-                    new CredentialField("username", "用户名", true, false),
-                    new CredentialField("password", "密码", true, true),
-                    new CredentialField("privateKey", "私钥", true, true)
+                    new CredentialField("username", L("Username"), true, false),
+                    new CredentialField("password", L("Password"), true, true),
+                    new CredentialField("privateKey", L("PrivateKey"), true, true)
                 ];
             }
 
             return [];
         }
 
-        private static string GetConfigPlaceholder(ProviderConfigFieldDescriptor field)
+        private string GetConfigPlaceholder(ProviderConfigFieldDescriptor field)
         {
             if (field.Key == "bucket")
             {
-                return "可选；留空进入 bucket 列表";
+                return L("OptionalBucket");
             }
 
             if (field.Key == "rootPath")
             {
-                return "可选；留空使用远端默认根路径";
+                return L("OptionalRootPath");
             }
 
             if (field.Key == "homePath")
             {
-                return "可选；连接测试成功后自动填入";
+                return L("OptionalAutoFill");
             }
 
             if (field.Key == "port")
             {
-                return "可选；例如 22 或 21";
+                return L("OptionalPort");
             }
 
-            return field.IsRequired ? $"{field.DisplayName} 必填" : field.DisplayName;
+            return field.IsRequired ? F("FieldRequired", field.DisplayName) : field.DisplayName;
         }
 
-        private static string GetCredentialPlaceholder(CredentialField field)
+        private string GetCredentialPlaceholder(CredentialField field)
         {
             if (field.Key == "privateKey")
             {
-                return @"请选择本机 .ssh 目录下的私钥文件";
+                return L("SelectPrivateKeyHint");
             }
 
-            return field.IsSecret ? "已配置；留空不修改" : field.DisplayName;
+            return field.IsSecret ? L("ConfiguredSecret") : field.DisplayName;
         }
 
         private string? GetExistingConfigValue(string key)
@@ -1390,7 +1439,7 @@ public sealed class DialogService : IDialogService
 
             var pickerButton = new AtomButton
             {
-                Content = "选择",
+                Content = L("Select"),
                 ButtonType = AtomButtonType.Default,
                 SizeType = CustomizableSizeType.Middle,
                 MinHeight = 34,
@@ -1421,7 +1470,7 @@ public sealed class DialogService : IDialogService
             }.WithColumn(pickerButton, 1);
         }
 
-        private static async Task<string?> PickSftpPrivateKeyFileAsync()
+        private async Task<string?> PickSftpPrivateKeyFileAsync()
         {
             if (GetMainWindow() is not { } mainWindow)
             {
@@ -1447,7 +1496,7 @@ public sealed class DialogService : IDialogService
             var files = await mainWindow.StorageProvider.OpenFilePickerAsync(
                 new FilePickerOpenOptions
                 {
-                    Title = "选择 SFTP 私钥文件",
+                    Title = L("SelectSftpPrivateKey"),
                     AllowMultiple = false,
                     SuggestedStartLocation = suggestedFolder
                 }).ConfigureAwait(true);
@@ -1658,6 +1707,11 @@ public sealed class DialogService : IDialogService
 
             values["webDavProfile"] = GetSelectedWebDavProfile();
         }
+
+        private string L(string key) => _localization.GetString("Account", key);
+
+        private string F(string key, params object[] arguments) =>
+            _localization.Format("Account", key, arguments);
 
     }
 

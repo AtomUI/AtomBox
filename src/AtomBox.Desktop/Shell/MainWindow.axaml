@@ -72,7 +72,7 @@
                 <TextBlock Text="{Binding StatusBar.StateText}"
                            FontSize="11"
                            Foreground="{StaticResource AtomBoxStatusTextBrush}" />
-                <TextBlock Text="{Binding StatusBar.RunningTransfers, StringFormat='运行中 {0}'}"
+                <TextBlock Text="{Binding StatusBar.RunningTransfersText}"
                            FontSize="11"
                            Foreground="{StaticResource AtomBoxStatusTextBrush}" />
                 <TextBlock Text="{Binding StatusBar.UploadSpeedText}"
@@ -81,7 +81,7 @@
                 <TextBlock Text="{Binding StatusBar.DownloadSpeedText}"
                            FontSize="11"
                            Foreground="{StaticResource AtomBoxStatusTextBrush}" />
-                <TextBlock Text="{Binding StatusBar.ErrorCount, StringFormat='错误 {0}'}"
+                <TextBlock Text="{Binding StatusBar.ErrorCountText}"
                            FontSize="11"
                            Foreground="{StaticResource AtomBoxStatusTextBrush}" />
             </StackPanel>

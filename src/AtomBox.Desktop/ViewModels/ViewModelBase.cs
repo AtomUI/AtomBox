@@ -3,7 +3,7 @@ using System.Runtime.CompilerServices;
 
 namespace AtomBox.Desktop.ViewModels;
 
-public abstract class ViewModelBase : INotifyPropertyChanged
+public abstract class ViewModelBase : INotifyPropertyChanged, IDisposable
 {
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -22,5 +22,9 @@ public abstract class ViewModelBase : INotifyPropertyChanged
     protected void OnPropertyChanged([CallerMemberName] string? propertyName = null)
     {
         PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
+    }
+
+    public virtual void Dispose()
+    {
     }
 }

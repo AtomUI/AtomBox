@@ -4,25 +4,29 @@ using AtomBox.Application.Transfers;
 using AtomBox.Core.Accounts;
 using AtomBox.Core.Transfers;
 using AtomBox.Desktop.Navigation;
+using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.ViewModels;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class HomeViewModel : ViewModelBase
+public sealed class HomeViewModel : LocalizedViewModelBase
 {
     private readonly AccountAppService _accounts;
     private readonly TransferAppService _transfers;
     private readonly INavigationService _navigation;
-    private string _accountSummary = "账号 0 个";
-    private string _queueSummary = "运行中 0 个";
-    private string _historySummary = "最近完成 0 个";
+    private LocalizedText _accountSummary = new("Shell", "AccountCount", 0);
+    private LocalizedText _queueSummary = new("Transfer", "RunningPendingSummary", 0, 0);
+    private LocalizedText _historySummary = new("Transfer", "RecentlyCompleted", 0);
+    private IReadOnlyList<TransferStateSnapshot> _recentSnapshots = [];
     private bool _isRecentHistoryVisible;
     private bool _isRecentHistoryEmpty = true;
 
     public HomeViewModel(
         AccountAppService accounts,
         TransferAppService transfers,
-        INavigationService navigation)
+        INavigationService navigation,
+        ILocalizationService localization)
+        : base(localization)
     {
         _accounts = accounts;
         _transfers = transfers;
@@ -35,24 +39,21 @@ public sealed class HomeViewModel : ViewModelBase
 
     public string Title => "AtomBox";
 
-    public string Subtitle => "远程存储与文件传输工作台";
+    public string Subtitle => Localization.GetString("Shell", "HomeSubtitle");
 
     public string AccountSummary
     {
-        get => _accountSummary;
-        private set => SetProperty(ref _accountSummary, value);
+        get => _accountSummary.Resolve(Localization);
     }
 
     public string QueueSummary
     {
-        get => _queueSummary;
-        private set => SetProperty(ref _queueSummary, value);
+        get => _queueSummary.Resolve(Localization);
     }
 
     public string HistorySummary
     {
-        get => _historySummary;
-        private set => SetProperty(ref _historySummary, value);
+        get => _historySummary.Resolve(Localization);
     }
 
     public bool IsRecentHistoryVisible
@@ -86,7 +87,7 @@ public sealed class HomeViewModel : ViewModelBase
         var result = await _accounts.ListAsync(new ListStorageAccountsRequest()).ConfigureAwait(true);
         if (result.IsFailure)
         {
-            AccountSummary = "账号暂不可用";
+            SetAccountSummary(new("Shell", "AccountsUnavailable"));
             return;
         }
 
@@ -96,7 +97,7 @@ public sealed class HomeViewModel : ViewModelBase
             account.ProviderId.Value.Equals("webdav", StringComparison.OrdinalIgnoreCase));
         var fileTransferCount = accounts.Count(account => account.ProviderCategory == StorageProviderCategory.FileTransfer &&
             !account.ProviderId.Value.Equals("webdav", StringComparison.OrdinalIgnoreCase));
-        AccountSummary = $"账号 {accounts.Count} 个 · OSS {objectStorageCount} 个 · FTP/SFTP {fileTransferCount} 个 · WebDAV {webDavCount} 个";
+        SetAccountSummary(new("Shell", "AccountSummary", accounts.Count, objectStorageCount, fileTransferCount, webDavCount));
     }
 
     private async Task LoadTransferSummaryAsync()
@@ -104,21 +105,21 @@ public sealed class HomeViewModel : ViewModelBase
         var queueResult = await _transfers.GetQueueAsync(new GetTransferQueueRequest()).ConfigureAwait(true);
         if (queueResult.IsFailure)
         {
-            QueueSummary = "队列暂不可用";
+            SetQueueSummary(new("Transfer", "QueueUnavailable"));
         }
         else
         {
             var queue = queueResult.GetValueOrThrow().Tasks;
             var runningCount = queue.Count(task => task.Task.Status == TransferStatus.Running);
             var pendingCount = queue.Count(task => task.Task.Status == TransferStatus.Pending);
-            QueueSummary = $"运行中 {runningCount} 个 · 等待中 {pendingCount} 个";
+            SetQueueSummary(new("Transfer", "RunningPendingSummary", runningCount, pendingCount));
         }
 
         var historyResult = await _transfers.GetHistoryAsync(new GetTransferHistoryRequest()).ConfigureAwait(true);
         RecentTransfers.Clear();
         if (historyResult.IsFailure)
         {
-            HistorySummary = "历史暂不可用";
+            SetHistorySummary(new("Transfer", "HistoryUnavailable"));
             IsRecentHistoryVisible = false;
             IsRecentHistoryEmpty = true;
             return;
@@ -126,11 +127,12 @@ public sealed class HomeViewModel : ViewModelBase
 
         var history = historyResult.GetValueOrThrow().Tasks;
         var succeededCount = history.Count(task => task.Task.Status == TransferStatus.Succeeded);
-        HistorySummary = $"最近完成 {succeededCount} 个";
+        SetHistorySummary(new("Transfer", "RecentlyCompleted", succeededCount));
+        _recentSnapshots = history.Take(5).ToArray();
 
-        foreach (var snapshot in history.Take(5))
+        foreach (var snapshot in _recentSnapshots)
         {
-            RecentTransfers.Add(HomeRecentTransferViewModel.From(snapshot));
+            RecentTransfers.Add(HomeRecentTransferViewModel.From(snapshot, Localization));
         }
 
         IsRecentHistoryVisible = RecentTransfers.Count > 0;
@@ -145,6 +147,23 @@ public sealed class HomeViewModel : ViewModelBase
                 new RemoteBrowserNavigationParameter(NavigationResourceGroup.All))
             : _navigation.NavigateAsync(target);
     }
+
+    private void SetAccountSummary(LocalizedText value) { _accountSummary = value; OnPropertyChanged(nameof(AccountSummary)); }
+    private void SetQueueSummary(LocalizedText value) { _queueSummary = value; OnPropertyChanged(nameof(QueueSummary)); }
+    private void SetHistorySummary(LocalizedText value) { _historySummary = value; OnPropertyChanged(nameof(HistorySummary)); }
+
+    protected override void OnLanguageChanged()
+    {
+        OnPropertyChanged(nameof(Subtitle));
+        OnPropertyChanged(nameof(AccountSummary));
+        OnPropertyChanged(nameof(QueueSummary));
+        OnPropertyChanged(nameof(HistorySummary));
+        RecentTransfers.Clear();
+        foreach (var snapshot in _recentSnapshots)
+        {
+            RecentTransfers.Add(HomeRecentTransferViewModel.From(snapshot, Localization));
+        }
+    }
 }
 
 public sealed record HomeRecentTransferViewModel(
@@ -154,7 +173,7 @@ public sealed record HomeRecentTransferViewModel(
     string ResultTagColor,
     string CompletedAt)
 {
-    public static HomeRecentTransferViewModel From(TransferStateSnapshot snapshot)
+    public static HomeRecentTransferViewModel From(TransferStateSnapshot snapshot, ILocalizationService localization)
     {
         var task = snapshot.Task;
         var fileName = task.Direction == TransferDirection.Upload
@@ -162,21 +181,21 @@ public sealed record HomeRecentTransferViewModel(
             : task.RemotePath.Name;
 
         return new HomeRecentTransferViewModel(
-            string.IsNullOrWhiteSpace(fileName) ? "(未命名)" : fileName,
-            task.Direction == TransferDirection.Upload ? "上传" : "下载",
-            FormatStatus(task.Status),
+            string.IsNullOrWhiteSpace(fileName) ? localization.GetString("Transfer", "Unnamed") : fileName,
+            localization.GetString("Transfer", task.Direction == TransferDirection.Upload ? "Upload" : "Download"),
+            FormatStatus(task.Status, localization),
             FormatStatusTagColor(task.Status),
             task.UpdatedAt.LocalDateTime.ToString("MM-dd HH:mm"));
     }
 
-    private static string FormatStatus(TransferStatus status)
+    private static string FormatStatus(TransferStatus status, ILocalizationService localization)
     {
         return status switch
         {
-            TransferStatus.Succeeded => "成功",
-            TransferStatus.Failed => "失败",
-            TransferStatus.Canceled => "取消",
-            TransferStatus.Interrupted => "已中断",
+            TransferStatus.Succeeded => localization.GetString("Transfer", "Succeeded"),
+            TransferStatus.Failed => localization.GetString("Transfer", "Failed"),
+            TransferStatus.Canceled => localization.GetString("Transfer", "Canceled"),
+            TransferStatus.Interrupted => localization.GetString("Transfer", "Interrupted"),
             _ => status.ToString()
         };
     }

@@ -1,4 +1,5 @@
 using AtomBox.Infrastructure.Configuration;
+using AtomBox.Desktop.Localization;
 using Avalonia;
 using Avalonia.Controls;
 using Avalonia.Layout;
@@ -14,7 +15,7 @@ public sealed class StartupErrorWindow : Window
         ArgumentNullException.ThrowIfNull(exception);
 
         var paths = new AtomBoxStoragePaths();
-        Title = "AtomBox 启动失败";
+        Title = L("StartupFailedTitle");
         Width = 640;
         Height = 420;
         MinWidth = 560;
@@ -23,21 +24,21 @@ public sealed class StartupErrorWindow : Window
 
         var openConfigurationButton = new Button
         {
-            Content = "打开配置目录",
+            Content = L("OpenConfigurationDirectory"),
             MinWidth = 112
         };
         openConfigurationButton.Click += (_, _) => OpenDirectory(paths.ConfigurationDirectory);
 
         var openLogButton = new Button
         {
-            Content = "打开日志目录",
+            Content = L("OpenLogDirectory"),
             MinWidth = 112
         };
         openLogButton.Click += (_, _) => OpenDirectory(paths.LogDirectory);
 
         var exitButton = new Button
         {
-            Content = "退出应用",
+            Content = L("ExitApplication"),
             MinWidth = 96
         };
         exitButton.Click += (_, _) => Close();
@@ -50,7 +51,7 @@ public sealed class StartupErrorWindow : Window
             {
                 new TextBlock
                 {
-                    Text = "AtomBox 无法进入正常主界面。",
+                    Text = L("StartupFailedMessage"),
                     FontSize = 18,
                     FontWeight = FontWeight.SemiBold
                 },
@@ -62,7 +63,7 @@ public sealed class StartupErrorWindow : Window
                 },
                 new TextBlock
                 {
-                    Text = $"异常类型：{exception.GetType().FullName}",
+                    Text = LF("ExceptionType", exception.GetType().FullName ?? exception.GetType().Name),
                     TextWrapping = TextWrapping.Wrap,
                     Foreground = Brushes.DimGray
                 },
@@ -102,13 +103,13 @@ public sealed class StartupErrorWindow : Window
             {
                 new TextBlock
                 {
-                    Text = "诊断路径",
+                    Text = L("DiagnosticPaths"),
                     FontWeight = FontWeight.SemiBold
                 },
-                DetailRow("配置目录", paths.ConfigurationDirectory),
-                DetailRow("状态目录", paths.StateDirectory),
-                DetailRow("凭据目录", paths.CredentialDirectory),
-                DetailRow("日志目录", paths.LogDirectory)
+                DetailRow(L("ConfigurationDirectory"), paths.ConfigurationDirectory),
+                DetailRow(L("StateDirectory"), paths.StateDirectory),
+                DetailRow(L("CredentialDirectory"), paths.CredentialDirectory),
+                DetailRow(L("LogDirectory"), paths.LogDirectory)
             }
         };
 
@@ -148,5 +149,15 @@ public sealed class StartupErrorWindow : Window
         };
         Grid.SetColumn(valueText, 1);
         return grid;
+    }
+
+    private static string L(string key)
+    {
+        return LocalizationHost.Current?.GetString("Shell", key) ?? key;
+    }
+
+    private static string LF(string key, params object[] arguments)
+    {
+        return LocalizationHost.Current?.Format("Shell", key, arguments) ?? string.Format(L(key), arguments);
     }
 }

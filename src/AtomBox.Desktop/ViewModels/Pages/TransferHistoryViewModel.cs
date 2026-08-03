@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using AtomBox.Application.Transfers;
 using AtomBox.Core.Errors;
 using AtomBox.Desktop.Dialogs;
+using AtomBox.Desktop.Localization;
 using AtomBox.Core.Transfers;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Services;
@@ -9,7 +10,7 @@ using AtomBox.Desktop.Shell;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class TransferHistoryViewModel : ViewModelBase
+public sealed class TransferHistoryViewModel : LocalizedViewModelBase
 {
     private readonly TransferAppService _transfers;
     private readonly IMessageService _messages;
@@ -17,7 +18,8 @@ public sealed class TransferHistoryViewModel : ViewModelBase
     private readonly StatusBarViewModel _statusBar;
     private ErrorDialogRequest? _lastErrorDetails;
     private int _pageIndex = 1;
-    private string _statusMessage = "正在加载历史记录...";
+    private LocalizedText _statusMessage = new("Transfer", "LoadingHistory");
+    private IReadOnlyList<TransferStateSnapshot> _currentSnapshots = [];
     private bool _isLoading;
     private TransferHistoryRowViewModel? _selectedTask;
 
@@ -25,7 +27,9 @@ public sealed class TransferHistoryViewModel : ViewModelBase
         TransferAppService transfers,
         IMessageService messages,
         IDialogService dialogs,
-        StatusBarViewModel statusBar)
+        StatusBarViewModel statusBar,
+        ILocalizationService localization)
+        : base(localization)
     {
         _transfers = transfers;
         _messages = messages;
@@ -42,7 +46,7 @@ public sealed class TransferHistoryViewModel : ViewModelBase
         _ = RefreshAsync();
     }
 
-    public string Title => "历史记录";
+    public string Title => Localization.GetString("Transfer", "Title");
 
     public ObservableCollection<TransferHistoryRowViewModel> Tasks { get; } = [];
 
@@ -60,8 +64,7 @@ public sealed class TransferHistoryViewModel : ViewModelBase
 
     public string StatusMessage
     {
-        get => _statusMessage;
-        private set => SetProperty(ref _statusMessage, value);
+        get => _statusMessage.Resolve(Localization);
     }
 
     public bool IsLoading
@@ -92,8 +95,19 @@ public sealed class TransferHistoryViewModel : ViewModelBase
             if (SetProperty(ref _pageIndex, value))
             {
                 PreviousPageCommand.RaiseCanExecuteChanged();
+                OnPropertyChanged(nameof(PageText));
             }
         }
+    }
+
+    public string PageText => Localization.Format("Transfer", "CurrentPage", PageIndex);
+
+    protected override void OnLanguageChanged()
+    {
+        OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(PageText));
+        OnPropertyChanged(nameof(StatusMessage));
+        RebuildRows();
     }
 
     public void ApplyNavigationParameter(TransferHistoryNavigationParameter parameter)
@@ -122,7 +136,7 @@ public sealed class TransferHistoryViewModel : ViewModelBase
     private async Task RefreshAsync()
     {
         IsLoading = true;
-        StatusMessage = "正在加载历史记录...";
+        SetStatus(new("Transfer", "LoadingHistory"));
         ClearErrorDetails();
 
         var result = await _transfers.GetHistoryAsync(new GetTransferHistoryRequest(PageIndex)).ConfigureAwait(true);
@@ -130,8 +144,8 @@ public sealed class TransferHistoryViewModel : ViewModelBase
 
         if (result.IsFailure)
         {
-            StatusMessage = result.Error?.Message ?? "历史记录加载失败。";
-            SetErrorDetails("历史记录加载失败", "历史记录加载失败。", result.Error);
+            SetStatus(new("Transfer", "HistoryLoadFailed"));
+            SetErrorDetails(Localization.GetString("Transfer", "HistoryLoadFailed"), Localization.GetString("Transfer", "HistoryLoadFailed"), result.Error);
             IsLoading = false;
             RaiseTaskCollectionStateChanged();
             return;
@@ -140,14 +154,12 @@ public sealed class TransferHistoryViewModel : ViewModelBase
         var page = result.GetValueOrThrow();
         PageIndex = page.PageIndex;
 
-        foreach (var task in page.Tasks)
-        {
-            Tasks.Add(TransferHistoryRowViewModel.From(task, ShowTaskDetailsCommand));
-        }
+        _currentSnapshots = page.Tasks;
+        RebuildRows();
 
-        StatusMessage = Tasks.Count == 0
-            ? "暂无历史记录。完成、失败或取消的传输任务会显示在这里。"
-            : $"当前页历史记录 {Tasks.Count} 条。";
+        SetStatus(Tasks.Count == 0
+            ? new("Transfer", "NoHistory")
+            : new("Transfer", "HistoryPageCount", Tasks.Count));
         IsLoading = false;
         RaiseTaskCollectionStateChanged();
         ClearHistoryCommand.RaiseCanExecuteChanged();
@@ -163,10 +175,10 @@ public sealed class TransferHistoryViewModel : ViewModelBase
     private async Task ClearHistoryAsync()
     {
         var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogRequest(
-            "清理历史记录",
-            "确定要清理传输历史记录吗？\n\n当前历史视图中的已结束任务记录将被清理，此操作不可撤销。",
-            "清理",
-            "取消")).ConfigureAwait(true);
+            Localization.GetString("Transfer", "ClearHistoryTitle"),
+            Localization.GetString("Transfer", "ClearHistoryMessage"),
+            Localization.GetString("Transfer", "Clear"),
+            Localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
         if (!confirmed)
         {
             return;
@@ -175,13 +187,13 @@ public sealed class TransferHistoryViewModel : ViewModelBase
         var result = await _transfers.ClearHistoryAsync(new ClearTransferHistoryRequest()).ConfigureAwait(true);
         if (result.IsFailure)
         {
-            StatusMessage = result.Error?.Message ?? "清理历史记录失败。";
-            SetErrorDetails("清理历史记录失败", "清理历史记录失败。", result.Error);
+            SetStatus(new("Transfer", "ClearHistoryFailed"));
+            SetErrorDetails(Localization.GetString("Transfer", "ClearHistoryFailed"), Localization.GetString("Transfer", "ClearHistoryFailed"), result.Error);
             await _dialogs.ShowErrorDetailsAsync(_lastErrorDetails!).ConfigureAwait(true);
             return;
         }
 
-        _messages.Info("传输历史已清理。");
+        _messages.Info(Localization.GetString("Transfer", "HistoryCleared"));
         _statusBar.RequestQueueRefresh();
         PageIndex = 1;
         await RefreshAsync().ConfigureAwait(true);
@@ -202,16 +214,16 @@ public sealed class TransferHistoryViewModel : ViewModelBase
         }
 
         return _dialogs.ShowErrorDetailsAsync(new ErrorDialogRequest(
-            "传输历史详情",
+            Localization.GetString("Transfer", "HistoryDetails"),
             row.Reason ?? row.Result,
             Details: new Dictionary<string, string>
             {
-                ["任务"] = row.FileName,
-                ["方向"] = row.Direction,
-                ["目标 / 来源"] = row.TargetOrSource,
-                ["结果"] = row.Result,
-                ["原因"] = row.Reason ?? "-",
-                ["完成时间"] = row.CompletedAt
+                [Localization.GetString("Common", "Task")] = row.FileName,
+                [Localization.GetString("Common", "Direction")] = row.Direction,
+                [Localization.GetString("Common", "TargetSource")] = row.TargetOrSource,
+                [Localization.GetString("Common", "Result")] = row.Result,
+                [Localization.GetString("Common", "Reason")] = row.Reason ?? "-",
+                [Localization.GetString("Common", "CompletedAt")] = row.CompletedAt
             }));
     }
 
@@ -233,6 +245,21 @@ public sealed class TransferHistoryViewModel : ViewModelBase
         OnPropertyChanged(nameof(HasErrorDetails));
         ShowErrorDetailsCommand.RaiseCanExecuteChanged();
     }
+
+    private void SetStatus(LocalizedText value)
+    {
+        _statusMessage = value;
+        OnPropertyChanged(nameof(StatusMessage));
+    }
+
+    private void RebuildRows()
+    {
+        Tasks.Clear();
+        foreach (var task in _currentSnapshots)
+        {
+            Tasks.Add(TransferHistoryRowViewModel.From(task, ShowTaskDetailsCommand, Localization));
+        }
+    }
 }
 
 public sealed record TransferHistoryRowViewModel(
@@ -248,7 +275,8 @@ public sealed record TransferHistoryRowViewModel(
 {
     public static TransferHistoryRowViewModel From(
         TransferStateSnapshot snapshot,
-        System.Windows.Input.ICommand detailsCommand)
+        System.Windows.Input.ICommand detailsCommand,
+        ILocalizationService localization)
     {
         var task = snapshot.Task;
         var targetOrSource = task.Direction == TransferDirection.Upload
@@ -257,9 +285,9 @@ public sealed record TransferHistoryRowViewModel(
 
         return new TransferHistoryRowViewModel(
             GetFileName(task),
-            task.Direction == TransferDirection.Upload ? "上传" : "下载",
+            localization.GetString("Transfer", task.Direction == TransferDirection.Upload ? "Upload" : "Download"),
             string.IsNullOrWhiteSpace(targetOrSource) ? "/" : targetOrSource,
-            FormatResult(task.Status),
+            FormatResult(task.Status, localization),
             FormatResultTagColor(task.Status),
             task.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm"),
             task.StatusReason,
@@ -273,17 +301,17 @@ public sealed record TransferHistoryRowViewModel(
             ? task.LocalPath.GetFileName()
             : task.RemotePath.Name;
 
-        return string.IsNullOrWhiteSpace(name) ? "(未命名)" : name;
+        return string.IsNullOrWhiteSpace(name) ? "-" : name;
     }
 
-    private static string FormatResult(TransferStatus status)
+    private static string FormatResult(TransferStatus status, ILocalizationService localization)
     {
         return status switch
         {
-            TransferStatus.Succeeded => "成功",
-            TransferStatus.Failed => "失败",
-            TransferStatus.Canceled => "取消",
-            TransferStatus.Interrupted => "已中断",
+            TransferStatus.Succeeded => localization.GetString("Transfer", "Succeeded"),
+            TransferStatus.Failed => localization.GetString("Transfer", "Failed"),
+            TransferStatus.Canceled => localization.GetString("Transfer", "Canceled"),
+            TransferStatus.Interrupted => localization.GetString("Transfer", "Interrupted"),
             _ => status.ToString()
         };
     }

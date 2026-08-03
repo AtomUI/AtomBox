@@ -1,4 +1,5 @@
 using AtomBox.Desktop.Dialogs;
+using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Services;
 using AtomBox.Desktop.Shell;
 using AtomBox.Desktop.ViewFactory;
@@ -9,7 +10,10 @@ namespace AtomBox.Desktop.Composition;
 
 public static class ServiceCollectionExtensions
 {
-    public static IServiceCollection AddAtomBoxDesktop(this IServiceCollection services)
+    public static IServiceCollection AddAtomBoxDesktop(
+        this IServiceCollection services,
+        ILocalizationService localization,
+        IDesktopPreferencesService preferences)
     {
         ArgumentNullException.ThrowIfNull(services);
 
@@ -23,7 +27,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMessageService, MessageService>();
         services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
         services.AddSingleton<IFilePickerService, AvaloniaFilePickerService>();
-        services.AddSingleton<IDesktopPreferencesService, DesktopPreferencesService>();
+        services.AddSingleton(localization);
+        services.AddSingleton(preferences);
 
         services.AddTransient<RemoteBrowserViewModel>();
         services.AddTransient<HomeViewModel>();

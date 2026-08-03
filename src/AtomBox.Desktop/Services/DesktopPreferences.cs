@@ -1,9 +1,12 @@
+using AtomBox.Desktop.Localization;
+
 namespace AtomBox.Desktop.Services;
 
 public sealed record DesktopPreferences(
     StartupPageOption StartupPage,
     CloseWindowBehavior CloseWindowBehavior,
-    string DefaultDownloadDirectory)
+    string DefaultDownloadDirectory,
+    string Language = LanguagePreference.System)
 {
     public static DesktopPreferences CreateDefault()
     {
@@ -13,7 +16,8 @@ public sealed record DesktopPreferences(
             Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 "Downloads",
-                "AtomBox"));
+                "AtomBox"),
+            LanguagePreference.System);
     }
 }
 

@@ -2,13 +2,14 @@ using AtomBox.Application.Settings;
 using AtomBox.Core.Settings;
 using AtomBox.Core.Errors;
 using AtomBox.Desktop.Dialogs;
+using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Services;
 using AtomBox.Infrastructure.Configuration;
 using System.Diagnostics;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class SettingsViewModel : ViewModelBase
+public sealed class SettingsViewModel : LocalizedViewModelBase
 {
     private readonly SettingsAppService _settings;
     private readonly IDialogService _dialogs;
@@ -22,6 +23,8 @@ public sealed class SettingsViewModel : ViewModelBase
     private decimal _defaultConcurrency = 3;
     private int _startupPageSelectedIndex;
     private int _closeBehaviorSelectedIndex;
+    private int _languageSelectedIndex;
+    private bool _isLanguageSwitching;
     private bool _enableUploadFingerprintIndex;
     private ApplicationSettings? _loadedSettings;
     private DesktopPreferences? _loadedPreferences;
@@ -36,7 +39,9 @@ public sealed class SettingsViewModel : ViewModelBase
         IMessageService messages,
         IFilePickerService filePicker,
         IDesktopPreferencesService preferences,
+        ILocalizationService localization,
         AtomBoxStoragePaths paths)
+        : base(localization)
     {
         _settings = settings;
         _dialogs = dialogs;
@@ -59,7 +64,22 @@ public sealed class SettingsViewModel : ViewModelBase
         _ = RefreshAsync();
     }
 
-    public string Title => "应用设置";
+    public string Title => Localization.GetString("Settings", "Title");
+
+    public int LanguageSelectedIndex
+    {
+        get => _languageSelectedIndex;
+        set
+        {
+            var normalized = Math.Clamp(value, 0, 2);
+            if (SetProperty(ref _languageSelectedIndex, normalized) && !_isApplyingSettings)
+            {
+                _ = ChangeLanguageAsync(normalized);
+            }
+        }
+    }
+
+    public bool IsLanguageSelectionEnabled => !_isLanguageSwitching;
 
     public string StatusMessage
     {
@@ -186,9 +206,9 @@ public sealed class SettingsViewModel : ViewModelBase
         var result = await _settings.GetAsync(new GetApplicationSettingsRequest()).ConfigureAwait(true);
         if (result.IsFailure)
         {
-            StatusMessage = result.Error?.Message ?? "应用设置加载失败。";
-            SettingsSummary = "应用设置暂不可用。";
-            SetErrorDetails("应用设置加载失败", "应用设置加载失败。", result.Error);
+            StatusMessage = Localization.GetString("Settings", "SettingsLoadFailed");
+            SettingsSummary = Localization.GetString("Settings", "SettingsUnavailable");
+            SetErrorDetails(StatusMessage, StatusMessage, result.Error);
             IsLoading = false;
             return;
         }
@@ -202,22 +222,22 @@ public sealed class SettingsViewModel : ViewModelBase
     private async Task ResetAsync()
     {
         var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogRequest(
-            "重置应用设置",
-            "确定要恢复默认应用设置吗？\n\n默认并发、覆盖策略和保留历史等全局偏好将恢复为默认值。",
-            "重置",
-            "取消")).ConfigureAwait(true);
+            Localization.GetString("Settings", "ResetTitle"),
+            Localization.GetString("Settings", "ResetMessage"),
+            Localization.GetString("Common", "Reset"),
+            Localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
         if (!confirmed)
         {
             return;
         }
 
         IsLoading = true;
-        StatusMessage = "正在重置应用设置...";
+        StatusMessage = Localization.GetString("Settings", "Resetting");
         var result = await _settings.ResetAsync(new ResetApplicationSettingsRequest()).ConfigureAwait(true);
         if (result.IsFailure)
         {
-            StatusMessage = result.Error?.Message ?? "应用设置重置失败。";
-            SetErrorDetails("应用设置重置失败", "应用设置重置失败。", result.Error);
+            StatusMessage = Localization.GetString("Settings", "ResetFailed");
+            SetErrorDetails(StatusMessage, StatusMessage, result.Error);
             await _dialogs.ShowErrorDetailsAsync(_lastErrorDetails!).ConfigureAwait(true);
             IsLoading = false;
             return;
@@ -225,8 +245,9 @@ public sealed class SettingsViewModel : ViewModelBase
 
         var preferences = await _preferences.ResetAsync().ConfigureAwait(true);
         ApplySettings(result.GetValueOrThrow(), preferences);
-        _messages.Info("应用设置已重置。");
-        StatusMessage = "应用设置已重置。";
+        await Localization.SetLanguageAsync(LanguagePreference.System).ConfigureAwait(true);
+        _messages.Info(Localization.GetString("Settings", "ResetSucceeded"));
+        StatusMessage = Localization.GetString("Settings", "ResetSucceeded");
         IsLoading = false;
     }
 
@@ -238,7 +259,7 @@ public sealed class SettingsViewModel : ViewModelBase
         }
 
         IsLoading = true;
-        StatusMessage = "正在保存应用设置...";
+        StatusMessage = Localization.GetString("Settings", "Saving");
 
         var settings = new ApplicationSettings(
             (int)DefaultConcurrency,
@@ -248,13 +269,14 @@ public sealed class SettingsViewModel : ViewModelBase
         var preferences = new DesktopPreferences(
             ToStartupPage(StartupPageSelectedIndex),
             ToCloseBehavior(CloseBehaviorSelectedIndex),
-            DefaultDownloadDirectory);
+            DefaultDownloadDirectory,
+            _loadedPreferences.Language);
 
         var result = await _settings.UpdateAsync(new UpdateApplicationSettingsRequest(settings)).ConfigureAwait(true);
         if (result.IsFailure)
         {
-            StatusMessage = result.Error?.Message ?? "应用设置保存失败。";
-            SetErrorDetails("应用设置保存失败", "应用设置保存失败。", result.Error);
+            StatusMessage = Localization.GetString("Settings", "SaveFailed");
+            SetErrorDetails(StatusMessage, StatusMessage, result.Error);
             await _dialogs.ShowErrorDetailsAsync(_lastErrorDetails!).ConfigureAwait(true);
             IsLoading = false;
             return;
@@ -262,7 +284,7 @@ public sealed class SettingsViewModel : ViewModelBase
 
         await _preferences.SaveAsync(preferences).ConfigureAwait(true);
         ApplySettings(result.GetValueOrThrow(), preferences);
-        _messages.Info("应用设置已保存。");
+        _messages.Info(Localization.GetString("Settings", "SaveSucceeded"));
         StatusMessage = string.Empty;
         IsLoading = false;
     }
@@ -277,6 +299,7 @@ public sealed class SettingsViewModel : ViewModelBase
         StartupPageSelectedIndex = ToStartupPageIndex(preferences.StartupPage);
         CloseBehaviorSelectedIndex = ToCloseBehaviorIndex(preferences.CloseWindowBehavior);
         EnableUploadFingerprintIndex = result.Settings.EnableUploadFingerprintIndex;
+        LanguageSelectedIndex = ToLanguageIndex(preferences.Language);
         SettingsSummary = string.Empty;
         IsDirty = false;
         _isApplyingSettings = false;
@@ -285,7 +308,7 @@ public sealed class SettingsViewModel : ViewModelBase
     private async Task ChooseDownloadDirectoryAsync()
     {
         var selectedPath = await _filePicker
-            .PickFolderAsync("选择默认下载目录", DefaultDownloadDirectory)
+            .PickFolderAsync(Localization.GetString("Settings", "ChooseDownloadDirectory"), DefaultDownloadDirectory)
             .ConfigureAwait(true);
         if (string.IsNullOrWhiteSpace(selectedPath))
         {
@@ -293,7 +316,7 @@ public sealed class SettingsViewModel : ViewModelBase
         }
 
         DefaultDownloadDirectory = selectedPath;
-        StatusMessage = "已选择默认下载目录，请点击保存后生效。";
+        StatusMessage = Localization.GetString("Settings", "DownloadDirectorySelected");
     }
 
     private void MarkDirty()
@@ -302,6 +325,58 @@ public sealed class SettingsViewModel : ViewModelBase
         {
             IsDirty = true;
         }
+    }
+
+    private async Task ChangeLanguageAsync(int selectedIndex)
+    {
+        var previousIndex = ToLanguageIndex(Localization.CurrentPreference);
+        _isLanguageSwitching = true;
+        OnPropertyChanged(nameof(IsLanguageSelectionEnabled));
+        try
+        {
+            await Localization.SetLanguageAsync(ToLanguagePreference(selectedIndex)).ConfigureAwait(true);
+            if (_loadedPreferences is not null)
+            {
+                _loadedPreferences = _loadedPreferences with { Language = Localization.CurrentPreference };
+            }
+        }
+        catch
+        {
+            _isApplyingSettings = true;
+            LanguageSelectedIndex = previousIndex;
+            _isApplyingSettings = false;
+            _messages.Error(Localization.GetString("Settings", "LanguageChangeFailed"));
+        }
+        finally
+        {
+            _isLanguageSwitching = false;
+            OnPropertyChanged(nameof(IsLanguageSelectionEnabled));
+        }
+    }
+
+    private static int ToLanguageIndex(string preference)
+    {
+        return LanguagePreference.Normalize(preference) switch
+        {
+            LanguagePreference.SimplifiedChinese => 1,
+            LanguagePreference.English => 2,
+            _ => 0
+        };
+    }
+
+    private static string ToLanguagePreference(int selectedIndex)
+    {
+        return selectedIndex switch
+        {
+            1 => LanguagePreference.SimplifiedChinese,
+            2 => LanguagePreference.English,
+            _ => LanguagePreference.System
+        };
+    }
+
+    protected override void OnLanguageChanged()
+    {
+        OnPropertyChanged(nameof(Title));
     }
 
     private static int ToStartupPageIndex(StartupPageOption startupPage)
@@ -373,14 +448,14 @@ public sealed class SettingsViewModel : ViewModelBase
                 FileName = path,
                 UseShellExecute = true
             });
-            StatusMessage = $"已打开目录：{path}";
+            StatusMessage = Localization.Format("Settings", "DirectoryOpened", path);
         }
         catch
         {
-            StatusMessage = "打开目录失败。";
+            StatusMessage = Localization.GetString("Settings", "OpenDirectoryFailed");
             SetErrorDetails(
-                "打开目录失败",
-                "打开目录失败。",
+                StatusMessage,
+                StatusMessage,
                 StorageError.Unknown("Failed to open local directory."));
             await _dialogs.ShowErrorDetailsAsync(_lastErrorDetails!).ConfigureAwait(true);
         }

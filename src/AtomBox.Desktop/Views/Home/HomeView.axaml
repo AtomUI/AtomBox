@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
+             xmlns:loc="using:AtomBox.Desktop.Localization"
              xmlns:antdicons="https://atomui.net/icons/antdesign"
              xmlns:pages="using:AtomBox.Desktop.ViewModels.Pages"
              x:Class="AtomBox.Desktop.Views.Home.HomeView"
@@ -47,19 +48,19 @@
                       ColumnDefinitions="*,*,*"
                       ColumnSpacing="12">
                     <atom:Button Grid.Column="0"
-                                 Content="远程存储"
+                                 Content="{loc:Loc Shell.RemoteStorage}"
                                  Icon="{antdicons:AntDesignIconProvider CloudServerOutlined}"
                                  Command="{Binding OpenRemoteStorageCommand}"
                                  HorizontalAlignment="Stretch"
                                  Height="38" />
                     <atom:Button Grid.Column="1"
-                                 Content="传输队列"
+                                 Content="{loc:Loc Shell.TransferQueue}"
                                  Icon="{antdicons:AntDesignIconProvider SwapOutlined}"
                                  Command="{Binding OpenTransferQueueCommand}"
                                  HorizontalAlignment="Stretch"
                                  Height="38" />
                     <atom:Button Grid.Column="2"
-                                 Content="账号管理"
+                                 Content="{loc:Loc Shell.AccountManagement}"
                                  Icon="{antdicons:AntDesignIconProvider UserOutlined}"
                                  Command="{Binding OpenAccountManagementCommand}"
                                  HorizontalAlignment="Stretch"
@@ -73,12 +74,12 @@
                               Classes="app-list-header"
                               ColumnDefinitions="*,Auto">
                             <TextBlock Grid.Column="0"
-                                       Text="最近传输"
+                                       Text="{loc:Loc Transfer.RecentTransfers}"
                                        Margin="12,0"
                                        VerticalAlignment="Center"
                                        FontWeight="SemiBold" />
                             <TextBlock Grid.Column="1"
-                                       Text="最近 5 条"
+                                       Text="{loc:Loc Transfer.RecentFive}"
                                        Margin="0,0,12,0"
                                        VerticalAlignment="Center"
                                        Classes="app-muted-text" />
@@ -118,7 +119,7 @@
                             </ItemsControl>
                             <atom:Empty PresetImage="Simple"
                                         SizeType="Small"
-                                        Description="暂无传输记录。"
+                                        Description="{loc:Loc Transfer.NoRecentTransfers}"
                                         IsVisible="{Binding IsRecentHistoryEmpty}"
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center" />

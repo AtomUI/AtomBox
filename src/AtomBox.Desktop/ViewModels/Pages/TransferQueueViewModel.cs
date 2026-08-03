@@ -4,13 +4,14 @@ using AtomBox.Application.Transfers;
 using AtomBox.Core.Transfers;
 using AtomBox.Core.ValueObjects;
 using AtomBox.Desktop.Dialogs;
+using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Services;
 using AtomBox.Desktop.Shell;
 using Avalonia.Threading;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class TransferQueueViewModel : ViewModelBase
+public sealed class TransferQueueViewModel : LocalizedViewModelBase
 {
     private readonly TransferAppService _transfers;
     private readonly IMessageService _messages;
@@ -20,7 +21,8 @@ public sealed class TransferQueueViewModel : ViewModelBase
     private static readonly Lock CompletionNotificationLock = new();
     private static readonly HashSet<TransferTaskId> CompletionNotificationsShown = [];
     private readonly Dictionary<TransferTaskId, TransferTaskRowViewModel> _lastObservedTasks = [];
-    private string _statusMessage = "正在加载传输队列...";
+    private LocalizedText _statusMessage = new("Transfer", "LoadingQueue");
+    private IReadOnlyList<TransferStateSnapshot> _currentSnapshots = [];
     private bool _isLoading;
     private bool _isRefreshing;
     private TransferTaskRowViewModel? _selectedTask;
@@ -29,7 +31,9 @@ public sealed class TransferQueueViewModel : ViewModelBase
         TransferAppService transfers,
         IMessageService messages,
         IDialogService dialogs,
-        StatusBarViewModel statusBar)
+        StatusBarViewModel statusBar,
+        ILocalizationService localization)
+        : base(localization)
     {
         _transfers = transfers;
         _messages = messages;
@@ -54,7 +58,7 @@ public sealed class TransferQueueViewModel : ViewModelBase
         _ = RefreshAsync();
     }
 
-    public string Title => "传输队列";
+    public string Title => Localization.GetString("Transfer", "QueueTitle");
 
     public ObservableCollection<TransferTaskRowViewModel> Tasks { get; } = [];
 
@@ -70,8 +74,7 @@ public sealed class TransferQueueViewModel : ViewModelBase
 
     public string StatusMessage
     {
-        get => _statusMessage;
-        private set => SetProperty(ref _statusMessage, value);
+        get => _statusMessage.Resolve(Localization);
     }
 
     public bool IsLoading
@@ -112,7 +115,7 @@ public sealed class TransferQueueViewModel : ViewModelBase
         if (showLoading)
         {
             IsLoading = true;
-            StatusMessage = "正在加载传输队列...";
+            SetStatus(new("Transfer", "LoadingQueue"));
         }
 
         try
@@ -122,23 +125,24 @@ public sealed class TransferQueueViewModel : ViewModelBase
 
             if (result.IsFailure)
             {
-                StatusMessage = result.Error?.Message ?? "传输队列加载失败。";
+                SetStatus(new("Transfer", "QueueLoadFailed"));
                 IsLoading = false;
                 RaiseTaskCollectionStateChanged();
                 return;
             }
 
             var snapshots = result.GetValueOrThrow().Tasks;
+            _currentSnapshots = snapshots;
             await NotifyCompletedTasksAsync(snapshots).ConfigureAwait(true);
 
             foreach (var task in snapshots)
             {
-                Tasks.Add(TransferTaskRowViewModel.From(task, ExecuteTaskActionCommand, ShowTaskDetailsCommand));
+                Tasks.Add(TransferTaskRowViewModel.From(task, ExecuteTaskActionCommand, ShowTaskDetailsCommand, Localization));
             }
 
-            StatusMessage = Tasks.Count == 0
-                ? "暂无传输任务。从远程浏览页上传或下载文件后，任务会显示在这里。"
-                : $"当前队列任务 {Tasks.Count} 个。";
+            SetStatus(Tasks.Count == 0
+                ? new("Transfer", "NoQueueTasksLong")
+                : new("Transfer", "QueueCount", Tasks.Count));
             IsLoading = false;
             RememberObservedTasks();
             RaiseTaskCollectionStateChanged();
@@ -191,7 +195,7 @@ public sealed class TransferQueueViewModel : ViewModelBase
                 continue;
             }
 
-            var completed = TransferTaskRowViewModel.From(snapshot, ExecuteTaskActionCommand, ShowTaskDetailsCommand);
+            var completed = TransferTaskRowViewModel.From(snapshot, ExecuteTaskActionCommand, ShowTaskDetailsCommand, Localization);
             completedTasks.Add(completed);
         }
 
@@ -200,8 +204,8 @@ public sealed class TransferQueueViewModel : ViewModelBase
             var tasks = group.ToArray();
             var direction = group.Key;
             var message = tasks.Length == 1
-                ? $"{tasks[0].FileName}{direction}完毕"
-                : $"{tasks.Length}个文件{direction}完毕";
+                ? Localization.Format("Transfer", "TaskCompletedSingle", tasks[0].FileName, direction)
+                : Localization.Format("Transfer", "TaskCompletedMultiple", tasks.Length, direction);
             _messages.Success(message);
         }
     }
@@ -259,13 +263,13 @@ public sealed class TransferQueueViewModel : ViewModelBase
 
         if (result is null)
         {
-            _messages.Info("当前任务状态暂不支持该操作。");
+            _messages.Info(Localization.GetString("Transfer", "UnsupportedTaskAction"));
             return;
         }
 
         if (result.IsFailure)
         {
-            StatusMessage = result.Error?.Message ?? "任务操作失败。";
+            SetStatus(new("Transfer", "TaskActionFailed"));
             return;
         }
 
@@ -281,7 +285,7 @@ public sealed class TransferQueueViewModel : ViewModelBase
             .ToArray();
         if (taskIds.Length == 0)
         {
-            _messages.Info("当前没有等待中的任务。");
+            _messages.Info(Localization.GetString("Transfer", "NoPendingTasks"));
             return;
         }
 
@@ -290,7 +294,7 @@ public sealed class TransferQueueViewModel : ViewModelBase
             var result = await _transfers.CancelAsync(new CancelTransferTaskRequest(taskId)).ConfigureAwait(true);
             if (result.IsFailure)
             {
-                StatusMessage = result.Error?.Message ?? "取消任务失败。";
+                SetStatus(new("Transfer", "CancelTaskFailed"));
                 _messages.Error(StatusMessage);
                 break;
             }
@@ -308,7 +312,7 @@ public sealed class TransferQueueViewModel : ViewModelBase
             .ToArray();
         if (taskIds.Length == 0)
         {
-            _messages.Info("当前没有可重试的任务。");
+            _messages.Info(Localization.GetString("Transfer", "NoRetryableTasks"));
             return;
         }
 
@@ -317,7 +321,7 @@ public sealed class TransferQueueViewModel : ViewModelBase
             var result = await _transfers.RetryAsync(new RetryTransferTaskRequest(taskId)).ConfigureAwait(true);
             if (result.IsFailure)
             {
-                StatusMessage = result.Error?.Message ?? "重试任务失败。";
+                SetStatus(new("Transfer", "RetryTaskFailed"));
                 _messages.Error(StatusMessage);
                 break;
             }
@@ -335,17 +339,41 @@ public sealed class TransferQueueViewModel : ViewModelBase
         }
 
         return _dialogs.ShowErrorDetailsAsync(new ErrorDialogRequest(
-            "传输任务详情",
+            Localization.GetString("Transfer", "TaskDetails"),
             row.Reason ?? row.Progress,
             Details: new Dictionary<string, string>
             {
-                ["任务"] = row.FileName,
-                ["方向"] = row.Direction,
-                ["目标 / 来源"] = row.TargetOrSource,
-                ["状态"] = row.Progress,
-                ["原因"] = row.Reason ?? "-",
-                ["可重试"] = row.CanExecuteAction ? "是" : "否"
+                [Localization.GetString("Common", "Task")] = row.FileName,
+                [Localization.GetString("Common", "Direction")] = row.Direction,
+                [Localization.GetString("Common", "TargetSource")] = row.TargetOrSource,
+                [Localization.GetString("Common", "Status")] = row.Progress,
+                [Localization.GetString("Common", "Reason")] = row.Reason ?? "-",
+                [Localization.GetString("Common", "Retryable")] = Localization.GetString("Common", row.CanExecuteAction ? "Yes" : "No")
             }));
+    }
+
+    private void SetStatus(LocalizedText value)
+    {
+        _statusMessage = value;
+        OnPropertyChanged(nameof(StatusMessage));
+    }
+
+    protected override void OnLanguageChanged()
+    {
+        OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(StatusMessage));
+        Tasks.Clear();
+        foreach (var task in _currentSnapshots)
+        {
+            Tasks.Add(TransferTaskRowViewModel.From(task, ExecuteTaskActionCommand, ShowTaskDetailsCommand, Localization));
+        }
+        RaiseTaskCollectionStateChanged();
+    }
+
+    public override void Dispose()
+    {
+        _refreshTimer.Stop();
+        base.Dispose();
     }
 }
 
@@ -371,7 +399,8 @@ public sealed record TransferTaskRowViewModel(
     public static TransferTaskRowViewModel From(
         TransferStateSnapshot snapshot,
         ICommand actionCommand,
-        ICommand detailsCommand)
+        ICommand detailsCommand,
+        ILocalizationService localization)
     {
         var task = snapshot.Task;
         var targetOrSource = task.Direction == TransferDirection.Upload
@@ -381,48 +410,48 @@ public sealed record TransferTaskRowViewModel(
         return new TransferTaskRowViewModel(
             task.Id,
             task.Status,
-            GetFileName(task),
-            FormatDirection(task.Direction),
+            GetFileName(task, localization),
+            FormatDirection(task.Direction, localization),
             string.IsNullOrWhiteSpace(targetOrSource) ? "/" : targetOrSource,
-            FormatProgress(task.Status, snapshot.Progress),
+            FormatProgress(task.Status, snapshot.Progress, localization),
             snapshot.Progress?.Percent ?? 0,
             task.Status == TransferStatus.Running && snapshot.Progress?.Percent is not null,
             FormatSpeed(task.Status, snapshot.Progress),
             task.StatusReason,
             !string.IsNullOrWhiteSpace(task.StatusReason) || task.Status is TransferStatus.Failed or TransferStatus.Interrupted,
-            FormatAction(task.Status),
+            FormatAction(task.Status, localization),
             CanExecuteActionFor(task.Status, snapshot.CanRetry),
             actionCommand,
             detailsCommand);
     }
 
-    private static string GetFileName(TransferTask task)
+    private static string GetFileName(TransferTask task, ILocalizationService localization)
     {
         var name = task.Direction == TransferDirection.Upload
             ? task.LocalPath.GetFileName()
             : task.RemotePath.Name;
 
-        return string.IsNullOrWhiteSpace(name) ? "(未命名)" : name;
+        return string.IsNullOrWhiteSpace(name) ? localization.GetString("Transfer", "Unnamed") : name;
     }
 
-    private static string FormatDirection(TransferDirection direction)
+    private static string FormatDirection(TransferDirection direction, ILocalizationService localization)
     {
-        return direction == TransferDirection.Upload ? "上传" : "下载";
+        return localization.GetString("Transfer", direction == TransferDirection.Upload ? "Upload" : "Download");
     }
 
-    private static string FormatProgress(TransferStatus status, TransferProgress? progress)
+    private static string FormatProgress(TransferStatus status, TransferProgress? progress, ILocalizationService localization)
     {
         return status switch
         {
-            TransferStatus.Pending => "等待中",
+            TransferStatus.Pending => localization.GetString("Transfer", "Pending"),
             TransferStatus.Running when progress?.Percent is { } percent => $"{percent:0}%",
-            TransferStatus.Running => "运行中",
-            TransferStatus.Paused when progress?.Percent is { } percent => $"暂停 {percent:0}%",
-            TransferStatus.Paused => "暂停",
-            TransferStatus.Interrupted => "已中断",
+            TransferStatus.Running => localization.GetString("Transfer", "Running"),
+            TransferStatus.Paused when progress?.Percent is { } percent => localization.Format("Transfer", "PausedPercent", percent),
+            TransferStatus.Paused => localization.GetString("Transfer", "Paused"),
+            TransferStatus.Interrupted => localization.GetString("Transfer", "Interrupted"),
             TransferStatus.Succeeded => "100%",
-            TransferStatus.Failed => "失败",
-            TransferStatus.Canceled => "取消",
+            TransferStatus.Failed => localization.GetString("Transfer", "Failed"),
+            TransferStatus.Canceled => localization.GetString("Transfer", "Canceled"),
             _ => status.ToString()
         };
     }
@@ -452,16 +481,16 @@ public sealed record TransferTaskRowViewModel(
         return $"{bytesPerSecond:0} B/s";
     }
 
-    private static string FormatAction(TransferStatus status)
+    private static string FormatAction(TransferStatus status, ILocalizationService localization)
     {
         return status switch
         {
-            TransferStatus.Pending => "取消",
-            TransferStatus.Running => "取消",
+            TransferStatus.Pending => localization.GetString("Common", "Cancel"),
+            TransferStatus.Running => localization.GetString("Common", "Cancel"),
             TransferStatus.Paused => "-",
-            TransferStatus.Interrupted => "重试",
+            TransferStatus.Interrupted => localization.GetString("Common", "Retry"),
             TransferStatus.Succeeded => "-",
-            TransferStatus.Failed => "重试",
+            TransferStatus.Failed => localization.GetString("Common", "Retry"),
             TransferStatus.Canceled => "-",
             _ => "-"
         };

@@ -1,11 +1,19 @@
 using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Platform.Storage;
+using AtomBox.Desktop.Localization;
 
 namespace AtomBox.Desktop.Services;
 
 public sealed class AvaloniaFilePickerService : IFilePickerService
 {
+    private readonly ILocalizationService _localization;
+
+    public AvaloniaFilePickerService(ILocalizationService localization)
+    {
+        _localization = localization;
+    }
+
     public async Task<IReadOnlyList<string>> PickFilesForUploadAsync()
     {
         if (global::Avalonia.Application.Current?.ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop ||
@@ -17,7 +25,7 @@ public sealed class AvaloniaFilePickerService : IFilePickerService
         var files = await desktop.MainWindow.StorageProvider.OpenFilePickerAsync(
             new FilePickerOpenOptions
             {
-                Title = "选择上传文件",
+                Title = _localization.GetString("RemoteBrowser", "SelectUploadFiles"),
                 AllowMultiple = true
             }).ConfigureAwait(true);
 

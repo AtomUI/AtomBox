@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
+             xmlns:loc="using:AtomBox.Desktop.Localization"
              xmlns:pages="using:AtomBox.Desktop.ViewModels.Pages"
              x:Class="AtomBox.Desktop.Views.Settings.SettingsView"
              x:DataType="pages:SettingsViewModel">
@@ -50,42 +51,19 @@
                                     Spacing="4"
                                     VerticalAlignment="Center">
                             <TextBlock Classes="setting-label"
-                                       Text="启动后默认页面" />
+                                       Text="{loc:Loc Settings.InterfaceLanguage}" />
                             <TextBlock Classes="setting-description"
-                                       Text="决定 AtomBox 打开后首先进入哪个页面。" />
+                                       Text="{loc:Loc Settings.InterfaceLanguageDescription}" />
                         </StackPanel>
                         <Grid Grid.Column="1"
                               MinHeight="32"
                               VerticalAlignment="Center">
-                        <atom:ComboBox SelectedIndex="{Binding StartupPageSelectedIndex}"
-                                       Width="220">
-                            <atom:ComboBoxItem Content="首页" />
-                            <atom:ComboBoxItem Content="远程存储" />
-                            <atom:ComboBoxItem Content="传输队列" />
-                            <atom:ComboBoxItem Content="账号管理" />
-                        </atom:ComboBox>
-                        </Grid>
-                    </Grid>
-
-                    <atom:Separator SizeType="Small" />
-
-                    <Grid Classes="setting-row"
-                          ColumnDefinitions="260,*">
-                        <StackPanel Grid.Column="0"
-                                    Spacing="4"
-                                    VerticalAlignment="Center">
-                            <TextBlock Classes="setting-label"
-                                       Text="关闭窗口时" />
-                            <TextBlock Classes="setting-description"
-                                       Text="选择直接退出，或保留在系统托盘中继续运行。" />
-                        </StackPanel>
-                        <Grid Grid.Column="1"
-                              MinHeight="32"
-                              VerticalAlignment="Center">
-                            <atom:ComboBox SelectedIndex="{Binding CloseBehaviorSelectedIndex}"
+                            <atom:ComboBox SelectedIndex="{Binding LanguageSelectedIndex}"
+                                           IsEnabled="{Binding IsLanguageSelectionEnabled}"
                                            Width="220">
-                                <atom:ComboBoxItem Content="关闭应用" />
-                                <atom:ComboBoxItem Content="最小化应用" />
+                                <atom:ComboBoxItem Content="{loc:Loc Settings.FollowSystem}" />
+                                <atom:ComboBoxItem Content="{loc:Loc Settings.SimplifiedChinese}" />
+                                <atom:ComboBoxItem Content="{loc:Loc Settings.English}" />
                             </atom:ComboBox>
                         </Grid>
                     </Grid>
@@ -98,9 +76,57 @@
                                     Spacing="4"
                                     VerticalAlignment="Center">
                             <TextBlock Classes="setting-label"
-                                       Text="默认下载目录" />
+                                       Text="{loc:Loc Settings.StartupPage}" />
                             <TextBlock Classes="setting-description"
-                                       Text="下载文件时默认保存到这个本地目录。" />
+                                       Text="{loc:Loc Settings.StartupPageDescription}" />
+                        </StackPanel>
+                        <Grid Grid.Column="1"
+                              MinHeight="32"
+                              VerticalAlignment="Center">
+                        <atom:ComboBox SelectedIndex="{Binding StartupPageSelectedIndex}"
+                                       Width="220">
+                            <atom:ComboBoxItem Content="{loc:Loc Shell.Home}" />
+                            <atom:ComboBoxItem Content="{loc:Loc Shell.RemoteStorage}" />
+                            <atom:ComboBoxItem Content="{loc:Loc Shell.TransferQueue}" />
+                            <atom:ComboBoxItem Content="{loc:Loc Shell.AccountManagement}" />
+                        </atom:ComboBox>
+                        </Grid>
+                    </Grid>
+
+                    <atom:Separator SizeType="Small" />
+
+                    <Grid Classes="setting-row"
+                          ColumnDefinitions="260,*">
+                        <StackPanel Grid.Column="0"
+                                    Spacing="4"
+                                    VerticalAlignment="Center">
+                            <TextBlock Classes="setting-label"
+                                       Text="{loc:Loc Settings.CloseWindow}" />
+                            <TextBlock Classes="setting-description"
+                                       Text="{loc:Loc Settings.CloseWindowDescription}" />
+                        </StackPanel>
+                        <Grid Grid.Column="1"
+                              MinHeight="32"
+                              VerticalAlignment="Center">
+                            <atom:ComboBox SelectedIndex="{Binding CloseBehaviorSelectedIndex}"
+                                           Width="220">
+                                <atom:ComboBoxItem Content="{loc:Loc Settings.CloseApplication}" />
+                                <atom:ComboBoxItem Content="{loc:Loc Settings.MinimizeApplication}" />
+                            </atom:ComboBox>
+                        </Grid>
+                    </Grid>
+
+                    <atom:Separator SizeType="Small" />
+
+                    <Grid Classes="setting-row"
+                          ColumnDefinitions="260,*">
+                        <StackPanel Grid.Column="0"
+                                    Spacing="4"
+                                    VerticalAlignment="Center">
+                            <TextBlock Classes="setting-label"
+                                       Text="{loc:Loc Settings.DefaultDownloadDirectory}" />
+                            <TextBlock Classes="setting-description"
+                                       Text="{loc:Loc Settings.DefaultDownloadDirectoryDescription}" />
                         </StackPanel>
                         <Grid Grid.Column="1"
                               ColumnDefinitions="360,Auto"
@@ -111,7 +137,7 @@
                                            Text="{Binding DefaultDownloadDirectory}"
                                            IsReadOnly="True" />
                             <atom:Button Grid.Column="1"
-                                         Content="修改"
+                                         Content="{loc:Loc Common.Modify}"
                                          Command="{Binding ChooseDownloadDirectoryCommand}" />
                         </Grid>
                     </Grid>
@@ -124,9 +150,9 @@
                                     Spacing="4"
                                     VerticalAlignment="Center">
                             <TextBlock Classes="setting-label"
-                                       Text="最大并发数" />
+                                       Text="{loc:Loc Settings.MaxConcurrency}" />
                             <TextBlock Classes="setting-description"
-                                       Text="控制同时上传或下载的任务数量。" />
+                                       Text="{loc:Loc Settings.MaxConcurrencyDescription}" />
                         </StackPanel>
                         <Grid Grid.Column="1"
                               MinHeight="32"
@@ -149,9 +175,9 @@
                                     Spacing="4"
                                     VerticalAlignment="Center">
                             <TextBlock Classes="setting-label"
-                                       Text="指纹索引" />
+                                       Text="{loc:Loc Settings.FingerprintIndex}" />
                             <TextBlock Classes="setting-description"
-                                       Text="上传前检查当前账号是否曾经上传相同文件。" />
+                                       Text="{loc:Loc Settings.FingerprintIndexDescription}" />
                         </StackPanel>
                         <Grid Grid.Column="1"
                               MinHeight="32"
@@ -174,14 +200,14 @@
                                     Spacing="4"
                                     VerticalAlignment="Center">
                             <TextBlock Classes="setting-label"
-                                       Text="配置目录" />
+                                       Text="{loc:Loc Settings.ConfigurationDirectory}" />
                             <TextBlock Classes="setting-description"
-                                       Text="查看本机保存的应用配置文件。" />
+                                       Text="{loc:Loc Settings.ConfigurationDirectoryDescription}" />
                         </StackPanel>
                         <Grid Grid.Column="1"
                               MinHeight="32"
                               VerticalAlignment="Center">
-                            <atom:Button Content="打开"
+                            <atom:Button Content="{loc:Loc Common.Open}"
                                          Command="{Binding OpenConfigurationDirectoryCommand}"
                                          HorizontalAlignment="Left" />
                         </Grid>
@@ -195,14 +221,14 @@
                                     Spacing="4"
                                     VerticalAlignment="Center">
                             <TextBlock Classes="setting-label"
-                                       Text="日志目录" />
+                                       Text="{loc:Loc Settings.LogDirectory}" />
                             <TextBlock Classes="setting-description"
-                                       Text="用于排查启动、连接和传输异常。" />
+                                       Text="{loc:Loc Settings.LogDirectoryDescription}" />
                         </StackPanel>
                         <Grid Grid.Column="1"
                               MinHeight="32"
                               VerticalAlignment="Center">
-                            <atom:Button Content="打开"
+                            <atom:Button Content="{loc:Loc Common.Open}"
                                          Command="{Binding OpenLogDirectoryCommand}"
                                          HorizontalAlignment="Left" />
                         </Grid>
@@ -216,14 +242,14 @@
                                     Spacing="4"
                                     VerticalAlignment="Center">
                             <TextBlock Classes="setting-label"
-                                       Text="状态目录" />
+                                       Text="{loc:Loc Settings.StateDirectory}" />
                             <TextBlock Classes="setting-description"
-                                       Text="保存传输队列、历史记录等本地运行状态。" />
+                                       Text="{loc:Loc Settings.StateDirectoryDescription}" />
                         </StackPanel>
                         <Grid Grid.Column="1"
                               MinHeight="32"
                               VerticalAlignment="Center">
-                            <atom:Button Content="打开"
+                            <atom:Button Content="{loc:Loc Common.Open}"
                                          Command="{Binding OpenStateDirectoryCommand}"
                                          HorizontalAlignment="Left" />
                         </Grid>
@@ -235,16 +261,16 @@
                   Margin="0,12,0,0"
                   ColumnDefinitions="*,Auto">
                 <atom:Button Grid.Column="0"
-                             Content="查看详情"
+                             Content="{loc:Loc Common.ViewDetails}"
                              Command="{Binding ShowErrorDetailsCommand}"
                              IsVisible="{Binding HasErrorDetails}"
                              HorizontalAlignment="Left" />
                 <StackPanel Grid.Column="1"
                             Orientation="Horizontal"
                             Spacing="8">
-                    <atom:Button Content="重置"
+                    <atom:Button Content="{loc:Loc Common.Reset}"
                                  Command="{Binding ResetCommand}" />
-                    <atom:Button Content="保存"
+                    <atom:Button Content="{loc:Loc Common.Save}"
                                  ButtonType="Primary"
                                  Command="{Binding SaveCommand}" />
                 </StackPanel>

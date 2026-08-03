@@ -4,6 +4,7 @@ using AtomBox.Core.Credentials;
 using AtomBox.Core.Providers;
 using AtomBox.Core.Results;
 using AtomBox.Core.ValueObjects;
+using AtomBox.Desktop.Localization;
 
 namespace AtomBox.Desktop.Dialogs;
 
@@ -13,6 +14,7 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
     private readonly IStorageProviderRegistry _providers;
     private readonly ICredentialStore _credentials;
     private readonly AccountAppService _accounts;
+    private readonly ILocalizationService _localization;
 
     public event EventHandler? AccountsChanged;
 
@@ -20,12 +22,14 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
         IDialogService dialogs,
         IStorageProviderRegistry providers,
         ICredentialStore credentials,
-        AccountAppService accounts)
+        AccountAppService accounts,
+        ILocalizationService localization)
     {
         _dialogs = dialogs;
         _providers = providers;
         _credentials = credentials;
         _accounts = accounts;
+        _localization = localization;
     }
 
     public async Task<OperationResult<StorageAccountSummary?>> AddAccountAsync(
@@ -34,7 +38,7 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
         CancellationToken cancellationToken = default)
     {
         var dialogResult = await _dialogs.ShowAccountDialogAsync(new AccountDialogRequest(
-            "添加远程连接",
+            _localization.GetString("Account", "AddRemoteConnection"),
             _providers.GetAll(),
             preferredCategory,
             preferredProviderId,
@@ -81,7 +85,7 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
         ArgumentNullException.ThrowIfNull(account);
 
         var dialogResult = await _dialogs.ShowAccountDialogAsync(new AccountDialogRequest(
-            "编辑远程连接",
+            _localization.GetString("Account", "EditRemoteConnection"),
             _providers.GetAll(),
             account.ProviderCategory,
             account.ProviderId,

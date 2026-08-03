@@ -3,24 +3,27 @@ using AtomBox.Application.Accounts;
 using AtomBox.Core.Accounts;
 using AtomBox.Core.ValueObjects;
 using AtomBox.Desktop.Dialogs;
+using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Navigation;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class AccountManagementViewModel : ViewModelBase
+public sealed class AccountManagementViewModel : LocalizedViewModelBase
 {
     private readonly AccountAppService _accounts;
     private readonly IAccountDialogWorkflow _accountDialogWorkflow;
     private readonly IDialogService _dialogs;
     private StorageAccountId? _selectedAccountId;
     private AccountRowViewModel? _selectedAccount;
-    private string _statusMessage = string.Empty;
+    private LocalizedText? _statusMessage;
     private bool _isLoading;
 
     public AccountManagementViewModel(
         AccountAppService accounts,
         IAccountDialogWorkflow accountDialogWorkflow,
-        IDialogService dialogs)
+        IDialogService dialogs,
+        ILocalizationService localization)
+        : base(localization)
     {
         _accounts = accounts;
         _accountDialogWorkflow = accountDialogWorkflow;
@@ -41,7 +44,7 @@ public sealed class AccountManagementViewModel : ViewModelBase
         _ = RefreshAsync();
     }
 
-    public string Title => "账号管理";
+    public string Title => Localization.GetString("Account", "Title");
 
     public ObservableCollection<AccountRowViewModel> Accounts { get; } = [];
 
@@ -57,8 +60,7 @@ public sealed class AccountManagementViewModel : ViewModelBase
 
     public string StatusMessage
     {
-        get => _statusMessage;
-        private set => SetProperty(ref _statusMessage, value);
+        get => _statusMessage?.Resolve(Localization) ?? string.Empty;
     }
 
     public bool IsLoading
@@ -98,14 +100,14 @@ public sealed class AccountManagementViewModel : ViewModelBase
     private async Task RefreshAsync()
     {
         IsLoading = true;
-        StatusMessage = string.Empty;
+        SetStatus(null);
 
         var result = await _accounts.ListAsync(new ListStorageAccountsRequest()).ConfigureAwait(true);
         Accounts.Clear();
 
         if (result.IsFailure)
         {
-            StatusMessage = result.Error?.Message ?? "账号列表加载失败。";
+            SetStatus(new("Account", "AccountListLoadFailed"));
             IsLoading = false;
             OnPropertyChanged(nameof(HasAccounts));
             return;
@@ -117,7 +119,7 @@ public sealed class AccountManagementViewModel : ViewModelBase
         }
 
         SelectRequestedAccount();
-        StatusMessage = string.Empty;
+        SetStatus(null);
         IsLoading = false;
         OnPropertyChanged(nameof(HasAccounts));
     }
@@ -127,7 +129,7 @@ public sealed class AccountManagementViewModel : ViewModelBase
         var result = await _accountDialogWorkflow.AddAccountAsync().ConfigureAwait(true);
         if (result.IsFailure)
         {
-            StatusMessage = result.Error?.Message ?? "账号保存失败。";
+            SetStatus(new("Account", "AccountSaveFailed"));
             return;
         }
 
@@ -139,7 +141,7 @@ public sealed class AccountManagementViewModel : ViewModelBase
 
         SelectedAccountId = account.Id;
         await RefreshAsync().ConfigureAwait(true);
-        StatusMessage = $"已新增账号：{account.DisplayName}";
+        SetStatus(new("Account", "AccountAdded", account.DisplayName));
     }
 
     private async Task EditSelectedAccountAsync(object? parameter)
@@ -157,7 +159,7 @@ public sealed class AccountManagementViewModel : ViewModelBase
         var result = await _accountDialogWorkflow.EditAccountAsync(SelectedAccount.Account).ConfigureAwait(true);
         if (result.IsFailure)
         {
-            StatusMessage = result.Error?.Message ?? "账号保存失败。";
+            SetStatus(new("Account", "AccountSaveFailed"));
             return;
         }
 
@@ -169,7 +171,7 @@ public sealed class AccountManagementViewModel : ViewModelBase
 
         SelectedAccountId = account.Id;
         await RefreshAsync().ConfigureAwait(true);
-        StatusMessage = $"已更新账号：{account.DisplayName}";
+        SetStatus(new("Account", "AccountUpdated", account.DisplayName));
     }
 
     private async Task DeleteSelectedAccountAsync(object? parameter)
@@ -186,10 +188,10 @@ public sealed class AccountManagementViewModel : ViewModelBase
 
         var account = SelectedAccount.Account;
         var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogRequest(
-            "删除远程连接",
-            $"确定要删除账号 \"{account.DisplayName}\" 吗？\n\nProvider：{account.ProviderId}\n此操作会移除账号配置，并安排对应凭据清理。",
-            "删除",
-            "取消")).ConfigureAwait(true);
+            Localization.GetString("Account", "DeleteConnectionTitle"),
+            Localization.Format("Account", "DeleteConnectionMessage", account.DisplayName, account.ProviderId),
+            Localization.GetString("Common", "Delete"),
+            Localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
         if (!confirmed)
         {
             return;
@@ -198,14 +200,14 @@ public sealed class AccountManagementViewModel : ViewModelBase
         var result = await _accountDialogWorkflow.DeleteAccountAsync(account).ConfigureAwait(true);
         if (result.IsFailure)
         {
-            StatusMessage = result.Error?.Message ?? "账号删除失败。";
+            SetStatus(new("Account", "AccountDeleteFailed"));
             return;
         }
 
         SelectedAccountId = null;
         SelectedAccount = null;
         await RefreshAsync().ConfigureAwait(true);
-        StatusMessage = $"已删除账号：{account.DisplayName}";
+        SetStatus(new("Account", "AccountDeleted", account.DisplayName));
     }
 
     private void SelectRequestedAccount()
@@ -216,6 +218,18 @@ public sealed class AccountManagementViewModel : ViewModelBase
         }
 
         SelectedAccount = Accounts.FirstOrDefault(account => account.Id == SelectedAccountId.Value);
+    }
+
+    private void SetStatus(LocalizedText? value)
+    {
+        _statusMessage = value;
+        OnPropertyChanged(nameof(StatusMessage));
+    }
+
+    protected override void OnLanguageChanged()
+    {
+        OnPropertyChanged(nameof(Title));
+        OnPropertyChanged(nameof(StatusMessage));
     }
 }
 

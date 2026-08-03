@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
+             xmlns:loc="using:AtomBox.Desktop.Localization"
              xmlns:antdicons="https://atomui.net/icons/antdesign"
              xmlns:pages="using:AtomBox.Desktop.ViewModels.Pages"
              x:Class="AtomBox.Desktop.Views.Transfers.TransferQueueView"
@@ -34,12 +35,12 @@
                         <Grid Grid.Row="0"
                               ColumnDefinitions="1.4*,90,2*,130,90,90"
                               Classes="app-list-header">
-                            <TextBlock Grid.Column="0" Text="文件名" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" />
-                            <TextBlock Grid.Column="1" Text="方向" VerticalAlignment="Center" FontWeight="SemiBold" />
-                            <TextBlock Grid.Column="2" Text="目标 / 来源" VerticalAlignment="Center" FontWeight="SemiBold" />
-                            <TextBlock Grid.Column="3" Text="进度" VerticalAlignment="Center" FontWeight="SemiBold" />
-                            <TextBlock Grid.Column="4" Text="速度" VerticalAlignment="Center" FontWeight="SemiBold" />
-                            <TextBlock Grid.Column="5" Text="操作" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="0" Text="{loc:Loc Common.FileName}" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="1" Text="{loc:Loc Common.Direction}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="2" Text="{loc:Loc Common.TargetSource}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="3" Text="{loc:Loc Common.Progress}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="4" Text="{loc:Loc Common.Speed}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="5" Text="{loc:Loc Common.Action}" VerticalAlignment="Center" FontWeight="SemiBold" />
                         </Grid>
                         <Grid Grid.Row="1">
                             <ScrollViewer IsVisible="{Binding IsTaskListVisible}">
@@ -95,7 +96,7 @@
                             </ScrollViewer>
                             <atom:Empty PresetImage="Simple"
                                         SizeType="Middle"
-                                        Description="暂无传输任务。"
+                                        Description="{loc:Loc Transfer.NoQueueTasks}"
                                         IsVisible="{Binding IsEmptyStateVisible}"
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center" />

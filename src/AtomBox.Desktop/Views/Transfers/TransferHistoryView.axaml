@@ -1,6 +1,7 @@
 <UserControl xmlns="https://github.com/avaloniaui"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:atom="https://atomui.net"
+             xmlns:loc="using:AtomBox.Desktop.Localization"
              xmlns:antdicons="https://atomui.net/icons/antdesign"
              xmlns:pages="using:AtomBox.Desktop.ViewModels.Pages"
              x:Class="AtomBox.Desktop.Views.Transfers.TransferHistoryView"
@@ -34,11 +35,11 @@
                         <Grid Grid.Row="0"
                               ColumnDefinitions="1.4*,90,2*,90,150"
                               Classes="app-list-header">
-                            <TextBlock Grid.Column="0" Text="文件名" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" />
-                            <TextBlock Grid.Column="1" Text="方向" VerticalAlignment="Center" FontWeight="SemiBold" />
-                            <TextBlock Grid.Column="2" Text="目标 / 来源" VerticalAlignment="Center" FontWeight="SemiBold" />
-                            <TextBlock Grid.Column="3" Text="结果" VerticalAlignment="Center" FontWeight="SemiBold" />
-                            <TextBlock Grid.Column="4" Text="完成时间" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="0" Text="{loc:Loc Common.FileName}" Margin="12,0" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="1" Text="{loc:Loc Common.Direction}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="2" Text="{loc:Loc Common.TargetSource}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="3" Text="{loc:Loc Common.Result}" VerticalAlignment="Center" FontWeight="SemiBold" />
+                            <TextBlock Grid.Column="4" Text="{loc:Loc Common.CompletedAt}" VerticalAlignment="Center" FontWeight="SemiBold" />
                         </Grid>
                         <Grid Grid.Row="1">
                             <ScrollViewer IsVisible="{Binding IsTaskListVisible}">
@@ -79,7 +80,7 @@
                             </ScrollViewer>
                             <atom:Empty PresetImage="Simple"
                                         SizeType="Middle"
-                                        Description="暂无历史记录。完成、失败、取消或中断的传输任务会显示在这里。"
+                                        Description="{loc:Loc Transfer.NoHistory}"
                                         IsVisible="{Binding IsEmptyStateVisible}"
                                         HorizontalAlignment="Center"
                                         VerticalAlignment="Center" />
@@ -113,7 +114,7 @@
                 <TextBlock Text="{Binding StatusMessage}"
                            Classes="app-muted-text"
                            VerticalAlignment="Center" />
-                <atom:Button Content="查看详情"
+                <atom:Button Content="{loc:Loc Common.ViewDetails}"
                              Icon="{antdicons:AntDesignIconProvider InfoCircleOutlined}"
                              Command="{Binding ShowErrorDetailsCommand}"
                              IsVisible="{Binding HasErrorDetails}" />
@@ -121,13 +122,13 @@
             <StackPanel DockPanel.Dock="Right"
                         Orientation="Horizontal"
                         Spacing="8">
-                <TextBlock Text="{Binding PageIndex, StringFormat='当前页 {0}'}"
+                <TextBlock Text="{Binding PageText}"
                            Classes="app-muted-text"
                            VerticalAlignment="Center" />
-                <atom:Button Content="上一页"
+                <atom:Button Content="{loc:Loc Common.PreviousPage}"
                              Icon="{antdicons:AntDesignIconProvider LeftOutlined}"
                              Command="{Binding PreviousPageCommand}" />
-                <atom:Button Content="下一页"
+                <atom:Button Content="{loc:Loc Common.NextPage}"
                              Icon="{antdicons:AntDesignIconProvider RightOutlined}"
                              Command="{Binding NextPageCommand}" />
             </StackPanel>

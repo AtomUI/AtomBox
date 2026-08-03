@@ -25,8 +25,10 @@ public sealed class NavigationService : INavigationService
                 return;
             }
 
+            var previous = _currentViewModel;
             _currentViewModel = value;
             CurrentViewModelChanged?.Invoke(this, EventArgs.Empty);
+            (previous as IDisposable)?.Dispose();
         }
     }
 

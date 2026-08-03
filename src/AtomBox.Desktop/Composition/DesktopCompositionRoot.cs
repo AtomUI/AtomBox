@@ -1,4 +1,6 @@
 using AtomBox.Desktop.Navigation;
+using AtomBox.Desktop.Localization;
+using AtomBox.Desktop.Services;
 using AtomBox.Desktop.ViewModels.Pages;
 using AtomBox.Application.DependencyInjection;
 using AtomBox.Infrastructure.Configuration;
@@ -20,7 +22,9 @@ public sealed class DesktopCompositionRoot : IDisposable
         _serviceProvider = serviceProvider;
     }
 
-    public static DesktopCompositionRoot Create()
+    public static DesktopCompositionRoot Create(
+        ILocalizationService localization,
+        IDesktopPreferencesService preferences)
     {
         var services = new ServiceCollection();
 
@@ -28,7 +32,7 @@ public sealed class DesktopCompositionRoot : IDisposable
         services.AddAtomBoxProviders();
         services.AddAtomBoxTransfer();
         services.AddAtomBoxApplication();
-        services.AddAtomBoxDesktop();
+        services.AddAtomBoxDesktop(localization, preferences);
         AddDesktopCompositionServices(services);
 
         var serviceProvider = services.BuildServiceProvider(

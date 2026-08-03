@@ -12,8 +12,10 @@ public static class NavigationMenuKeys
     public const string AddRemote = "remote.add";
     public const string RemoteAccountPrefix = "remote.account:";
     public const string TransferQueue = "transfer.queue";
+    public const string TransferRoot = "transfer";
     public const string TransferHistory = "transfer.history";
     public const string Settings = "settings.application";
+    public const string SettingsRoot = "settings";
     public const string AccountManagement = "settings.accounts";
 
     public static string RemoteAccount(StorageAccountId accountId)

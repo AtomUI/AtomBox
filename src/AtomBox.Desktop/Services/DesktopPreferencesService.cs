@@ -1,4 +1,5 @@
 using System.Text.Json;
+using AtomBox.Desktop.Localization;
 using AtomBox.Infrastructure.Configuration;
 
 namespace AtomBox.Desktop.Services;
@@ -83,6 +84,10 @@ public sealed class DesktopPreferencesService : IDesktopPreferencesService
             ? defaults.DefaultDownloadDirectory
             : preferences.DefaultDownloadDirectory;
 
-        return new DesktopPreferences(startupPage, closeWindowBehavior, defaultDownloadDirectory);
+        return new DesktopPreferences(
+            startupPage,
+            closeWindowBehavior,
+            defaultDownloadDirectory,
+            LanguagePreference.Normalize(preferences.Language));
     }
 }

@@ -4,6 +4,7 @@ using AtomUI;
 using AtomUI.Controls;
 using AtomUI.Icons.AntDesign;
 using AtomBox.Desktop.Navigation;
+using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Services;
 using AtomBox.Desktop.ViewFactory;
 using AtomUI.Desktop.Controls;
@@ -33,8 +34,11 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
     private static readonly Uri TrayIconUri = new("avares://AtomBox.Desktop/Assets/logo.ico");
     private readonly MainWindowViewModel? _viewModel;
     private readonly IDesktopPreferencesService? _preferences;
+    private readonly ILocalizationService? _localization;
     private TrayIcon? _trayIcon;
     private TrayIcons? _trayIcons;
+    private NativeMenuItem? _showTrayItem;
+    private NativeMenuItem? _exitTrayItem;
     private bool _isExitRequested;
     private NavMenu? _navMenu;
     private NavMenuNode? _remoteRootNode;
@@ -54,10 +58,12 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
     public MainWindow(
         MainWindowViewModel viewModel,
         IViewFactory viewFactory,
-        IDesktopPreferencesService preferences)
+        IDesktopPreferencesService preferences,
+        ILocalizationService localization)
     {
         _viewModel = viewModel;
         _preferences = preferences;
+        _localization = localization;
         InitializeComponent();
         DataContext = viewModel;
 
@@ -74,6 +80,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
         viewModel.RemoteAccountMenuRefreshed += HandleRemoteAccountMenuRefreshed;
         viewModel.CurrentMenuKeyChanged += HandleCurrentMenuKeyChanged;
         viewModel.StatusBar.PropertyChanged += HandleStatusBarPropertyChanged;
+        localization.LanguageChanged += HandleLanguageChanged;
         navMenu.NavMenuItemClick += HandleNavMenuItemClick;
         Closing += HandleClosing;
         EnsureTrayIcon();
@@ -111,25 +118,25 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
             return;
         }
 
-        var showItem = new NativeMenuItem
+        _showTrayItem = new NativeMenuItem
         {
-            Header = "显示 AtomBox",
+            Header = L("Shell", "OpenAtomBox"),
             IsEnabled = true,
             IsVisible = true
         };
-        showItem.Click += (_, _) => ShowFromTray();
+        _showTrayItem.Click += (_, _) => ShowFromTray();
 
-        var exitItem = new NativeMenuItem
+        _exitTrayItem = new NativeMenuItem
         {
-            Header = "退出 AtomBox",
+            Header = L("Shell", "Exit"),
             IsEnabled = true,
             IsVisible = true
         };
-        exitItem.Click += (_, _) => ExitFromTray();
+        _exitTrayItem.Click += (_, _) => ExitFromTray();
 
         var menu = new NativeMenu();
-        menu.Items.Add(showItem);
-        menu.Items.Add(exitItem);
+        menu.Items.Add(_showTrayItem);
+        menu.Items.Add(_exitTrayItem);
 
         _trayIcon = new TrayIcon
         {
@@ -225,7 +232,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
         _navigationNodesByKey.Clear();
         _remoteRootNode = RegisterNavigationNode(new NavMenuNode
         {
-            Header = "远程存储",
+            Header = L("Shell", "RemoteStorage"),
             Icon = new CloudOutlined(),
             ItemKey = new EntityKey(NavigationMenuKeys.RemoteStorage)
         });
@@ -251,21 +258,22 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
         navMenu.Items.Clear();
         navMenu.Items.Add(RegisterNavigationNode(new NavMenuNode
         {
-            Header = "首页",
+            Header = L("Shell", "Home"),
             Icon = new HomeOutlined(),
             ItemKey = new EntityKey(NavigationMenuKeys.Home)
         }));
         navMenu.Items.Add(_remoteRootNode);
         AttachRemoteCategoryNodes();
-        _transferRootNode = new NavMenuNode
+        _transferRootNode = RegisterNavigationNode(new NavMenuNode
         {
-            Header = "传输",
+            Header = L("Shell", "Transfers"),
             Icon = new CloudSyncOutlined(),
+            ItemKey = new EntityKey(NavigationMenuKeys.TransferRoot),
             Children =
             {
                 RegisterNavigationNode(new NavMenuNode
                 {
-                    Header = "传输队列",
+                    Header = L("Shell", "TransferQueue"),
                     HeaderTemplate = CreateTransferQueueHeaderTemplate(_viewModel?.StatusBar ??
                         throw new InvalidOperationException("Main window view model was not initialized.")),
                     Icon = new SwapOutlined(),
@@ -273,38 +281,39 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
                 }),
                 RegisterNavigationNode(new NavMenuNode
                 {
-                    Header = "历史记录",
+                    Header = L("Shell", "TransferHistory"),
                     Icon = new HistoryOutlined(),
                     ItemKey = new EntityKey(NavigationMenuKeys.TransferHistory)
                 })
             }
-        };
+        });
         navMenu.Items.Add(_transferRootNode);
-        navMenu.Items.Add(new NavMenuNode
+        navMenu.Items.Add(RegisterNavigationNode(new NavMenuNode
         {
-            Header = "设置",
+            Header = L("Shell", "Settings"),
             Icon = new SettingOutlined(),
+            ItemKey = new EntityKey(NavigationMenuKeys.SettingsRoot),
             Children =
             {
                 RegisterNavigationNode(new NavMenuNode
                 {
-                    Header = "应用设置",
+                    Header = L("Shell", "AppSettings"),
                     Icon = new ToolOutlined(),
                     ItemKey = new EntityKey(NavigationMenuKeys.Settings)
                 }),
                 RegisterNavigationNode(new NavMenuNode
                 {
-                    Header = "账号管理",
+                    Header = L("Shell", "AccountManagement"),
                     Icon = new UserSwitchOutlined(),
                     ItemKey = new EntityKey(NavigationMenuKeys.AccountManagement)
                 })
             }
-        });
+        }));
 
         RebuildRemoteAccountNodes();
     }
 
-    private static FuncDataTemplate<NavMenuNode> CreateTransferQueueHeaderTemplate(StatusBarViewModel statusBar)
+    private FuncDataTemplate<NavMenuNode> CreateTransferQueueHeaderTemplate(StatusBarViewModel statusBar)
     {
         return new FuncDataTemplate<NavMenuNode>((_, _) =>
         {
@@ -321,7 +330,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
 
             var title = new Avalonia.Controls.TextBlock
             {
-                Text = "传输队列",
+                Text = L("Shell", "TransferQueue"),
                 VerticalAlignment = VerticalAlignment.Center
             };
             Grid.SetColumn(title, 0);
@@ -422,9 +431,9 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
         _fileTransferRootNode.Children.Clear();
         _webDavRootNode.Children.Clear();
 
-        PopulateAccountNodes(_ossRootNode, _viewModel.ObjectStorageAccounts, "暂无 OSS 账号", () => new CloudOutlined());
-        PopulateAccountNodes(_fileTransferRootNode, _viewModel.FileTransferAccounts, "暂无 FTP/SFTP 账号", () => new FolderOutlined());
-        PopulateAccountNodes(_webDavRootNode, _viewModel.WebDavAccounts, "暂无 WebDAV 账号", () => new ApiOutlined());
+        PopulateAccountNodes(_ossRootNode, _viewModel.ObjectStorageAccounts, L("Shell", "NoObjectStorageAccounts"), () => new CloudOutlined());
+        PopulateAccountNodes(_fileTransferRootNode, _viewModel.FileTransferAccounts, L("Shell", "NoFileTransferAccounts"), () => new FolderOutlined());
+        PopulateAccountNodes(_webDavRootNode, _viewModel.WebDavAccounts, L("Shell", "NoWebDavAccounts"), () => new ApiOutlined());
         AttachRemoteCategoryNodes();
         ApplyNavigationMinimumWidth();
         SyncNavigationSelection(_pendingNavigationMenuKey ?? _viewModel.CurrentMenuKey);
@@ -537,13 +546,13 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
 
         var staticHeaders = new[]
         {
-            "首页",
-            "传输",
-            "传输队列",
-            "历史记录",
-            "设置",
-            "应用设置",
-            "账号管理"
+            L("Shell", "Home"),
+            L("Shell", "Transfers"),
+            L("Shell", "TransferQueue"),
+            L("Shell", "TransferHistory"),
+            L("Shell", "Settings"),
+            L("Shell", "AppSettings"),
+            L("Shell", "AccountManagement")
         };
         foreach (var header in staticHeaders)
         {
@@ -690,5 +699,47 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
         }
 
         return false;
+    }
+
+    private void HandleLanguageChanged(object? sender, LanguageChangedEventArgs e)
+    {
+        if (_navMenu is null)
+        {
+            return;
+        }
+
+        var expandedKeys = _navMenu.GetVisualDescendants()
+            .OfType<INavMenuItem>()
+            .Where(item => item.IsSubMenuOpen && item.ItemKey.HasValue)
+            .Select(item => item.ItemKey.GetValueOrDefault().Value)
+            .ToHashSet(StringComparer.Ordinal);
+        var selectedKey = _viewModel?.CurrentMenuKey;
+
+        BuildNavigationMenu(_navMenu);
+        if (_showTrayItem is not null)
+        {
+            _showTrayItem.Header = L("Shell", "OpenAtomBox");
+        }
+        if (_exitTrayItem is not null)
+        {
+            _exitTrayItem.Header = L("Shell", "Exit");
+        }
+
+        Dispatcher.UIThread.Post(() =>
+        {
+            foreach (var item in _navMenu.GetVisualDescendants().OfType<INavMenuItem>())
+            {
+                if (item.ItemKey?.Value is { } key && expandedKeys.Contains(key))
+                {
+                    item.Open();
+                }
+            }
+            SyncNavigationSelection(selectedKey);
+        }, DispatcherPriority.Background);
+    }
+
+    private string L(string catalog, string key)
+    {
+        return _localization?.GetString(catalog, key) ?? $"[[{catalog}.{key}]]";
     }
 }

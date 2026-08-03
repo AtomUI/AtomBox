@@ -2,6 +2,9 @@ using System.Globalization;
 using System.Diagnostics;
 using System.Text;
 using AtomBox.Desktop.Composition;
+using AtomBox.Desktop.Localization;
+using AtomBox.Desktop.Services;
+using AtomBox.Infrastructure.Configuration;
 using AtomBox.Desktop.Shell;
 using AtomUI;
 using AtomUI.Desktop.Controls;
@@ -16,15 +19,24 @@ namespace AtomBox.Desktop;
 public sealed partial class App : Avalonia.Application
 {
     private DesktopCompositionRoot? _compositionRoot;
+    private ILocalizationService? _localization;
+    private IDesktopPreferencesService? _preferences;
     private static bool s_exceptionHandlersRegistered;
 
     public override void Initialize()
     {
         RegisterExceptionHandlers();
 
+        var paths = new AtomBoxStoragePaths();
+        var preference = DesktopLanguageBootstrapper.ReadPreference(paths);
+        var culture = DesktopLanguageBootstrapper.Apply(preference, CultureInfo.InstalledUICulture);
+        _preferences = new DesktopPreferencesService(paths);
+        _localization = new LocalizationService(_preferences, preference, culture);
+        LocalizationHost.Initialize(_localization);
+
         this.UseAtomUI(builder =>
         {
-            builder.WithDefaultCultureInfo(CultureInfo.CurrentUICulture);
+            builder.WithDefaultCultureInfo(culture);
             builder.WithDefaultTheme(IThemeManager.DEFAULT_THEME_ID);
             builder.UseAlibabaSansFont();
             builder.UseDesktopControls();
@@ -39,7 +51,9 @@ public sealed partial class App : Avalonia.Application
         {
             try
             {
-                _compositionRoot = DesktopCompositionRoot.Create();
+                _compositionRoot = DesktopCompositionRoot.Create(
+                    _localization ?? throw new InvalidOperationException("Localization is not initialized."),
+                    _preferences ?? throw new InvalidOperationException("Desktop preferences are not initialized."));
                 desktop.MainWindow = _compositionRoot.CreateMainWindow();
                 desktop.Exit += (_, _) => _compositionRoot.Dispose();
             }

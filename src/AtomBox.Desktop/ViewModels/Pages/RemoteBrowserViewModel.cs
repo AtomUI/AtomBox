@@ -12,6 +12,7 @@ using AtomBox.Core.Results;
 using AtomBox.Core.Settings;
 using AtomBox.Core.ValueObjects;
 using AtomBox.Desktop.Dialogs;
+using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Services;
 using AtomBox.Desktop.Shell;
@@ -23,7 +24,7 @@ using Avalonia.Threading;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class RemoteBrowserViewModel : ViewModelBase
+public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
 {
     private readonly AccountAppService _accounts;
     private readonly RemoteBrowserAppService _browser;
@@ -35,8 +36,9 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
     private readonly IDesktopPreferencesService _preferences;
     private readonly IAccountDialogWorkflow _accountDialogWorkflow;
     private readonly StatusBarViewModel _statusBar;
-    private string _title = "远程浏览";
-    private string _statusMessage = "选择左侧远程存储类型或连接实例。";
+    private readonly EventHandler _accountsChangedHandler;
+    private string _title = string.Empty;
+    private string _statusMessage = string.Empty;
     private string _currentPath = "/";
     private bool _isLoading;
     private int _loadingDepth;
@@ -74,7 +76,9 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         IFilePickerService filePicker,
         IDesktopPreferencesService preferences,
         IAccountDialogWorkflow accountDialogWorkflow,
-        StatusBarViewModel statusBar)
+        StatusBarViewModel statusBar,
+        ILocalizationService localization)
+        : base(localization)
     {
         _accounts = accounts;
         _browser = browser;
@@ -86,7 +90,10 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         _preferences = preferences;
         _accountDialogWorkflow = accountDialogWorkflow;
         _statusBar = statusBar;
-        _accountDialogWorkflow.AccountsChanged += (_, _) => RefreshAccountsOnUiThread();
+        _title = Localization.GetString("RemoteBrowser", "Title");
+        _statusMessage = Localization.GetString("RemoteBrowser", "SelectTypeOrConnection");
+        _accountsChangedHandler = (_, _) => RefreshAccountsOnUiThread();
+        _accountDialogWorkflow.AccountsChanged += _accountsChangedHandler;
         RefreshCommand = new AsyncRelayCommand(_ => RefreshAsync());
         RetryLoadCommand = new AsyncRelayCommand(_ => RetryLoadAsync(), _ => _lastFailedListRequest is not null);
         PreviousPageCommand = new AsyncRelayCommand(_ => LoadPreviousPageAsync(), _ => CanGoPreviousPage);
@@ -195,6 +202,25 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
     public int WebDavAccountCount => WebDavAccounts.Count;
 
+    public string SelectedFileCountText => Localization.Format(
+        "RemoteBrowser",
+        "SelectedFiles",
+        SelectedFileCount);
+
+    protected override void OnLanguageChanged()
+    {
+        UpdateTitleFromCurrentAccount();
+        OnPropertyChanged(nameof(SelectedFileCountText));
+        OnPropertyChanged(nameof(EmptyStateText));
+        OnPropertyChanged(nameof(NameColumnHeader));
+    }
+
+    public override void Dispose()
+    {
+        _accountDialogWorkflow.AccountsChanged -= _accountsChangedHandler;
+        base.Dispose();
+    }
+
     public bool HasBuckets => Buckets.Count > 0;
 
     public bool IsEmptyStateVisible => !IsLoading &&
@@ -208,17 +234,17 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         {
             if (IsAccountSelection && !HasAccounts)
             {
-                return "暂无远程连接。";
+                return Localization.GetString("RemoteBrowser", "NoRemoteConnectionsPeriod");
             }
 
             if (!IsAccountSelection && !HasItems)
             {
                 if (_storageAccountId is null)
                 {
-                    return "请选择一个连接。";
+                    return Localization.GetString("RemoteBrowser", "SelectConnection");
                 }
 
-                return IsBucketList ? "当前账号暂无可显示 Bucket。" : "当前目录暂无可显示内容。";
+                return Localization.GetString("RemoteBrowser", IsBucketList ? "NoBuckets" : "EmptyDirectory");
             }
 
             return string.Empty;
@@ -317,7 +343,9 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
     public bool IsRemoteNavigationVisible => IsObjectStorageNavigationVisible || IsPlainBreadcrumbNavigationVisible;
 
-    public string NameColumnHeader => IsBucketList ? "桶名" : "文件名";
+    public string NameColumnHeader => IsBucketList
+        ? Localization.GetString("RemoteBrowser", "BucketName")
+        : Localization.GetString("Common", "FileName");
 
     public bool IsBucketList =>
         _currentAccount?.ProviderCategory == StorageProviderCategory.ObjectStorage &&
@@ -522,11 +550,11 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
         Title = parameter.ResourceGroup switch
         {
-            NavigationResourceGroup.All => "远程存储",
+            NavigationResourceGroup.All => Localization.GetString("Shell", "RemoteStorage"),
             NavigationResourceGroup.ObjectStorage => "OSS",
             NavigationResourceGroup.FileTransfer => "FTP / SFTP",
             NavigationResourceGroup.WebDav => "WebDAV",
-            _ => "远程浏览"
+            _ => Localization.GetString("RemoteBrowser", "Title")
         };
 
         _ = RefreshAsync();
@@ -596,7 +624,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         SetPagination(null, null);
         ResetPaging();
         _pathContext = RemotePathContextResult.From(RemotePath.Root);
-        StatusMessage = "正在读取账号入口...";
+        StatusMessage = Localization.GetString("RemoteBrowser", "LoadingAccounts");
         CurrentPath = "/";
         ClearErrorDetails();
 
@@ -604,8 +632,8 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         var accountsResult = await _accounts.ListAsync(new ListStorageAccountsRequest(category)).ConfigureAwait(true);
         if (accountsResult.IsFailure)
         {
-            StatusMessage = accountsResult.Error?.Message ?? "账号入口加载失败。";
-            SetErrorDetails("账号入口加载失败", "账号入口加载失败。", accountsResult.Error);
+            StatusMessage = Localization.GetString("RemoteBrowser", "AccountEntryLoadFailed");
+            SetErrorDetails(StatusMessage, StatusMessage, accountsResult.Error);
             RaiseCollectionStateChanged();
             return;
         }
@@ -618,7 +646,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             SetAccountSelection(true);
             StatusMessage = _resourceGroup == NavigationResourceGroup.All
                 ? string.Empty
-                : "当前分类暂无账号。请通过统一账号弹窗新增连接。";
+                : Localization.GetString("RemoteBrowser", "CategoryNoAccounts");
             RaiseCollectionStateChanged();
             return;
         }
@@ -642,7 +670,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             }
         }
 
-        StatusMessage = "请选择一个连接以浏览远程文件。";
+        StatusMessage = Localization.GetString("RemoteBrowser", "SelectConnectionToBrowse");
         RaiseCollectionStateChanged();
     }
 
@@ -708,7 +736,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         WebDavAccounts.Clear();
         await LoadCurrentAccountAsync().ConfigureAwait(true);
         CurrentPath = FormatRemotePath(_remotePath);
-        StatusMessage = "正在加载远程文件列表...";
+        StatusMessage = Localization.GetString("RemoteBrowser", "LoadingItems");
         ClearErrorDetails();
         _lastFailedListRequest = null;
         RetryLoadCommand.RaiseCanExecuteChanged();
@@ -723,7 +751,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
         if (result.IsFailure)
         {
-            StatusMessage = result.Error?.Message ?? "远程文件列表加载失败。";
+            StatusMessage = Localization.GetString("RemoteBrowser", "ItemListLoadFailed");
             _lastFailedListRequest = new ListRemoteItemsRequest(
                 storageAccountId,
                 _remotePath,
@@ -731,13 +759,13 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
                 appliedSearchText);
             RetryLoadCommand.RaiseCanExecuteChanged();
             SetErrorDetails(
-                "远程文件列表加载失败",
-                "远程文件列表加载失败。",
+                StatusMessage,
+                StatusMessage,
                 result.Error,
                 new Dictionary<string, string>
                 {
-                    ["账号"] = storageAccountId.ToString(),
-                    ["路径"] = CurrentPath
+                    [Localization.GetString("Common", "Account")] = storageAccountId.ToString(),
+                    [Localization.GetString("Common", "Path")] = CurrentPath
                 });
             RaiseCollectionStateChanged();
             return;
@@ -1062,11 +1090,11 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
         Title = _resourceGroup switch
         {
-            NavigationResourceGroup.All => "远程存储",
+            NavigationResourceGroup.All => Localization.GetString("Shell", "RemoteStorage"),
             NavigationResourceGroup.ObjectStorage => "OSS",
             NavigationResourceGroup.FileTransfer => "FTP / SFTP",
             NavigationResourceGroup.WebDav => "WebDAV",
-            _ => "远程浏览"
+            _ => Localization.GetString("RemoteBrowser", "Title")
         };
     }
 
@@ -1218,6 +1246,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         }
 
         OnPropertyChanged(nameof(SelectedFileCount));
+        OnPropertyChanged(nameof(SelectedFileCountText));
         OnPropertyChanged(nameof(HasSelectedFiles));
         OnPropertyChanged(nameof(IsBatchSelectionBarVisible));
         OnPropertyChanged(nameof(HasSelectableFiles));
@@ -1235,7 +1264,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         {
             BreadcrumbItems.Add(new BreadcrumbItemData
             {
-                Content = "WebDAV 根目录",
+                Content = Localization.GetString("RemoteBrowser", "WebDavRoot"),
                 NavigateContext = RemotePath.Root
             });
         }
@@ -1300,7 +1329,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         var storageAccountId = _storageAccountId.Value;
         var preferences = await _preferences.GetAsync().ConfigureAwait(true);
         var localPath = new LocalPath(Path.Combine(preferences.DefaultDownloadDirectory, name));
-        _messages.Info($"正在创建下载任务：{localPath.Value}");
+        _messages.Info(Localization.Format("RemoteBrowser", "CreatingDownload", localPath.Value));
 
         _ = Task.Run(async () =>
         {
@@ -1315,16 +1344,16 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             {
                 if (result.IsFailure)
                 {
-                    var message = result.Error?.Message ?? "创建下载任务失败。";
+                    var message = Localization.GetString("RemoteBrowser", "DownloadCreateFailed");
                     StatusMessage = message;
-                    SetErrorDetails("创建下载任务失败", "创建下载任务失败。", result.Error);
+                    SetErrorDetails(message, message, result.Error);
                     _messages.Error(message);
                     return;
                 }
 
                 _statusBar.RequestQueueRefresh();
-                StatusMessage = $"下载任务已创建，保存到：{localPath.Value}";
-                _messages.Success("下载任务已创建。");
+                StatusMessage = Localization.Format("RemoteBrowser", "DownloadCreatedAt", localPath.Value);
+                _messages.Success(Localization.GetString("RemoteBrowser", "DownloadCreated"));
             });
         });
     }
@@ -1351,7 +1380,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
                 new LocalPath(Path.Combine(preferences.DefaultDownloadDirectory, row.Name))))
             .ToArray();
 
-        StatusMessage = $"正在创建 {targets.Length} 个下载任务...";
+        StatusMessage = Localization.Format("RemoteBrowser", "CreatingDownloads", targets.Length);
         var result = await _transfers.CreateDownloadTasksAsync(
             new CreateDownloadTasksRequest(
                 storageAccountId,
@@ -1360,16 +1389,16 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
         if (result.IsFailure)
         {
-            var message = result.Error?.Message ?? "创建批量下载任务失败。";
+            var message = Localization.GetString("RemoteBrowser", "BatchDownloadCreateFailed");
             StatusMessage = message;
             SetErrorDetails(
-                "创建批量下载任务失败",
-                "创建批量下载任务失败。",
+                message,
+                message,
                 result.Error,
                 new Dictionary<string, string>
                 {
-                    ["文件数量"] = targets.Length.ToString(),
-                    ["保存目录"] = preferences.DefaultDownloadDirectory
+                    [Localization.GetString("Common", "FileCount")] = targets.Length.ToString(),
+                    [Localization.GetString("Common", "SaveDirectory")] = preferences.DefaultDownloadDirectory
                 });
             _messages.Error(message);
             return;
@@ -1378,8 +1407,8 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         var createdCount = result.GetValueOrThrow().Tasks.Count;
         _statusBar.RequestQueueRefresh();
         ClearSelectedFiles();
-        StatusMessage = $"已创建 {createdCount} 个下载任务，保存到：{preferences.DefaultDownloadDirectory}";
-        _messages.Success($"已创建 {createdCount} 个下载任务。");
+        StatusMessage = Localization.Format("RemoteBrowser", "DownloadsCreatedAt", createdCount, preferences.DefaultDownloadDirectory);
+        _messages.Success(Localization.Format("RemoteBrowser", "DownloadsCreated", createdCount));
     }
 
     private async Task PreviewSelectedAsync(object? parameter)
@@ -1390,7 +1419,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             return;
         }
 
-        StatusMessage = $"正在预览：{name}";
+        StatusMessage = Localization.Format("RemoteBrowser", "Previewing", name);
         var previewRequest = new PreviewRemoteFileRequest(
             _storageAccountId.Value,
             path,
@@ -1401,16 +1430,16 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
         if (result.IsFailure)
         {
-            var message = result.Error?.Message ?? "远程文件预览失败。";
+            var message = Localization.GetString("RemoteBrowser", "PreviewFailed");
             StatusMessage = message;
             SetErrorDetails(
-                "远程文件预览失败",
-                "远程文件预览失败。",
+                message,
+                message,
                 result.Error,
                 new Dictionary<string, string>
                 {
-                    ["文件"] = name,
-                    ["路径"] = path.ToString()
+                    [Localization.GetString("Common", "File")] = name,
+                    [Localization.GetString("Common", "Path")] = path.ToString()
                 });
             _messages.Error(message);
             return;
@@ -1439,7 +1468,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
                 : null,
             preview.Text,
             preview.EncodingName)).ConfigureAwait(true);
-        StatusMessage = $"已打开预览：{name}";
+        StatusMessage = Localization.Format("RemoteBrowser", "PreviewOpened", name);
     }
 
     private async Task RenameSelectedAsync(object? parameter)
@@ -1452,24 +1481,24 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
         if (IsObjectStorageFolderRenameDisabled(kind))
         {
-            _messages.Info("OSS 文件夹重命名暂未开放。");
+            _messages.Info(Localization.GetString("RemoteBrowser", "FolderRenameUnavailable"));
             return;
         }
 
         var newName = await _dialogs.ShowTextInputAsync(new TextInputDialogRequest(
-            "重命名",
-            $"请输入 \"{name}\" 的新名称：",
+            Localization.GetString("RemoteBrowser", "RenameTitle"),
+            Localization.Format("RemoteBrowser", "RenamePrompt", name),
             name,
-            "新名称",
-            "保存",
-            "取消")).ConfigureAwait(true);
+            Localization.GetString("RemoteBrowser", "NewName"),
+            Localization.GetString("Common", "Save"),
+            Localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
         if (string.IsNullOrWhiteSpace(newName) ||
             string.Equals(newName.Trim(), name, StringComparison.Ordinal))
         {
             return;
         }
 
-        StatusMessage = $"正在重命名：{name}";
+        StatusMessage = Localization.Format("RemoteBrowser", "Renaming", name);
         var result = await RunWithLoadingAsync(() => _browser.RenameRemoteItemAsync(new RenameRemoteItemRequest(
             _storageAccountId.Value,
             path,
@@ -1478,23 +1507,23 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
         if (result.IsFailure)
         {
-            StatusMessage = result.Error?.Message ?? "重命名失败。";
+            StatusMessage = Localization.GetString("RemoteBrowser", "RenameFailed");
             SetErrorDetails(
-                "重命名失败",
-                "远程对象重命名失败。",
+                StatusMessage,
+                StatusMessage,
                 result.Error,
                 new Dictionary<string, string>
                 {
-                    ["对象"] = name,
-                    ["新名称"] = newName.Trim(),
-                    ["路径"] = path.ToString()
+                    [Localization.GetString("Common", "Object")] = name,
+                    [Localization.GetString("Common", "NewName")] = newName.Trim(),
+                    [Localization.GetString("Common", "Path")] = path.ToString()
                 });
             await _dialogs.ShowErrorDetailsAsync(_lastErrorDetails!).ConfigureAwait(true);
             return;
         }
 
-        _messages.Info($"已重命名：{newName.Trim()}");
-        StatusMessage = $"已重命名：{newName.Trim()}";
+        _messages.Info(Localization.Format("RemoteBrowser", "Renamed", newName.Trim()));
+        StatusMessage = Localization.Format("RemoteBrowser", "Renamed", newName.Trim());
         ApplyRenamedRow(path, kind, newName.Trim());
     }
 
@@ -1592,12 +1621,14 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         if (!string.IsNullOrWhiteSpace(query))
         {
             StatusMessage = Rows.Count == 0
-                ? $"未找到以 \"{query}\" 开头的内容。"
-                : $"匹配项目 {Rows.Count} 个。";
+                ? Localization.Format("RemoteBrowser", "SearchNoMatch", query)
+                : Localization.Format("RemoteBrowser", "SearchMatchCount", Rows.Count);
         }
         else
         {
-            StatusMessage = Rows.Count == 0 ? "当前目录暂无可显示内容。" : $"当前目录项目 {Rows.Count} 个。";
+            StatusMessage = Rows.Count == 0
+                ? Localization.GetString("RemoteBrowser", "EmptyDirectory")
+                : Localization.Format("RemoteBrowser", "DirectoryItemCount", Rows.Count);
         }
 
         RaiseCollectionStateChanged();
@@ -1642,7 +1673,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         {
             if (IsUploadPreparing)
             {
-                StatusMessage = "当前正在准备上传，请稍后再试。";
+                StatusMessage = Localization.GetString("RemoteBrowser", "UploadPreparing");
             }
 
             return;
@@ -1651,7 +1682,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         var selectedFiles = await _filePicker.PickFilesForUploadAsync().ConfigureAwait(true);
         if (selectedFiles.Count == 0)
         {
-            StatusMessage = "未选择上传文件。";
+            StatusMessage = Localization.GetString("RemoteBrowser", "NoUploadFiles");
             return;
         }
 
@@ -1669,8 +1700,8 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             var progress = new Progress<UploadPreparationProgress>(item =>
             {
                 StatusMessage = item.TotalCount <= 1
-                    ? $"正在计算文件指纹：{item.FileName}"
-                    : $"正在计算文件指纹 {item.CurrentIndex}/{item.TotalCount}：{item.FileName}";
+                    ? Localization.Format("RemoteBrowser", "FingerprintingSingle", item.FileName)
+                    : Localization.Format("RemoteBrowser", "FingerprintingMultiple", item.CurrentIndex, item.TotalCount, item.FileName);
             });
             prepareResult = await _transfers
                 .PrepareBatchUploadTasksAsync(
@@ -1685,9 +1716,9 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
         if (prepareResult.IsFailure)
         {
-            var message = prepareResult.Error?.Message ?? "上传前检查失败。";
+            var message = Localization.GetString("RemoteBrowser", "PreUploadCheckFailed");
             StatusMessage = message;
-            SetErrorDetails("上传前检查失败", "上传前检查失败。", prepareResult.Error);
+            SetErrorDetails(message, message, prepareResult.Error);
             _messages.Error(message);
             return;
         }
@@ -1699,13 +1730,13 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         if (duplicateTargets.Length > 0)
         {
             var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogRequest(
-                "文件以前上传过",
+                Localization.GetString("RemoteBrowser", "DuplicateUploadTitle"),
                 BuildDuplicateUploadMessage(duplicateTargets),
-                "再次上传",
-                "取消")).ConfigureAwait(true);
+                Localization.GetString("RemoteBrowser", "UploadAgain"),
+                Localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
             if (!confirmed)
             {
-                StatusMessage = "已取消上传。";
+                StatusMessage = Localization.GetString("RemoteBrowser", "UploadCanceled");
                 return;
             }
         }
@@ -1714,7 +1745,9 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             .Select(target => new UploadTaskTarget(target.LocalPath, target.RemotePath, target.Fingerprint))
             .ToArray();
 
-        _messages.Info(targetsToCreate.Length == 1 ? "正在创建上传任务。" : $"正在创建 {targetsToCreate.Length} 个上传任务。");
+        _messages.Info(targetsToCreate.Length == 1
+            ? Localization.GetString("RemoteBrowser", "CreatingUploadSingle")
+            : Localization.Format("RemoteBrowser", "CreatingUploadMultiple", targetsToCreate.Length));
 
         _ = Task.Run(async () =>
         {
@@ -1728,9 +1761,9 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             {
                 if (result.IsFailure)
                 {
-                    var message = result.Error?.Message ?? "创建上传任务失败。";
+                    var message = Localization.GetString("RemoteBrowser", "UploadCreateFailed");
                     StatusMessage = message;
-                    SetErrorDetails("创建上传任务失败", "创建上传任务失败。", result.Error);
+                    SetErrorDetails(message, message, result.Error);
                     _messages.Error(message);
                     return;
                 }
@@ -1738,9 +1771,11 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
                 var createdCount = result.GetValueOrThrow().Tasks.Count;
                 _statusBar.RequestQueueRefresh();
                 StatusMessage = createdCount <= 1
-                    ? "上传任务已创建，等待传输完成。"
-                    : $"已创建 {createdCount} 个上传任务，等待传输完成。";
-                _messages.Success(createdCount <= 1 ? "上传任务已创建。" : $"已创建 {createdCount} 个上传任务。");
+                    ? Localization.GetString("RemoteBrowser", "UploadCreatedWaitSingle")
+                    : Localization.Format("RemoteBrowser", "UploadCreatedWaitMultiple", createdCount);
+                _messages.Success(createdCount <= 1
+                    ? Localization.GetString("RemoteBrowser", "UploadCreatedSingle")
+                    : Localization.Format("RemoteBrowser", "UploadCreatedMultiple", createdCount));
             });
         });
     }
@@ -1753,12 +1788,12 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         }
 
         var bucketName = await _dialogs.ShowTextInputAsync(new TextInputDialogRequest(
-            "新增 Bucket",
-            "请输入新的 Bucket 名称：",
+            Localization.GetString("RemoteBrowser", "CreateBucketTitle"),
+            Localization.GetString("RemoteBrowser", "CreateBucketPrompt"),
             string.Empty,
-            "Bucket 名称",
-            "创建",
-            "取消")).ConfigureAwait(true);
+            Localization.GetString("RemoteBrowser", "BucketNameField"),
+            Localization.GetString("RemoteBrowser", "Create"),
+            Localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
         bucketName = bucketName?.Trim();
         if (string.IsNullOrWhiteSpace(bucketName))
         {
@@ -1768,11 +1803,11 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         if (bucketName.Contains('/', StringComparison.Ordinal) ||
             bucketName.Contains('\\', StringComparison.Ordinal))
         {
-            _messages.Error("Bucket 名称不能包含路径分隔符。");
+            _messages.Error(Localization.GetString("RemoteBrowser", "InvalidBucketName"));
             return;
         }
 
-        StatusMessage = $"正在创建 Bucket：{bucketName}";
+        StatusMessage = Localization.Format("RemoteBrowser", "CreatingBucket", bucketName);
         var path = new RemotePath(bucketName, RemotePathKind.BucketRoot);
         var result = await _browser.CreateRemoteFolderAsync(new CreateRemoteFolderRequest(
             _storageAccountId.Value,
@@ -1780,23 +1815,23 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
         if (result.IsFailure)
         {
-            var message = result.Error?.Message ?? "创建 Bucket 失败。";
+            var message = Localization.GetString("RemoteBrowser", "CreateBucketFailed");
             StatusMessage = message;
             SetErrorDetails(
-                "创建 Bucket 失败",
-                "创建 Bucket 失败。",
+                message,
+                message,
                 result.Error,
                 new Dictionary<string, string>
                 {
                     ["Bucket"] = bucketName,
-                    ["账号"] = _storageAccountId.Value.ToString()
+                    [Localization.GetString("Common", "Account")] = _storageAccountId.Value.ToString()
                 });
             _messages.Error(message);
             return;
         }
 
-        _messages.Info($"Bucket 已创建：{bucketName}");
-        StatusMessage = $"Bucket 已创建：{bucketName}";
+        _messages.Info(Localization.Format("RemoteBrowser", "BucketCreated", bucketName));
+        StatusMessage = Localization.Format("RemoteBrowser", "BucketCreated", bucketName);
         await LoadItemsAsync().ConfigureAwait(true);
     }
 
@@ -1808,12 +1843,12 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         }
 
         var folderName = await _dialogs.ShowTextInputAsync(new TextInputDialogRequest(
-            "新建文件夹",
-            "请输入新的文件夹名称：",
+            Localization.GetString("RemoteBrowser", "CreateFolderTitle"),
+            Localization.GetString("RemoteBrowser", "CreateFolderPrompt"),
             string.Empty,
-            "文件夹名称",
-            "创建",
-            "取消")).ConfigureAwait(true);
+            Localization.GetString("RemoteBrowser", "FolderNameField"),
+            Localization.GetString("RemoteBrowser", "Create"),
+            Localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
         folderName = folderName?.Trim();
         if (string.IsNullOrWhiteSpace(folderName))
         {
@@ -1823,36 +1858,36 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         if (folderName.Contains('/', StringComparison.Ordinal) ||
             folderName.Contains('\\', StringComparison.Ordinal))
         {
-            _messages.Error("文件夹名称不能包含路径分隔符。");
+            _messages.Error(Localization.GetString("RemoteBrowser", "InvalidFolderName"));
             return;
         }
 
         var folderPath = _remotePath.Combine(folderName, RemotePathKind.Folder);
-        StatusMessage = $"正在创建文件夹：{folderName}";
+        StatusMessage = Localization.Format("RemoteBrowser", "CreatingFolder", folderName);
         var result = await _browser.CreateRemoteFolderAsync(new CreateRemoteFolderRequest(
             _storageAccountId.Value,
             folderPath)).ConfigureAwait(true);
 
         if (result.IsFailure)
         {
-            var message = result.Error?.Message ?? "创建文件夹失败。";
+            var message = Localization.GetString("RemoteBrowser", "CreateFolderFailed");
             StatusMessage = message;
             SetErrorDetails(
-                "创建文件夹失败",
-                "创建文件夹失败。",
+                message,
+                message,
                 result.Error,
                 new Dictionary<string, string>
                 {
-                    ["文件夹"] = folderName,
-                    ["当前位置"] = CurrentPath,
-                    ["账号"] = _storageAccountId.Value.ToString()
+                    [Localization.GetString("Common", "Folder")] = folderName,
+                    [Localization.GetString("Common", "CurrentLocation")] = CurrentPath,
+                    [Localization.GetString("Common", "Account")] = _storageAccountId.Value.ToString()
                 });
             _messages.Error(message);
             return;
         }
 
-        _messages.Info($"文件夹已创建：{folderName}");
-        StatusMessage = $"文件夹已创建：{folderName}";
+        _messages.Info(Localization.Format("RemoteBrowser", "FolderCreated", folderName));
+        StatusMessage = Localization.Format("RemoteBrowser", "FolderCreated", folderName);
         AppendCreatedFolderRow(folderName, folderPath);
     }
 
@@ -1863,21 +1898,21 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             return;
         }
 
-        var objectType = kind == RemoteItemKind.Folder ? "文件夹" : "文件";
+        var objectType = Localization.GetString("RemoteBrowser", kind == RemoteItemKind.Folder ? "Folder" : "File");
         var extraWarning = kind == RemoteItemKind.Folder
-            ? "\n\n该文件夹内的所有子文件夹和文件都会被删除。"
+            ? Localization.GetString("RemoteBrowser", "DeleteFolderWarning")
             : string.Empty;
         var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogRequest(
-            "删除远程对象",
-            $"确定要删除远程{objectType} \"{name}\" 吗？\n\n当前位置：{CurrentPath}{extraWarning}\n此操作不可撤销。",
-            "删除",
-            "取消")).ConfigureAwait(true);
+            Localization.GetString("RemoteBrowser", "DeleteRemoteTitle"),
+            Localization.Format("RemoteBrowser", "DeleteRemoteMessage", objectType, name, CurrentPath, extraWarning),
+            Localization.GetString("Common", "Delete"),
+            Localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
         if (!confirmed)
         {
             return;
         }
 
-        StatusMessage = $"正在删除：{name}";
+        StatusMessage = Localization.Format("RemoteBrowser", "Deleting", name);
         var result = await RunWithLoadingAsync(() => _browser.DeleteRemoteItemAsync(new DeleteRemoteItemRequest(
             _storageAccountId.Value,
             path,
@@ -1885,25 +1920,25 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
         if (result.IsFailure)
         {
-            StatusMessage = result.Error?.Message ?? "删除远程对象失败。";
+            StatusMessage = Localization.GetString("RemoteBrowser", "DeleteFailed");
             var failureSummary = kind == RemoteItemKind.Folder
-                ? "删除远程文件夹失败；部分对象可能已经删除，请刷新后确认远端实际状态。"
-                : "删除远程对象失败。";
+                ? Localization.GetString("RemoteBrowser", "DeleteFolderPartialFailed")
+                : Localization.GetString("RemoteBrowser", "DeleteFailed");
             SetErrorDetails(
-                "删除远程对象失败",
+                Localization.GetString("RemoteBrowser", "DeleteFailed"),
                 failureSummary,
                 result.Error,
                 new Dictionary<string, string>
                 {
-                    ["对象"] = name,
-                    ["路径"] = path.ToString()
+                    [Localization.GetString("Common", "Object")] = name,
+                    [Localization.GetString("Common", "Path")] = path.ToString()
                 });
             await _dialogs.ShowErrorDetailsAsync(_lastErrorDetails!).ConfigureAwait(true);
             return;
         }
 
-        _messages.Info($"{name}已删除");
-        StatusMessage = $"已删除：{name}";
+        _messages.Info(Localization.Format("RemoteBrowser", "Deleted", name));
+        StatusMessage = Localization.Format("RemoteBrowser", "Deleted", name);
         RemoveRow(path);
     }
 
@@ -1923,10 +1958,10 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         }
 
         var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogRequest(
-            "批量删除远程文件",
-            $"确定要删除选中的 {selectedFiles.Length} 个远程文件吗？\n\n当前位置：{CurrentPath}\n此操作不可撤销。",
-            "删除",
-            "取消")).ConfigureAwait(true);
+            Localization.GetString("RemoteBrowser", "BatchDeleteTitle"),
+            Localization.Format("RemoteBrowser", "BatchDeleteMessage", selectedFiles.Length, CurrentPath),
+            Localization.GetString("Common", "Delete"),
+            Localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
         if (!confirmed)
         {
             return;
@@ -1939,7 +1974,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             for (var index = 0; index < selectedFiles.Length; index++)
             {
                 var row = selectedFiles[index];
-                StatusMessage = $"正在删除 {index + 1}/{selectedFiles.Length}：{row.Name}";
+                StatusMessage = Localization.Format("RemoteBrowser", "DeletingProgress", index + 1, selectedFiles.Length, row.Name);
                 var result = await _browser.DeleteRemoteItemAsync(new DeleteRemoteItemRequest(
                     storageAccountId,
                     row.Path,
@@ -1959,21 +1994,21 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
         if (failures.Count == 0)
         {
-            StatusMessage = $"已删除 {deletedCount} 个文件。";
+            StatusMessage = Localization.Format("RemoteBrowser", "FilesDeleted", deletedCount);
             _messages.Info(StatusMessage);
             return;
         }
 
-        var summary = $"批量删除完成：成功 {deletedCount} 个，失败 {failures.Count} 个。";
+        var summary = Localization.Format("RemoteBrowser", "BatchDeleteSummary", deletedCount, failures.Count);
         StatusMessage = summary;
         SetErrorDetails(
-            "批量删除部分失败",
+            Localization.GetString("RemoteBrowser", "BatchDeletePartialFailed"),
             summary,
             failures[0].Error,
             new Dictionary<string, string>
             {
-                ["当前位置"] = CurrentPath,
-                ["失败文件"] = string.Join(
+                [Localization.GetString("Common", "CurrentLocation")] = CurrentPath,
+                [Localization.GetString("Common", "FailedFiles")] = string.Join(
                     Environment.NewLine,
                     failures.Select(item => $"{item.Row.Name}：{item.Error.Message}"))
             });
@@ -2121,8 +2156,8 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         var result = await _accountDialogWorkflow.AddAccountAsync(category, preferredProviderId).ConfigureAwait(true);
         if (result.IsFailure)
         {
-            StatusMessage = result.Error?.Message ?? "账号保存失败。";
-            SetErrorDetails("账号保存失败", "账号保存失败。", result.Error);
+            StatusMessage = Localization.GetString("RemoteBrowser", "AccountSaveFailed");
+            SetErrorDetails(StatusMessage, StatusMessage, result.Error);
             return;
         }
 
@@ -2160,13 +2195,13 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         await _navigation.NavigateAsync(NavigationTarget.TransferHistory, new TransferHistoryNavigationParameter(1)).ConfigureAwait(true);
     }
 
-    private static string BuildDuplicateUploadMessage(IReadOnlyList<PreparedUploadTaskTarget> targets)
+    private string BuildDuplicateUploadMessage(IReadOnlyList<PreparedUploadTaskTarget> targets)
     {
         var lines = new List<string>
         {
             targets.Count == 1
-                ? "该文件以前上传过，确认是否再次上传？"
-                : $"{targets.Count} 个文件以前上传过，确认是否再次上传？",
+                ? Localization.GetString("RemoteBrowser", "DuplicateSingleMessage")
+                : Localization.Format("RemoteBrowser", "DuplicateMultipleMessage", targets.Count),
             string.Empty
         };
 
@@ -2181,17 +2216,19 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
         if (targets.Count > 5)
         {
-            lines.Add($"另有 {targets.Count - 5} 个文件也存在历史上传记录。");
+            lines.Add(Localization.Format("RemoteBrowser", "MoreDuplicateFiles", targets.Count - 5));
         }
 
         return string.Join(Environment.NewLine, lines);
     }
 
-    private static string FormatRemotePath(RemotePath path)
+    private string FormatRemotePath(RemotePath path)
     {
         if (path.IsRoot)
         {
-            return path.Kind == RemotePathKind.Root ? "bucket 列表 / 根目录" : "/";
+            return path.Kind == RemotePathKind.Root
+                ? Localization.GetString("RemoteBrowser", "BucketListRoot")
+                : "/";
         }
 
         return path.Kind switch
