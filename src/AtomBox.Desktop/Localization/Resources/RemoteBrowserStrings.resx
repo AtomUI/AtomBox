@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="SelectBucket" xml:space="preserve"><value>Select a Bucket</value></data>
+  <data name="SearchByNamePrefix" xml:space="preserve"><value>Search by name prefix</value></data>
+  <data name="ClearSelection" xml:space="preserve"><value>Clear Selection</value></data>
+  <data name="AllAccounts" xml:space="preserve"><value>All Accounts</value></data>
+  <data name="Loading" xml:space="preserve"><value>Loading</value></data>
+  <data name="SelectedFiles" xml:space="preserve"><value>{0} files selected</value></data>
+  <data name="NoRemoteConnections" xml:space="preserve"><value>No remote connections</value></data>
+  <data name="Title" xml:space="preserve"><value>Remote Browser</value></data>
+  <data name="SelectTypeOrConnection" xml:space="preserve"><value>Select a remote storage type or connection.</value></data>
+  <data name="NoRemoteConnectionsPeriod" xml:space="preserve"><value>No remote connections.</value></data>
+  <data name="SelectConnection" xml:space="preserve"><value>Select a connection.</value></data>
+  <data name="NoBuckets" xml:space="preserve"><value>This account has no Buckets to display.</value></data>
+  <data name="EmptyDirectory" xml:space="preserve"><value>This folder has no content to display.</value></data>
+  <data name="BucketName" xml:space="preserve"><value>Bucket Name</value></data>
+  <data name="LoadingAccounts" xml:space="preserve"><value>Loading account entry...</value></data>
+  <data name="AccountEntryLoadFailed" xml:space="preserve"><value>Failed to load account entry.</value></data>
+  <data name="CategoryNoAccounts" xml:space="preserve"><value>There are no accounts in this category. Add one from the account dialog.</value></data>
+  <data name="SelectConnectionToBrowse" xml:space="preserve"><value>Select a connection to browse remote files.</value></data>
+  <data name="LoadingItems" xml:space="preserve"><value>Loading remote files...</value></data>
+  <data name="ItemListLoadFailed" xml:space="preserve"><value>Failed to load remote files.</value></data>
+  <data name="CreatingDownload" xml:space="preserve"><value>Creating download task: {0}</value></data>
+  <data name="DownloadCreateFailed" xml:space="preserve"><value>Failed to create the download task.</value></data>
+  <data name="DownloadCreatedAt" xml:space="preserve"><value>Download task created. Save to: {0}</value></data>
+  <data name="DownloadCreated" xml:space="preserve"><value>Download task created.</value></data>
+  <data name="CreatingDownloads" xml:space="preserve"><value>Creating {0} download tasks...</value></data>
+  <data name="BatchDownloadCreateFailed" xml:space="preserve"><value>Failed to create download tasks.</value></data>
+  <data name="DownloadsCreatedAt" xml:space="preserve"><value>Created {0} download tasks. Save to: {1}</value></data>
+  <data name="DownloadsCreated" xml:space="preserve"><value>Created {0} download tasks.</value></data>
+  <data name="Previewing" xml:space="preserve"><value>Previewing: {0}</value></data>
+  <data name="PreviewFailed" xml:space="preserve"><value>Failed to preview the remote file.</value></data>
+  <data name="PreviewOpened" xml:space="preserve"><value>Preview opened: {0}</value></data>
+  <data name="FolderRenameUnavailable" xml:space="preserve"><value>Renaming OSS folders is not available yet.</value></data>
+  <data name="RenameTitle" xml:space="preserve"><value>Rename</value></data>
+  <data name="RenamePrompt" xml:space="preserve"><value>Enter a new name for "{0}":</value></data>
+  <data name="NewName" xml:space="preserve"><value>New Name</value></data>
+  <data name="Renaming" xml:space="preserve"><value>Renaming: {0}</value></data>
+  <data name="RenameFailed" xml:space="preserve"><value>Rename failed.</value></data>
+  <data name="Renamed" xml:space="preserve"><value>Renamed: {0}</value></data>
+  <data name="SearchNoMatch" xml:space="preserve"><value>No items start with "{0}".</value></data>
+  <data name="SearchMatchCount" xml:space="preserve"><value>{0} matching items.</value></data>
+  <data name="DirectoryItemCount" xml:space="preserve"><value>{0} items in this folder.</value></data>
+  <data name="UploadPreparing" xml:space="preserve"><value>An upload is already being prepared. Try again shortly.</value></data>
+  <data name="NoUploadFiles" xml:space="preserve"><value>No files selected for upload.</value></data>
+  <data name="FingerprintingSingle" xml:space="preserve"><value>Calculating file fingerprint: {0}</value></data>
+  <data name="FingerprintingMultiple" xml:space="preserve"><value>Calculating file fingerprints {0}/{1}: {2}</value></data>
+  <data name="PreUploadCheckFailed" xml:space="preserve"><value>Pre-upload check failed.</value></data>
+  <data name="DuplicateUploadTitle" xml:space="preserve"><value>File Uploaded Before</value></data>
+  <data name="UploadAgain" xml:space="preserve"><value>Upload Again</value></data>
+  <data name="UploadCanceled" xml:space="preserve"><value>Upload canceled.</value></data>
+  <data name="CreatingUploadSingle" xml:space="preserve"><value>Creating upload task.</value></data>
+  <data name="CreatingUploadMultiple" xml:space="preserve"><value>Creating {0} upload tasks.</value></data>
+  <data name="UploadCreateFailed" xml:space="preserve"><value>Failed to create the upload task.</value></data>
+  <data name="UploadCreatedWaitSingle" xml:space="preserve"><value>Upload task created and waiting to transfer.</value></data>
+  <data name="UploadCreatedWaitMultiple" xml:space="preserve"><value>Created {0} upload tasks and waiting to transfer.</value></data>
+  <data name="UploadCreatedSingle" xml:space="preserve"><value>Upload task created.</value></data>
+  <data name="UploadCreatedMultiple" xml:space="preserve"><value>Created {0} upload tasks.</value></data>
+  <data name="CreateBucketTitle" xml:space="preserve"><value>Create Bucket</value></data>
+  <data name="CreateBucketPrompt" xml:space="preserve"><value>Enter the new Bucket name:</value></data>
+  <data name="BucketNameField" xml:space="preserve"><value>Bucket Name</value></data>
+  <data name="Create" xml:space="preserve"><value>Create</value></data>
+  <data name="InvalidBucketName" xml:space="preserve"><value>Bucket names cannot contain path separators.</value></data>
+  <data name="CreatingBucket" xml:space="preserve"><value>Creating Bucket: {0}</value></data>
+  <data name="CreateBucketFailed" xml:space="preserve"><value>Failed to create the Bucket.</value></data>
+  <data name="BucketCreated" xml:space="preserve"><value>Bucket created: {0}</value></data>
+  <data name="CreateFolderTitle" xml:space="preserve"><value>New Folder</value></data>
+  <data name="CreateFolderPrompt" xml:space="preserve"><value>Enter the new folder name:</value></data>
+  <data name="FolderNameField" xml:space="preserve"><value>Folder Name</value></data>
+  <data name="InvalidFolderName" xml:space="preserve"><value>Folder names cannot contain path separators.</value></data>
+  <data name="CreatingFolder" xml:space="preserve"><value>Creating folder: {0}</value></data>
+  <data name="CreateFolderFailed" xml:space="preserve"><value>Failed to create the folder.</value></data>
+  <data name="FolderCreated" xml:space="preserve"><value>Folder created: {0}</value></data>
+  <data name="DeleteRemoteTitle" xml:space="preserve"><value>Delete Remote Item</value></data>
+  <data name="DeleteRemoteMessage" xml:space="preserve"><value>Delete remote {0} "{1}"?&#xA;&#xA;Current location: {2}{3}&#xA;This cannot be undone.</value></data>
+  <data name="Folder" xml:space="preserve"><value>folder</value></data>
+  <data name="File" xml:space="preserve"><value>file</value></data>
+  <data name="DeleteFolderWarning" xml:space="preserve"><value>&#xA;&#xA;All files and subfolders in this folder will also be deleted.</value></data>
+  <data name="Deleting" xml:space="preserve"><value>Deleting: {0}</value></data>
+  <data name="DeleteFailed" xml:space="preserve"><value>Failed to delete the remote item.</value></data>
+  <data name="DeleteFolderPartialFailed" xml:space="preserve"><value>Failed to delete the remote folder. Some items may already be deleted; refresh to verify the remote state.</value></data>
+  <data name="Deleted" xml:space="preserve"><value>Deleted: {0}</value></data>
+  <data name="BatchDeleteTitle" xml:space="preserve"><value>Delete Remote Files</value></data>
+  <data name="BatchDeleteMessage" xml:space="preserve"><value>Delete the selected {0} remote files?&#xA;&#xA;Current location: {1}&#xA;This cannot be undone.</value></data>
+  <data name="DeletingProgress" xml:space="preserve"><value>Deleting {0}/{1}: {2}</value></data>
+  <data name="FilesDeleted" xml:space="preserve"><value>Deleted {0} files.</value></data>
+  <data name="BatchDeleteSummary" xml:space="preserve"><value>Batch delete complete: {0} succeeded, {1} failed.</value></data>
+  <data name="BatchDeletePartialFailed" xml:space="preserve"><value>Some Files Could Not Be Deleted</value></data>
+  <data name="AccountSaveFailed" xml:space="preserve"><value>Failed to save the account.</value></data>
+  <data name="WebDavRoot" xml:space="preserve"><value>WebDAV Root</value></data>
+  <data name="DuplicateSingleMessage" xml:space="preserve"><value>This file was uploaded before. Upload it again?</value></data>
+  <data name="DuplicateMultipleMessage" xml:space="preserve"><value>{0} files were uploaded before. Upload them again?</value></data>
+  <data name="MoreDuplicateFiles" xml:space="preserve"><value>{0} more files also have upload history.</value></data>
+  <data name="BucketListRoot" xml:space="preserve"><value>Bucket list / root</value></data>
+  <data name="SelectUploadFiles" xml:space="preserve"><value>Select Files to Upload</value></data>
+</root>

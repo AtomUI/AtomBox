@@ -1,0 +1,100 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="SelectBucket" xml:space="preserve"><value>请选择 Bucket</value></data>
+  <data name="SearchByNamePrefix" xml:space="preserve"><value>按名称前缀搜索</value></data>
+  <data name="ClearSelection" xml:space="preserve"><value>取消选择</value></data>
+  <data name="AllAccounts" xml:space="preserve"><value>全部账号</value></data>
+  <data name="Loading" xml:space="preserve"><value>正在加载</value></data>
+  <data name="SelectedFiles" xml:space="preserve"><value>已选择 {0} 个文件</value></data>
+  <data name="NoRemoteConnections" xml:space="preserve"><value>暂无远程连接</value></data>
+  <data name="Title" xml:space="preserve"><value>远程浏览</value></data>
+  <data name="SelectTypeOrConnection" xml:space="preserve"><value>选择左侧远程存储类型或连接实例。</value></data>
+  <data name="NoRemoteConnectionsPeriod" xml:space="preserve"><value>暂无远程连接。</value></data>
+  <data name="SelectConnection" xml:space="preserve"><value>请选择一个连接。</value></data>
+  <data name="NoBuckets" xml:space="preserve"><value>当前账号暂无可显示 Bucket。</value></data>
+  <data name="EmptyDirectory" xml:space="preserve"><value>当前目录暂无可显示内容。</value></data>
+  <data name="BucketName" xml:space="preserve"><value>桶名</value></data>
+  <data name="LoadingAccounts" xml:space="preserve"><value>正在读取账号入口...</value></data>
+  <data name="AccountEntryLoadFailed" xml:space="preserve"><value>账号入口加载失败。</value></data>
+  <data name="CategoryNoAccounts" xml:space="preserve"><value>当前分类暂无账号。请通过统一账号弹窗新增连接。</value></data>
+  <data name="SelectConnectionToBrowse" xml:space="preserve"><value>请选择一个连接以浏览远程文件。</value></data>
+  <data name="LoadingItems" xml:space="preserve"><value>正在加载远程文件列表...</value></data>
+  <data name="ItemListLoadFailed" xml:space="preserve"><value>远程文件列表加载失败。</value></data>
+  <data name="CreatingDownload" xml:space="preserve"><value>正在创建下载任务：{0}</value></data>
+  <data name="DownloadCreateFailed" xml:space="preserve"><value>创建下载任务失败。</value></data>
+  <data name="DownloadCreatedAt" xml:space="preserve"><value>下载任务已创建，保存到：{0}</value></data>
+  <data name="DownloadCreated" xml:space="preserve"><value>下载任务已创建。</value></data>
+  <data name="CreatingDownloads" xml:space="preserve"><value>正在创建 {0} 个下载任务...</value></data>
+  <data name="BatchDownloadCreateFailed" xml:space="preserve"><value>创建批量下载任务失败。</value></data>
+  <data name="DownloadsCreatedAt" xml:space="preserve"><value>已创建 {0} 个下载任务，保存到：{1}</value></data>
+  <data name="DownloadsCreated" xml:space="preserve"><value>已创建 {0} 个下载任务。</value></data>
+  <data name="Previewing" xml:space="preserve"><value>正在预览：{0}</value></data>
+  <data name="PreviewFailed" xml:space="preserve"><value>远程文件预览失败。</value></data>
+  <data name="PreviewOpened" xml:space="preserve"><value>已打开预览：{0}</value></data>
+  <data name="FolderRenameUnavailable" xml:space="preserve"><value>OSS 文件夹重命名暂未开放。</value></data>
+  <data name="RenameTitle" xml:space="preserve"><value>重命名</value></data>
+  <data name="RenamePrompt" xml:space="preserve"><value>请输入“{0}”的新名称：</value></data>
+  <data name="NewName" xml:space="preserve"><value>新名称</value></data>
+  <data name="Renaming" xml:space="preserve"><value>正在重命名：{0}</value></data>
+  <data name="RenameFailed" xml:space="preserve"><value>重命名失败。</value></data>
+  <data name="Renamed" xml:space="preserve"><value>已重命名：{0}</value></data>
+  <data name="SearchNoMatch" xml:space="preserve"><value>未找到以“{0}”开头的内容。</value></data>
+  <data name="SearchMatchCount" xml:space="preserve"><value>匹配项目 {0} 个。</value></data>
+  <data name="DirectoryItemCount" xml:space="preserve"><value>当前目录项目 {0} 个。</value></data>
+  <data name="UploadPreparing" xml:space="preserve"><value>当前正在准备上传，请稍后再试。</value></data>
+  <data name="NoUploadFiles" xml:space="preserve"><value>未选择上传文件。</value></data>
+  <data name="FingerprintingSingle" xml:space="preserve"><value>正在计算文件指纹：{0}</value></data>
+  <data name="FingerprintingMultiple" xml:space="preserve"><value>正在计算文件指纹 {0}/{1}：{2}</value></data>
+  <data name="PreUploadCheckFailed" xml:space="preserve"><value>上传前检查失败。</value></data>
+  <data name="DuplicateUploadTitle" xml:space="preserve"><value>文件以前上传过</value></data>
+  <data name="UploadAgain" xml:space="preserve"><value>再次上传</value></data>
+  <data name="UploadCanceled" xml:space="preserve"><value>已取消上传。</value></data>
+  <data name="CreatingUploadSingle" xml:space="preserve"><value>正在创建上传任务。</value></data>
+  <data name="CreatingUploadMultiple" xml:space="preserve"><value>正在创建 {0} 个上传任务。</value></data>
+  <data name="UploadCreateFailed" xml:space="preserve"><value>创建上传任务失败。</value></data>
+  <data name="UploadCreatedWaitSingle" xml:space="preserve"><value>上传任务已创建，等待传输完成。</value></data>
+  <data name="UploadCreatedWaitMultiple" xml:space="preserve"><value>已创建 {0} 个上传任务，等待传输完成。</value></data>
+  <data name="UploadCreatedSingle" xml:space="preserve"><value>上传任务已创建。</value></data>
+  <data name="UploadCreatedMultiple" xml:space="preserve"><value>已创建 {0} 个上传任务。</value></data>
+  <data name="CreateBucketTitle" xml:space="preserve"><value>新增 Bucket</value></data>
+  <data name="CreateBucketPrompt" xml:space="preserve"><value>请输入新的 Bucket 名称：</value></data>
+  <data name="BucketNameField" xml:space="preserve"><value>Bucket 名称</value></data>
+  <data name="Create" xml:space="preserve"><value>创建</value></data>
+  <data name="InvalidBucketName" xml:space="preserve"><value>Bucket 名称不能包含路径分隔符。</value></data>
+  <data name="CreatingBucket" xml:space="preserve"><value>正在创建 Bucket：{0}</value></data>
+  <data name="CreateBucketFailed" xml:space="preserve"><value>创建 Bucket 失败。</value></data>
+  <data name="BucketCreated" xml:space="preserve"><value>Bucket 已创建：{0}</value></data>
+  <data name="CreateFolderTitle" xml:space="preserve"><value>新建文件夹</value></data>
+  <data name="CreateFolderPrompt" xml:space="preserve"><value>请输入新的文件夹名称：</value></data>
+  <data name="FolderNameField" xml:space="preserve"><value>文件夹名称</value></data>
+  <data name="InvalidFolderName" xml:space="preserve"><value>文件夹名称不能包含路径分隔符。</value></data>
+  <data name="CreatingFolder" xml:space="preserve"><value>正在创建文件夹：{0}</value></data>
+  <data name="CreateFolderFailed" xml:space="preserve"><value>创建文件夹失败。</value></data>
+  <data name="FolderCreated" xml:space="preserve"><value>文件夹已创建：{0}</value></data>
+  <data name="DeleteRemoteTitle" xml:space="preserve"><value>删除远程对象</value></data>
+  <data name="DeleteRemoteMessage" xml:space="preserve"><value>确定要删除远程{0}“{1}”吗？&#xA;&#xA;当前位置：{2}{3}&#xA;此操作不可撤销。</value></data>
+  <data name="Folder" xml:space="preserve"><value>文件夹</value></data>
+  <data name="File" xml:space="preserve"><value>文件</value></data>
+  <data name="DeleteFolderWarning" xml:space="preserve"><value>&#xA;&#xA;该文件夹内的所有子文件夹和文件都会被删除。</value></data>
+  <data name="Deleting" xml:space="preserve"><value>正在删除：{0}</value></data>
+  <data name="DeleteFailed" xml:space="preserve"><value>删除远程对象失败。</value></data>
+  <data name="DeleteFolderPartialFailed" xml:space="preserve"><value>删除远程文件夹失败；部分对象可能已经删除，请刷新后确认远端实际状态。</value></data>
+  <data name="Deleted" xml:space="preserve"><value>已删除：{0}</value></data>
+  <data name="BatchDeleteTitle" xml:space="preserve"><value>批量删除远程文件</value></data>
+  <data name="BatchDeleteMessage" xml:space="preserve"><value>确定要删除选中的 {0} 个远程文件吗？&#xA;&#xA;当前位置：{1}&#xA;此操作不可撤销。</value></data>
+  <data name="DeletingProgress" xml:space="preserve"><value>正在删除 {0}/{1}：{2}</value></data>
+  <data name="FilesDeleted" xml:space="preserve"><value>已删除 {0} 个文件。</value></data>
+  <data name="BatchDeleteSummary" xml:space="preserve"><value>批量删除完成：成功 {0} 个，失败 {1} 个。</value></data>
+  <data name="BatchDeletePartialFailed" xml:space="preserve"><value>批量删除部分失败</value></data>
+  <data name="AccountSaveFailed" xml:space="preserve"><value>账号保存失败。</value></data>
+  <data name="WebDavRoot" xml:space="preserve"><value>WebDAV 根目录</value></data>
+  <data name="DuplicateSingleMessage" xml:space="preserve"><value>该文件以前上传过，确认是否再次上传？</value></data>
+  <data name="DuplicateMultipleMessage" xml:space="preserve"><value>{0} 个文件以前上传过，确认是否再次上传？</value></data>
+  <data name="MoreDuplicateFiles" xml:space="preserve"><value>另有 {0} 个文件也存在历史上传记录。</value></data>
+  <data name="BucketListRoot" xml:space="preserve"><value>Bucket 列表 / 根目录</value></data>
+  <data name="SelectUploadFiles" xml:space="preserve"><value>选择上传文件</value></data>
+</root>

@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Title" xml:space="preserve"><value>App Settings</value></data>
+  <data name="InterfaceLanguage" xml:space="preserve"><value>Interface Language</value></data>
+  <data name="InterfaceLanguageDescription" xml:space="preserve"><value>Changes the AtomBox display language immediately.</value></data>
+  <data name="FollowSystem" xml:space="preserve"><value>Follow System</value></data>
+  <data name="SimplifiedChinese" xml:space="preserve"><value>简体中文</value></data>
+  <data name="English" xml:space="preserve"><value>English</value></data>
+  <data name="StartupPage" xml:space="preserve"><value>Default Startup Page</value></data>
+  <data name="StartupPageDescription" xml:space="preserve"><value>Choose the page AtomBox opens first.</value></data>
+  <data name="CloseWindow" xml:space="preserve"><value>When Closing the Window</value></data>
+  <data name="CloseWindowDescription" xml:space="preserve"><value>Exit directly or keep running in the system tray.</value></data>
+  <data name="CloseApplication" xml:space="preserve"><value>Close Application</value></data>
+  <data name="MinimizeApplication" xml:space="preserve"><value>Minimize Application</value></data>
+  <data name="DefaultDownloadDirectory" xml:space="preserve"><value>Default Download Folder</value></data>
+  <data name="DefaultDownloadDirectoryDescription" xml:space="preserve"><value>Downloaded files are saved here by default.</value></data>
+  <data name="MaxConcurrency" xml:space="preserve"><value>Maximum Concurrent Transfers</value></data>
+  <data name="MaxConcurrencyDescription" xml:space="preserve"><value>Controls how many uploads or downloads run at the same time.</value></data>
+  <data name="FingerprintIndex" xml:space="preserve"><value>Fingerprint Index</value></data>
+  <data name="FingerprintIndexDescription" xml:space="preserve"><value>Check whether the current account has uploaded the same file before.</value></data>
+  <data name="ConfigurationDirectory" xml:space="preserve"><value>Configuration Folder</value></data>
+  <data name="ConfigurationDirectoryDescription" xml:space="preserve"><value>View application configuration files stored on this computer.</value></data>
+  <data name="LogDirectory" xml:space="preserve"><value>Log Folder</value></data>
+  <data name="LogDirectoryDescription" xml:space="preserve"><value>Used to diagnose startup, connection, and transfer problems.</value></data>
+  <data name="StateDirectory" xml:space="preserve"><value>State Folder</value></data>
+  <data name="StateDirectoryDescription" xml:space="preserve"><value>Stores the local transfer queue, history, and other runtime state.</value></data>
+  <data name="LanguageChangeFailed" xml:space="preserve"><value>Failed to change the interface language.</value></data>
+  <data name="SettingsLoadFailed" xml:space="preserve"><value>Failed to load app settings.</value></data>
+  <data name="SettingsUnavailable" xml:space="preserve"><value>App settings are unavailable.</value></data>
+  <data name="ResetTitle" xml:space="preserve"><value>Reset App Settings</value></data>
+  <data name="ResetMessage" xml:space="preserve"><value>Restore default app settings?&#xA;&#xA;Default concurrency, overwrite policy, history retention, and other global preferences will be reset.</value></data>
+  <data name="Resetting" xml:space="preserve"><value>Resetting app settings...</value></data>
+  <data name="ResetFailed" xml:space="preserve"><value>Failed to reset app settings.</value></data>
+  <data name="ResetSucceeded" xml:space="preserve"><value>App settings reset.</value></data>
+  <data name="Saving" xml:space="preserve"><value>Saving app settings...</value></data>
+  <data name="SaveFailed" xml:space="preserve"><value>Failed to save app settings.</value></data>
+  <data name="SaveSucceeded" xml:space="preserve"><value>App settings saved.</value></data>
+  <data name="ChooseDownloadDirectory" xml:space="preserve"><value>Select Default Download Folder</value></data>
+  <data name="DownloadDirectorySelected" xml:space="preserve"><value>Default download folder selected. Click Save to apply it.</value></data>
+  <data name="DirectoryOpened" xml:space="preserve"><value>Opened folder: {0}</value></data>
+  <data name="OpenDirectoryFailed" xml:space="preserve"><value>Failed to open the folder.</value></data>
+</root>

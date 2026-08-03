@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="Title" xml:space="preserve"><value>应用设置</value></data>
+  <data name="InterfaceLanguage" xml:space="preserve"><value>界面语言</value></data>
+  <data name="InterfaceLanguageDescription" xml:space="preserve"><value>立即切换 AtomBox 的显示语言。</value></data>
+  <data name="FollowSystem" xml:space="preserve"><value>跟随系统</value></data>
+  <data name="SimplifiedChinese" xml:space="preserve"><value>简体中文</value></data>
+  <data name="English" xml:space="preserve"><value>English</value></data>
+  <data name="StartupPage" xml:space="preserve"><value>启动后默认页面</value></data>
+  <data name="StartupPageDescription" xml:space="preserve"><value>决定 AtomBox 打开后首先进入哪个页面。</value></data>
+  <data name="CloseWindow" xml:space="preserve"><value>关闭窗口时</value></data>
+  <data name="CloseWindowDescription" xml:space="preserve"><value>选择直接退出，或保留在系统托盘中继续运行。</value></data>
+  <data name="CloseApplication" xml:space="preserve"><value>关闭应用</value></data>
+  <data name="MinimizeApplication" xml:space="preserve"><value>最小化应用</value></data>
+  <data name="DefaultDownloadDirectory" xml:space="preserve"><value>默认下载目录</value></data>
+  <data name="DefaultDownloadDirectoryDescription" xml:space="preserve"><value>下载文件时默认保存到这个本地目录。</value></data>
+  <data name="MaxConcurrency" xml:space="preserve"><value>最大并发数</value></data>
+  <data name="MaxConcurrencyDescription" xml:space="preserve"><value>控制同时上传或下载的任务数量。</value></data>
+  <data name="FingerprintIndex" xml:space="preserve"><value>指纹索引</value></data>
+  <data name="FingerprintIndexDescription" xml:space="preserve"><value>上传前检查当前账号是否曾经上传相同文件。</value></data>
+  <data name="ConfigurationDirectory" xml:space="preserve"><value>配置目录</value></data>
+  <data name="ConfigurationDirectoryDescription" xml:space="preserve"><value>查看本机保存的应用配置文件。</value></data>
+  <data name="LogDirectory" xml:space="preserve"><value>日志目录</value></data>
+  <data name="LogDirectoryDescription" xml:space="preserve"><value>用于排查启动、连接和传输异常。</value></data>
+  <data name="StateDirectory" xml:space="preserve"><value>状态目录</value></data>
+  <data name="StateDirectoryDescription" xml:space="preserve"><value>保存传输队列、历史记录等本地运行状态。</value></data>
+  <data name="LanguageChangeFailed" xml:space="preserve"><value>界面语言切换失败。</value></data>
+  <data name="SettingsLoadFailed" xml:space="preserve"><value>应用设置加载失败。</value></data>
+  <data name="SettingsUnavailable" xml:space="preserve"><value>应用设置暂不可用。</value></data>
+  <data name="ResetTitle" xml:space="preserve"><value>重置应用设置</value></data>
+  <data name="ResetMessage" xml:space="preserve"><value>确定要恢复默认应用设置吗？&#xA;&#xA;默认并发、覆盖策略和保留历史等全局偏好将恢复为默认值。</value></data>
+  <data name="Resetting" xml:space="preserve"><value>正在重置应用设置...</value></data>
+  <data name="ResetFailed" xml:space="preserve"><value>应用设置重置失败。</value></data>
+  <data name="ResetSucceeded" xml:space="preserve"><value>应用设置已重置。</value></data>
+  <data name="Saving" xml:space="preserve"><value>正在保存应用设置...</value></data>
+  <data name="SaveFailed" xml:space="preserve"><value>应用设置保存失败。</value></data>
+  <data name="SaveSucceeded" xml:space="preserve"><value>应用设置已保存。</value></data>
+  <data name="ChooseDownloadDirectory" xml:space="preserve"><value>选择默认下载目录</value></data>
+  <data name="DownloadDirectorySelected" xml:space="preserve"><value>已选择默认下载目录，请点击保存后生效。</value></data>
+  <data name="DirectoryOpened" xml:space="preserve"><value>已打开目录：{0}</value></data>
+  <data name="OpenDirectoryFailed" xml:space="preserve"><value>打开目录失败。</value></data>
+</root>
