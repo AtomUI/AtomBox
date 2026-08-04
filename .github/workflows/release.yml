@@ -8,6 +8,12 @@ on:
 permissions:
   contents: write
 
+env:
+  ATOMUI_TOOLS_SOURCE: ${{ github.workspace }}/.artifacts/AtomUITools
+  ATOMUI_TOOLS_BIN: ${{ github.workspace }}/.artifacts/atomuitools
+  ATOMUI_TOOLS_MAC_BIN: ${{ github.workspace }}/.artifacts/atomuitools/AtomUITools.Mac
+  ATOMUI_TOOLS_LINUX_BIN: ${{ github.workspace }}/.artifacts/atomuitools/AtomUITools.Linux
+
 jobs:
   build:
     name: Build ${{ matrix.artifact_name }}
@@ -22,26 +28,6 @@ jobs:
             publish_dir: .artifacts/publish/AtomBox-win-x64
             package_path: .artifacts/packages/AtomBox-win-x64.zip
             package_kind: zip
-          - os: ubuntu-latest
-            rid: linux-x64
-            artifact_name: AtomBox-linux-x64
-            publish_dir: .artifacts/publish/AtomBox-linux-x64
-            package_path: .artifacts/packages/AtomBox-linux-x64.tar.gz
-            package_kind: tar
-          - os: macos-latest
-            rid: osx-x64
-            artifact_name: AtomBox-osx-x64
-            publish_dir: .artifacts/publish/AtomBox-osx-x64
-            package_path: .artifacts/packages/AtomBox-osx-x64.zip
-            package_kind: macapp
-            app_bundle: .artifacts/packages/AtomBox-osx-x64/AtomBox.app
-          - os: macos-latest
-            rid: osx-arm64
-            artifact_name: AtomBox-osx-arm64
-            publish_dir: .artifacts/publish/AtomBox-osx-arm64
-            package_path: .artifacts/packages/AtomBox-osx-arm64.zip
-            package_kind: macapp
-            app_bundle: .artifacts/packages/AtomBox-osx-arm64/AtomBox.app
 
     steps:
       - name: Checkout
@@ -84,50 +70,6 @@ jobs:
           New-Item -ItemType Directory -Force .artifacts/packages | Out-Null
           Compress-Archive -Path "${{ matrix.publish_dir }}/*" -DestinationPath "${{ matrix.package_path }}" -Force
 
-      - name: Package Linux
-        if: matrix.package_kind == 'tar'
-        shell: bash
-        run: |
-          mkdir -p .artifacts/packages
-          chmod +x "${{ matrix.publish_dir }}/AtomBox.Desktop"
-          tar -czf "${{ matrix.package_path }}" -C "${{ matrix.publish_dir }}" .
-
-      - name: Package macOS app bundle
-        if: matrix.package_kind == 'macapp'
-        shell: bash
-        run: |
-          version="${GITHUB_REF_NAME#v}"
-          mkdir -p "${{ matrix.app_bundle }}/Contents/MacOS"
-          mkdir -p "${{ matrix.app_bundle }}/Contents/Resources"
-          cp -R "${{ matrix.publish_dir }}/"* "${{ matrix.app_bundle }}/Contents/MacOS/"
-          mv "${{ matrix.app_bundle }}/Contents/MacOS/AtomBox.Desktop" "${{ matrix.app_bundle }}/Contents/MacOS/AtomBox"
-          chmod +x "${{ matrix.app_bundle }}/Contents/MacOS/AtomBox"
-          cat > "${{ matrix.app_bundle }}/Contents/Info.plist" <<'PLIST'
-          <?xml version="1.0" encoding="UTF-8"?>
-          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-          <plist version="1.0">
-          <dict>
-            <key>CFBundleName</key>
-            <string>AtomBox</string>
-            <key>CFBundleDisplayName</key>
-            <string>AtomBox</string>
-            <key>CFBundleIdentifier</key>
-            <string>net.atomui.atombox</string>
-            <key>CFBundleVersion</key>
-            <string>${version}</string>
-            <key>CFBundleShortVersionString</key>
-            <string>${version}</string>
-            <key>CFBundleExecutable</key>
-            <string>AtomBox</string>
-            <key>CFBundlePackageType</key>
-            <string>APPL</string>
-            <key>NSHighResolutionCapable</key>
-            <true/>
-          </dict>
-          </plist>
-          PLIST
-          ditto -c -k --sequesterRsrc --keepParent "${{ matrix.app_bundle }}" "${{ matrix.package_path }}"
-
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
@@ -135,9 +77,268 @@ jobs:
           path: ${{ matrix.package_path }}
           if-no-files-found: error
 
+  build-macos:
+    name: Build ${{ matrix.artifact_name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-15-intel
+            rid: osx-x64
+            artifact_name: AtomBox-osx-x64
+            publish_root: .artifacts/installer/AtomBox-osx-x64
+            output_dir: .artifacts/packages/dmg/x64
+          - os: macos-latest
+            rid: osx-arm64
+            artifact_name: AtomBox-osx-arm64
+            publish_root: .artifacts/installer/AtomBox-osx-arm64
+            output_dir: .artifacts/packages/dmg/arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Apple certificate
+        shell: pwsh
+        env:
+          CERT_P12_BASE64: ${{ secrets.CERT_P12_BASE64 }}
+          CERT_PASSWORD: ${{ secrets.CERT_PASSWORD }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+        run: |
+          $certPath = Join-Path $env:RUNNER_TEMP "AtomBoxCodeSign.p12"
+          [IO.File]::WriteAllBytes($certPath, [Convert]::FromBase64String($env:CERT_P12_BASE64))
+
+          security create-keychain -p $env:KEYCHAIN_PASSWORD build.keychain
+          security default-keychain -s build.keychain
+          security unlock-keychain -p $env:KEYCHAIN_PASSWORD build.keychain
+          security import $certPath -k build.keychain -P $env:CERT_PASSWORD -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k $env:KEYCHAIN_PASSWORD build.keychain
+          Remove-Item -LiteralPath $certPath -Force
+          security find-identity -v -p codesigning
+
+      - name: Checkout AtomUITools
+        uses: actions/checkout@v4
+        with:
+          repository: chinware/AtomUITools
+          ref: develop
+          token: ${{ secrets.ACCESS_TOKEN }}
+          path: .artifacts/AtomUITools
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore AtomBox.slnx
+
+      - name: Test
+        run: dotnet test AtomBox.slnx --configuration Release --no-restore
+
+      - name: Build AtomUITools
+        shell: pwsh
+        run: |
+          brew install create-dmg
+          Set-Location "${{ env.ATOMUI_TOOLS_SOURCE }}/scripts"
+          pwsh ./PublishAtomUIToolsLocal.ps1 `
+            -publishRootPath "${{ env.ATOMUI_TOOLS_BIN }}" `
+            -runtime "${{ matrix.rid }}"
+
+      - name: Publish AtomBox
+        shell: pwsh
+        run: |
+          $packages = "${{ matrix.publish_root }}/packages"
+          dotnet publish src/AtomBox.Desktop/AtomBox.Desktop.csproj `
+            --configuration Release `
+            --runtime "${{ matrix.rid }}" `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            --output $packages
+
+          Get-ChildItem -LiteralPath $packages -Filter "*.pdb" -File -ErrorAction SilentlyContinue |
+            Remove-Item -Force
+
+      - name: Stage macOS installer resources
+        shell: pwsh
+        run: |
+          $configDir = "${{ matrix.publish_root }}/config"
+          $imagesDir = "${{ matrix.publish_root }}/packages/Assets/Images"
+          New-Item -ItemType Directory -Force $configDir, $imagesDir, "${{ matrix.output_dir }}" | Out-Null
+
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $config = (Get-Content assets/macos/InstallerConfig.xml -Raw).Replace('__VERSION__', $version)
+          Set-Content -LiteralPath "$configDir/InstallerConfig.xml" -Value $config -Encoding utf8
+          Copy-Item -LiteralPath assets/macos/AtomBox.icns -Destination "$imagesDir/AtomBox.icns" -Force
+
+      - name: Create signed DMG
+        shell: pwsh
+        run: |
+          & "${{ env.ATOMUI_TOOLS_MAC_BIN }}" create-dmg `
+            --runtime "${{ matrix.rid }}" `
+            --config "${{ matrix.publish_root }}/config/InstallerConfig.xml" `
+            --packages "${{ matrix.publish_root }}/packages" `
+            --output "${{ matrix.output_dir }}" `
+            --verbosity Detailed `
+            --certIdentity "${{ secrets.CERT_IDENTITY }}" `
+            --cleanupBundleOption true
+
+          $artifacts = @(Get-ChildItem -LiteralPath "${{ matrix.output_dir }}" -Filter "*.dmg" -File)
+          if ($artifacts.Count -ne 1) {
+            throw "Expected exactly one DMG, found $($artifacts.Count)."
+          }
+
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $packageName = "AtomBox-$version-${{ matrix.rid }}.dmg"
+          Move-Item -LiteralPath $artifacts[0].FullName -Destination "${{ matrix.output_dir }}/$packageName" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.output_dir }}/*.dmg
+          if-no-files-found: error
+
+  build-linux:
+    name: Build ${{ matrix.artifact_name }}
+    runs-on: ${{ matrix.os }}
+    env:
+      APPIMAGE_EXTRACT_AND_RUN: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            rid: linux-x64
+            appimage_arch: x86_64
+            artifact_name: AtomBox-linux-x64
+            publish_root: .artifacts/installer/AtomBox-linux-x64
+            output_dir: .artifacts/packages/appimage/x64
+          - os: ubuntu-24.04-arm
+            rid: linux-arm64
+            appimage_arch: aarch64
+            artifact_name: AtomBox-linux-arm64
+            publish_root: .artifacts/installer/AtomBox-linux-arm64
+            output_dir: .artifacts/packages/appimage/arm64
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Checkout AtomUITools
+        uses: actions/checkout@v4
+        with:
+          repository: chinware/AtomUITools
+          ref: develop
+          token: ${{ secrets.ACCESS_TOKEN }}
+          path: .artifacts/AtomUITools
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - name: Install AppImage dependencies
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y fuse libfuse2 patchelf desktop-file-utils file libxcb1 libxcb-shape0
+
+          wget -q "https://github.com/linuxdeploy/linuxdeploy/releases/download/1-alpha-20250213-2/linuxdeploy-${{ matrix.appimage_arch }}.AppImage" -O linuxdeploy
+          chmod +x linuxdeploy
+          sudo mv linuxdeploy /usr/local/bin/linuxdeploy
+
+          wget -q "https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-${{ matrix.appimage_arch }}.AppImage" -O appimagetool
+          chmod +x appimagetool
+          sudo mv appimagetool /usr/local/bin/appimagetool
+
+      - name: Restore
+        run: dotnet restore AtomBox.slnx
+
+      - name: Test
+        run: dotnet test AtomBox.slnx --configuration Release --no-restore
+
+      - name: Build AtomUITools
+        shell: pwsh
+        run: |
+          Set-Location "${{ env.ATOMUI_TOOLS_SOURCE }}/scripts"
+          pwsh ./PublishAtomUIToolsLocal.ps1 `
+            -publishRootPath "${{ env.ATOMUI_TOOLS_BIN }}" `
+            -runtime "${{ matrix.rid }}"
+
+      - name: Publish AtomBox
+        shell: pwsh
+        run: |
+          $packages = "${{ matrix.publish_root }}/packages"
+          dotnet publish src/AtomBox.Desktop/AtomBox.Desktop.csproj `
+            --configuration Release `
+            --runtime "${{ matrix.rid }}" `
+            --self-contained true `
+            -p:PublishSingleFile=true `
+            -p:EnableCompressionInSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            --output $packages
+
+          Get-ChildItem -LiteralPath $packages -Filter "*.pdb" -File -ErrorAction SilentlyContinue |
+            Remove-Item -Force
+
+      - name: Stage Linux installer resources
+        shell: pwsh
+        run: |
+          $configDir = "${{ matrix.publish_root }}/config"
+          $imagesDir = "${{ matrix.publish_root }}/packages/Assets/Images"
+          $iconsDir = "$imagesDir/icons"
+          New-Item -ItemType Directory -Force $configDir, $imagesDir, $iconsDir, "${{ matrix.output_dir }}" | Out-Null
+
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $config = (Get-Content assets/linux/InstallerConfig.xml -Raw).Replace('__VERSION__', $version)
+          Set-Content -LiteralPath "$configDir/InstallerConfig.xml" -Value $config -Encoding utf8
+          Copy-Item -LiteralPath assets/linux/icons/hicolor -Destination "$iconsDir/hicolor" -Recurse -Force
+          Copy-Item -LiteralPath assets/linux/icons/hicolor/256x256/apps/atombox.png -Destination "$imagesDir/AtomBox.png" -Force
+
+      - name: Make executable
+        shell: bash
+        run: chmod +x "${{ matrix.publish_root }}/packages/AtomBox.Desktop"
+
+      - name: Create AppImage
+        shell: pwsh
+        run: |
+          & "${{ env.ATOMUI_TOOLS_LINUX_BIN }}" create-appimage `
+            --runtime "${{ matrix.rid }}" `
+            --config "${{ matrix.publish_root }}/config/InstallerConfig.xml" `
+            --packages "${{ matrix.publish_root }}/packages" `
+            --output "${{ matrix.output_dir }}" `
+            --verbosity Detailed `
+            --cleanupBundleOption true
+
+          $artifacts = @(Get-ChildItem -LiteralPath "${{ matrix.output_dir }}" -Filter "*.AppImage" -File)
+          if ($artifacts.Count -ne 1) {
+            throw "Expected exactly one AppImage, found $($artifacts.Count)."
+          }
+
+          $version = "${{ github.ref_name }}" -replace '^v', ''
+          $packageName = "AtomBox-$version-${{ matrix.rid }}.AppImage"
+          Move-Item -LiteralPath $artifacts[0].FullName -Destination "${{ matrix.output_dir }}/$packageName" -Force
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.output_dir }}/*.AppImage
+          if-no-files-found: error
+
   release:
     name: Create GitHub Release
-    needs: build
+    needs:
+      - build
+      - build-macos
+      - build-linux
     runs-on: ubuntu-latest
     steps:
       - name: Download artifacts

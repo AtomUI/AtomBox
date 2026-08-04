@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Installer>
+    <Name>AtomBox</Name>
+    <AssemblyName>AtomBox.Desktop</AssemblyName>
+    <Version>__VERSION__</Version>
+    <AppBundleIdentifier>net.atomui.atombox</AppBundleIdentifier>
+    <Title>AtomBox Installer</Title>
+    <AppIcon>Assets/Images/AtomBox</AppIcon>
+    <Company>AtomUI</Company>
+    <CompanyFullName>AtomUI</CompanyFullName>
+    <CompanyUrl>https://github.com/AtomUI/AtomBox</CompanyUrl>
+    <Copyright>Copyright AtomUI contributors.</Copyright>
+    <InstallerWindowIcon>AtomBox</InstallerWindowIcon>
+    <InstallerApplicationIcon>AtomBox</InstallerApplicationIcon>
+</Installer>
