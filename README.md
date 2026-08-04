@@ -1,204 +1,208 @@
 # AtomBox
 
+English | [简体中文](./README.zh-CN.md)
+
 [![UI](https://img.shields.io/badge/UI-Powered%20by%20AtomUI-1677ff)](https://github.com/ChengLab/AtomUI)
 ![Unit Tests](https://img.shields.io/badge/unit%20tests-passing-brightgreen)
 ![Contract Tests](https://img.shields.io/badge/contract%20tests-passing-brightgreen)
 ![Headless Tests](https://img.shields.io/badge/headless%20tests-passing-brightgreen)
 ![Platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-lightgrey)
 
-AtomBox 是一个远程存储与文件传输桌面工具。
+AtomBox is a desktop application for remote storage management and file transfers.
 
-它基于 AtomUI 构建桌面界面，把 OSS、FTP/SFTP、WebDAV 等远程存储统一到一个界面里，方便你添加账号、浏览远程文件、上传下载文件，并查看传输队列与历史记录。
+Built with AtomUI, it brings OSS, FTP/SFTP, WebDAV, and other remote storage services into one interface. You can add accounts, browse remote files, upload and download files, and monitor transfer queues and history.
 
-![AtomBox 首页](docs/user-guides/1.png)
+![AtomBox Home](docs/user-guides/atombox-banner.png)
 
-## 功能概览
+## Feature Overview
 
-AtomBox 的主要功能按左侧菜单组织：
+AtomBox organizes its main features in the navigation menu:
 
 ```text
 AtomBox
-├─ 首页
-├─ 远程存储
+├─ Home
+├─ Remote Storage
 │  ├─ OSS
 │  ├─ FTP/SFTP
 │  └─ WebDAV
-├─ 传输
-│  ├─ 传输队列
-│  └─ 历史记录
-└─ 设置
-   ├─ 应用设置
-   └─ 账号管理
+├─ Transfers
+│  ├─ Transfer Queue
+│  └─ History
+└─ Settings
+   ├─ Application Settings
+   └─ Account Management
 ```
 
-## 首页
+## Home
 
-首页用于快速查看 AtomBox 当前状态。
+The Home page provides a quick overview of the current AtomBox status.
 
-你可以在这里看到：
+It shows:
 
-- 已添加的账号数量。
-- OSS、FTP/SFTP、WebDAV 等不同类型账号的数量。
-- 当前运行中、等待中和最近完成的传输任务数量。
-- 最近传输记录。
-- 快速进入远程存储、传输队列和账号管理。
+- The number of configured accounts.
+- Account counts by type, including OSS, FTP/SFTP, and WebDAV.
+- The numbers of running, pending, and recently completed transfer tasks.
+- Recent transfer records.
+- Quick access to remote storage, the transfer queue, and account management.
 
-## 远程存储
+![Home](docs/user-guides/1.1.png)
 
-远程存储是 AtomBox 的主要工作区域。
+## Remote Storage
 
-当前支持：
+Remote Storage is the main workspace in AtomBox.
 
-- OSS 对象存储。
-- FTP/SFTP 文件服务。
-- WebDAV 文件服务。
+Currently supported storage types include:
 
-在远程存储页面中，你可以：
+- OSS object storage.
+- FTP/SFTP file services.
+- WebDAV file services.
 
-- 浏览 bucket 或远程目录。
-- 打开文件夹。
-- 使用路径导航返回上级目录。
-- 在 OSS 中按名称前缀搜索文件。
-- 上传文件。
-- 新建文件夹。
-- 刷新当前目录。
-- 对文件进行下载、重命名、删除等操作。
-- 对文件夹进行打开、重命名、删除等操作；部分 Provider 会根据服务能力限制某些操作。
+From the Remote Storage page, you can:
 
-![远程文件浏览](docs/user-guides/2.png)
+- Browse buckets or remote directories.
+- Open folders.
+- Navigate back to parent directories with the path bar.
+- Search OSS objects by name prefix.
+- Upload files.
+- Create folders.
+- Refresh the current directory.
+- Download, rename, and delete files.
+- Open, rename, and delete folders, subject to the capabilities of each provider.
+
+![Remote File Browser](docs/user-guides/1.2.png)
 
 ### OSS
 
-OSS 账号用于连接对象存储服务。
+OSS accounts connect AtomBox to object storage services.
 
-当前已接入或支持的对象存储包括：
+Integrated or supported object storage providers include:
 
-- 阿里云 OSS
-- 腾讯云 COS
-- 七牛云 Kodo
-- 又拍云 USS
-- 华为云 OBS
-- 百度智能云 BOS
-- 京东云 OSS
-- 青云 QingStor
-- 火山引擎 TOS
+- Alibaba Cloud OSS
+- Tencent Cloud COS
+- Qiniu Kodo
+- Upyun USS
+- Huawei Cloud OBS
+- Baidu AI Cloud BOS
+- JD Cloud OSS
+- QingCloud QingStor
+- Volcano Engine TOS
 
-其中阿里云 OSS、腾讯云 COS、七牛云 Kodo、又拍云 USS、华为云 OBS、百度智能云 BOS、火山引擎 TOS 是当前版本的主要使用路径。京东云 OSS 和青云 QingStor 代码已接入，但添加账号弹窗中暂时隐藏，等待后续真实验收。
+Alibaba Cloud OSS, Tencent Cloud COS, Qiniu Kodo, Upyun USS, Huawei Cloud OBS, Baidu AI Cloud BOS, and Volcano Engine TOS are the primary supported paths in the current release. JD Cloud OSS and QingCloud QingStor are implemented in code but remain hidden in the Add Account dialog until real-account validation is complete.
 
-OSS 页面支持 bucket 选择、文件列表浏览、前缀搜索、上传、下载、文件重命名和文件删除。OSS 伪文件夹的重命名和删除暂不开放。
+The OSS page supports bucket selection, file browsing, prefix search, upload, download, file rename, and file deletion. Rename and deletion operations for OSS pseudo-folders are not currently available.
 
 ### FTP/SFTP
 
-FTP/SFTP 适合连接传统文件服务器或 Linux 服务器目录。
+FTP/SFTP connections are suitable for traditional file servers and Linux server directories.
 
-SFTP 支持：
+SFTP supports:
 
-- 服务器地址和端口。
-- 用户名。
-- 密码认证。
-- SSH 私钥认证。
-- Home 目录。
+- Server address and port.
+- Username.
+- Password authentication.
+- SSH private-key authentication.
+- Home directory.
 
-FTP 支持：
+FTP supports:
 
-- 服务器地址和端口。
-- 匿名访问。
-- 用户名/密码认证。
+- Server address and port.
+- Anonymous access.
+- Username and password authentication.
 
 ### WebDAV
 
-WebDAV 适合连接支持 WebDAV 协议的网盘或文件服务。
+WebDAV connections work with cloud drives and file services that expose the WebDAV protocol.
 
-WebDAV 支持：
+WebDAV supports:
 
-- 通用 WebDAV。
-- 坚果云 WebDAV。
-- 匿名访问。
-- 用户名/密码认证。
+- Generic WebDAV servers.
+- Nutstore WebDAV.
+- Anonymous access.
+- Username and password authentication.
 
-## 账号管理
+## Account Management
 
-账号管理用于新增、编辑和删除远程连接。
+Account Management lets you add, edit, and remove remote connections.
 
-添加账号时，可以选择连接类型和具体 Provider，然后填写连接信息与凭据。保存前可以先点击“测试连接”，确认配置是否可用。
+When adding an account, select a connection type and provider, then enter the connection details and credentials. Use **Test Connection** before saving to verify the configuration.
 
-![添加远程连接](docs/user-guides/3.png)
+![Add Remote Connection](docs/user-guides/1.3.png)
 
-账号管理支持：
+Account Management supports:
 
-- 新增远程连接。
-- 编辑已有连接。
-- 删除已有连接。
-- 测试连接。
-- 根据连接类型展示不同配置项。
+- Adding remote connections.
+- Editing existing connections.
+- Removing existing connections.
+- Testing connections.
+- Displaying settings appropriate to each connection type.
 
-## 传输
+## Transfers
 
-传输模块用于查看上传、下载任务。
+The Transfers module displays upload and download tasks.
 
-### 传输队列
+### Transfer Queue
 
-传输队列展示当前正在执行或等待执行的任务。
+The Transfer Queue lists tasks that are currently running or waiting to run.
 
-你可以看到：
+For each task, you can see:
 
-- 文件名。
-- 上传或下载方向。
-- 目标或来源路径。
-- 当前进度。
-- 当前速度。
-- 任务操作，例如取消。
+- File name.
+- Upload or download direction.
+- Target or source path.
+- Current progress.
+- Current speed.
+- Available actions, such as canceling the task.
 
-![传输队列](docs/user-guides/4.png)
+![Transfer Queue](docs/user-guides/1.4.png)
 
-当前传输队列支持：
+The current transfer queue supports:
 
-- 多个文件同时上传或下载。
-- 按应用设置中的最大并发数执行任务。
-- 显示实时传输速度。
-- 取消运行中的任务。
-- 对失败任务重新执行。
+- Uploading or downloading multiple files concurrently.
+- Limiting concurrency according to Application Settings.
+- Displaying real-time transfer speed.
+- Canceling running tasks.
+- Retrying failed tasks.
 
-### 历史记录
+### History
 
-历史记录用于查看已经完成、失败或中断的传输任务。
+History displays transfer tasks that have completed, failed, or been interrupted.
 
-你可以用它确认某个文件是否已经上传或下载完成，也可以查看失败任务并重新处理。
+Use it to confirm whether a file was uploaded or downloaded successfully and to review and retry failed tasks.
 
-## 应用设置
+## Application Settings
 
-应用设置用于调整 AtomBox 的基础行为。
+Application Settings controls the basic behavior of AtomBox.
 
-当前可配置：
+Available settings include:
 
-- 启动后默认打开的页面。
-- 关闭窗口时是退出应用还是最小化到托盘。
-- 默认下载目录。
-- 最大并发传输数量。
-- 保留已完成传输记录。
-- 打开配置目录、日志目录和状态目录。
+- The default page opened at startup.
+- Whether closing the window exits the application or minimizes it to the system tray.
+- The default download directory.
+- The maximum number of concurrent transfers.
+- Whether completed transfer records are retained.
+- Shortcuts for opening the configuration, log, and state directories.
 
-## 当前版本说明
+## Current Release
 
-当前版本重点覆盖远程存储浏览和基础文件传输。
+The current release focuses on remote storage browsing and essential file transfers.
 
-已覆盖的主路径：
+The primary supported workflows include:
 
-- 添加远程账号。
-- 测试连接。
-- 浏览远程目录或 bucket。
-- 上传文件。
-- 下载文件。
-- 重命名文件或文件夹。
-- 删除文件或文件夹。
-- 查看传输队列。
-- 查看传输历史。
+- Adding remote accounts.
+- Testing connections.
+- Browsing remote directories or buckets.
+- Uploading files.
+- Downloading files.
+- Renaming files or folders.
+- Deleting files or folders.
+- Viewing the transfer queue.
+- Viewing transfer history.
 
-新版本TODO：
+Planned improvements:
 
-- FTPS。
-- 京东云 OSS、青云 QingStor 真实账号验收并在添加账号 UI 中开放。
-- 断点续传恢复。
-- 跨 Provider 同步。
-- 文件夹递归上传/下载。
-- 文件预览和真实内容缩略图。
+- FTPS.
+- Real-account validation and Add Account UI availability for JD Cloud OSS and QingCloud QingStor.
+- Resumable transfers.
+- Cross-provider synchronization.
+- Recursive folder upload and download.
+- File previews and content-based thumbnails.
