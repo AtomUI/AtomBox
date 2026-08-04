@@ -210,6 +210,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
     protected override void OnLanguageChanged()
     {
         UpdateTitleFromCurrentAccount();
+        RebuildBreadcrumbItems();
         OnPropertyChanged(nameof(SelectedFileCountText));
         OnPropertyChanged(nameof(EmptyStateText));
         OnPropertyChanged(nameof(NameColumnHeader));
@@ -316,7 +317,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         _storageAccountId is not null &&
         !IsAccountSelection &&
         !IsBucketList &&
-        (!_remotePath.IsRoot || IsWebDavBreadcrumbRootVisible());
+        (!_remotePath.IsRoot || IsExplicitBreadcrumbRootVisible());
 
     public bool IsSearchVisible =>
         _currentAccount is not null &&
@@ -1260,11 +1261,12 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
     private void RebuildBreadcrumbItems()
     {
         BreadcrumbItems.Clear();
-        if (IsWebDavBreadcrumbRootVisible())
+        if (IsExplicitBreadcrumbRootVisible())
         {
+            var resourceKey = IsWebDav(_currentAccount!) ? "WebDavRoot" : "FtpRoot";
             BreadcrumbItems.Add(new BreadcrumbItemData
             {
-                Content = Localization.GetString("RemoteBrowser", "WebDavRoot"),
+                Content = Localization.GetString("RemoteBrowser", resourceKey),
                 NavigateContext = RemotePath.Root
             });
         }
@@ -1305,10 +1307,11 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         }
     }
 
-    private bool IsWebDavBreadcrumbRootVisible()
+    private bool IsExplicitBreadcrumbRootVisible()
     {
-        return _currentAccount is not null && IsWebDav(_currentAccount);
+        return _currentAccount is not null && (IsWebDav(_currentAccount) || IsFtp(_currentAccount));
     }
+
     private static IReadOnlyList<int> GetVisibleBreadcrumbIndexes(int partCount)
     {
         if (partCount <= 4)
@@ -2255,6 +2258,12 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         return account.ProviderCategory == StorageProviderCategory.FileTransfer &&
             (account.ProviderId.Value.Equals("ftp", StringComparison.OrdinalIgnoreCase) ||
              account.ProviderId.Value.Equals("sftp", StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static bool IsFtp(StorageAccountSummary account)
+    {
+        return account.ProviderCategory == StorageProviderCategory.FileTransfer &&
+            account.ProviderId.Value.Equals("ftp", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsWebDav(StorageAccountSummary account)

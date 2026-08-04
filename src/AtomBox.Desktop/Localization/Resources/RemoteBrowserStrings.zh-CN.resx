@@ -92,6 +92,7 @@
   <data name="BatchDeletePartialFailed" xml:space="preserve"><value>批量删除部分失败</value></data>
   <data name="AccountSaveFailed" xml:space="preserve"><value>账号保存失败。</value></data>
   <data name="WebDavRoot" xml:space="preserve"><value>WebDAV 根目录</value></data>
+  <data name="FtpRoot" xml:space="preserve"><value>FTP 根目录</value></data>
   <data name="DuplicateSingleMessage" xml:space="preserve"><value>该文件以前上传过，确认是否再次上传？</value></data>
   <data name="DuplicateMultipleMessage" xml:space="preserve"><value>{0} 个文件以前上传过，确认是否再次上传？</value></data>
   <data name="MoreDuplicateFiles" xml:space="preserve"><value>另有 {0} 个文件也存在历史上传记录。</value></data>

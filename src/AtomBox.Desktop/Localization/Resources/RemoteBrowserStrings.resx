@@ -92,6 +92,7 @@
   <data name="BatchDeletePartialFailed" xml:space="preserve"><value>Some Files Could Not Be Deleted</value></data>
   <data name="AccountSaveFailed" xml:space="preserve"><value>Failed to save the account.</value></data>
   <data name="WebDavRoot" xml:space="preserve"><value>WebDAV Root</value></data>
+  <data name="FtpRoot" xml:space="preserve"><value>FTP Root</value></data>
   <data name="DuplicateSingleMessage" xml:space="preserve"><value>This file was uploaded before. Upload it again?</value></data>
   <data name="DuplicateMultipleMessage" xml:space="preserve"><value>{0} files were uploaded before. Upload them again?</value></data>
   <data name="MoreDuplicateFiles" xml:space="preserve"><value>{0} more files also have upload history.</value></data>
