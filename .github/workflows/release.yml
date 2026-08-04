@@ -9,7 +9,7 @@ permissions:
   contents: write
 
 env:
-  ATOMUI_TOOLS_SOURCE: ${{ github.workspace }}/.artifacts/AtomUITools
+  ATOMUI_TOOLS_SOURCE: ${{ github.workspace }}/.artifacts/atomuitools-source
   ATOMUI_TOOLS_BIN: ${{ github.workspace }}/.artifacts/atomuitools
   ATOMUI_TOOLS_MAC_BIN: ${{ github.workspace }}/.artifacts/atomuitools/AtomUITools.Mac
   ATOMUI_TOOLS_LINUX_BIN: ${{ github.workspace }}/.artifacts/atomuitools/AtomUITools.Linux
@@ -120,10 +120,10 @@ jobs:
       - name: Checkout AtomUITools
         uses: actions/checkout@v4
         with:
-          repository: chinware/AtomUITools
+          repository: AtomUI/AtomUITools
           ref: develop
           token: ${{ secrets.ACCESS_TOKEN }}
-          path: .artifacts/AtomUITools
+          path: .artifacts/atomuitools-source
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -139,11 +139,16 @@ jobs:
       - name: Build AtomUITools
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Path "${{ env.ATOMUI_TOOLS_BIN }}" -Force | Out-Null
           brew install create-dmg
           Set-Location "${{ env.ATOMUI_TOOLS_SOURCE }}/scripts"
           pwsh ./PublishAtomUIToolsLocal.ps1 `
             -publishRootPath "${{ env.ATOMUI_TOOLS_BIN }}" `
             -runtime "${{ matrix.rid }}"
+
+          if (-not (Test-Path -LiteralPath "${{ env.ATOMUI_TOOLS_MAC_BIN }}" -PathType Leaf)) {
+            throw "AtomUITools.Mac was not created at ${{ env.ATOMUI_TOOLS_MAC_BIN }}."
+          }
 
       - name: Publish AtomBox
         shell: pwsh
@@ -232,10 +237,10 @@ jobs:
       - name: Checkout AtomUITools
         uses: actions/checkout@v4
         with:
-          repository: chinware/AtomUITools
+          repository: AtomUI/AtomUITools
           ref: develop
           token: ${{ secrets.ACCESS_TOKEN }}
-          path: .artifacts/AtomUITools
+          path: .artifacts/atomuitools-source
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
@@ -265,10 +270,15 @@ jobs:
       - name: Build AtomUITools
         shell: pwsh
         run: |
+          New-Item -ItemType Directory -Path "${{ env.ATOMUI_TOOLS_BIN }}" -Force | Out-Null
           Set-Location "${{ env.ATOMUI_TOOLS_SOURCE }}/scripts"
           pwsh ./PublishAtomUIToolsLocal.ps1 `
             -publishRootPath "${{ env.ATOMUI_TOOLS_BIN }}" `
             -runtime "${{ matrix.rid }}"
+
+          if (-not (Test-Path -LiteralPath "${{ env.ATOMUI_TOOLS_LINUX_BIN }}" -PathType Leaf)) {
+            throw "AtomUITools.Linux was not created at ${{ env.ATOMUI_TOOLS_LINUX_BIN }}."
+          }
 
       - name: Publish AtomBox
         shell: pwsh
