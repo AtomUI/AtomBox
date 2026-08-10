@@ -49,6 +49,8 @@
   <data name="ConnectionConfiguration" xml:space="preserve"><value>连接配置</value></data>
   <data name="Credentials" xml:space="preserve"><value>凭据</value></data>
   <data name="GenericWebDav" xml:space="preserve"><value>通用 WebDAV</value></data>
+  <data name="GenericS3Provider" xml:space="preserve"><value>通用 S3</value></data>
+  <data name="S3EndpointValidation" xml:space="preserve"><value>Endpoint 必须是没有路径、查询参数和片段的 HTTP 或 HTTPS 服务根地址。</value></data>
   <data name="AuthenticationMethod" xml:space="preserve"><value>认证方式</value></data>
   <data name="TestingConnection" xml:space="preserve"><value>正在测试连接...</value></data>
   <data name="ConnectionAvailable" xml:space="preserve"><value>连接可用：{0}</value></data>

@@ -1,4 +1,6 @@
 using AtomBox.Core.Errors;
+using Amazon.Runtime;
+using Amazon.S3;
 using BaiduBce;
 using Aliyun.OSS.Common;
 using COSXML.CosException;
@@ -22,6 +24,9 @@ public static class ProviderErrorMapper
 
         return exception switch
         {
+            AmazonS3Exception s3Exception => FromAmazonS3Exception(s3Exception),
+            AmazonServiceException serviceException => FromAmazonServiceException(serviceException),
+            AmazonClientException clientException => FromAmazonClientException(clientException),
             AliyunServiceException serviceException => FromServiceException(serviceException),
             BceServiceException serviceException => FromBceServiceException(serviceException),
             SshAuthenticationException => new StorageError(
@@ -103,6 +108,89 @@ public static class ProviderErrorMapper
             InvalidOperationException => StorageError.Unknown("Provider operation failed."),
             _ => StorageError.Unknown($"Unexpected provider error: {exception.GetType().Name}: {exception.Message}")
         };
+    }
+
+    private static StorageError FromAmazonS3Exception(AmazonS3Exception exception)
+    {
+        var statusCode = (int)exception.StatusCode;
+        var errorCode = string.IsNullOrWhiteSpace(exception.ErrorCode)
+            ? statusCode.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : exception.ErrorCode;
+
+        if (statusCode == 401 || IsAuthenticationError(errorCode))
+        {
+            return new StorageError(
+                StorageErrorCode.AuthenticationFailed,
+                "Provider authentication failed.",
+                StorageErrorCategory.Authentication,
+                providerErrorCode: errorCode);
+        }
+
+        if (statusCode == 403 || IsAuthorizationError(errorCode))
+        {
+            return new StorageError(
+                StorageErrorCode.AuthorizationFailed,
+                "Provider authorization failed.",
+                StorageErrorCategory.Authorization,
+                providerErrorCode: errorCode);
+        }
+
+        if (statusCode == 404 || IsNotFoundError(errorCode))
+        {
+            return new StorageError(
+                StorageErrorCode.NotFound,
+                "Remote resource was not found.",
+                StorageErrorCategory.NotFound,
+                providerErrorCode: errorCode);
+        }
+
+        if (statusCode is 409 or 412)
+        {
+            return new StorageError(
+                StorageErrorCode.Conflict,
+                "Remote resource conflict.",
+                StorageErrorCategory.Conflict,
+                providerErrorCode: errorCode);
+        }
+
+        if (statusCode == 400)
+        {
+            return new StorageError(
+                StorageErrorCode.ValidationFailed,
+                "Provider request is invalid.",
+                StorageErrorCategory.Validation,
+                providerErrorCode: errorCode);
+        }
+
+        return new StorageError(
+            StorageErrorCode.ProviderUnavailable,
+            "Provider S3 service request failed.",
+            StorageErrorCategory.Provider,
+            isRetryable: statusCode is 408 or 429 or >= 500 || IsRetryableServiceError(errorCode),
+            providerErrorCode: errorCode);
+    }
+
+    private static StorageError FromAmazonServiceException(AmazonServiceException exception)
+    {
+        var errorCode = string.IsNullOrWhiteSpace(exception.ErrorCode)
+            ? exception.GetType().Name
+            : exception.ErrorCode;
+        return new StorageError(
+            StorageErrorCode.ProviderUnavailable,
+            "Provider AWS SDK service request failed.",
+            StorageErrorCategory.Provider,
+            isRetryable: exception.InnerException is HttpRequestException,
+            providerErrorCode: errorCode);
+    }
+
+    private static StorageError FromAmazonClientException(AmazonClientException exception)
+    {
+        return new StorageError(
+            StorageErrorCode.NetworkUnavailable,
+            "Provider AWS SDK client request failed.",
+            StorageErrorCategory.Network,
+            isRetryable: true,
+            providerErrorCode: exception.GetType().Name);
     }
 
     private static StorageError FromServiceException(AliyunServiceException exception)

@@ -18,10 +18,13 @@ internal sealed record S3CompatibleObjectSummary(
 
 internal sealed class S3CompatibleDownloadObject : IDisposable
 {
-    public S3CompatibleDownloadObject(Stream content, long? contentLength)
+    private readonly IDisposable? _owner;
+
+    public S3CompatibleDownloadObject(Stream content, long? contentLength, IDisposable? owner = null)
     {
         Content = content ?? throw new ArgumentNullException(nameof(content));
         ContentLength = contentLength;
+        _owner = owner;
     }
 
     public Stream Content { get; }
@@ -30,6 +33,13 @@ internal sealed class S3CompatibleDownloadObject : IDisposable
 
     public void Dispose()
     {
-        Content.Dispose();
+        try
+        {
+            Content.Dispose();
+        }
+        finally
+        {
+            _owner?.Dispose();
+        }
     }
 }

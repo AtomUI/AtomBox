@@ -17,6 +17,7 @@ public sealed class StorageProviderRegistry : IStorageProviderRegistry
     public static readonly StorageProviderId JdCloudOssProviderId = new("jdcloud-oss");
     public static readonly StorageProviderId QingStorProviderId = new("qingstor");
     public static readonly StorageProviderId VolcengineTosProviderId = new("volcengine-tos");
+    public static readonly StorageProviderId S3CompatibleProviderId = new("s3-compatible");
     public static readonly StorageProviderId FtpProviderId = new("ftp");
     public static readonly StorageProviderId SftpProviderId = new("sftp");
     public static readonly StorageProviderId WebDavProviderId = new("webdav");
@@ -60,6 +61,7 @@ public sealed class StorageProviderRegistry : IStorageProviderRegistry
             CreateObjectStorage(JdCloudOssProviderId, "京东云 OSS", supportsObjectMove: true, supportsMultipartUpload: true),
             CreateObjectStorage(QingStorProviderId, "青云 QingStor", supportsObjectMove: true, supportsMultipartUpload: true),
             CreateObjectStorage(VolcengineTosProviderId, "火山引擎 TOS", supportsObjectMove: true, supportsMultipartUpload: true),
+            CreateS3Compatible(),
             CreateFileTransfer(FtpProviderId, "FTP"),
             CreateFileTransfer(SftpProviderId, "SFTP"),
             CreateFileTransfer(WebDavProviderId, "WebDAV"),
@@ -150,6 +152,29 @@ public sealed class StorageProviderRegistry : IStorageProviderRegistry
             "文件传输 provider 类型。",
             new StorageCapabilitySet(StorageCapability.List | StorageCapability.Upload | StorageCapability.Download | StorageCapability.Delete | StorageCapability.CreateFolder | StorageCapability.Rename | StorageCapability.Move | (id == WebDavProviderId ? StorageCapability.Search : StorageCapability.None)),
             fields);
+    }
+
+    private static ProviderDescriptor CreateS3Compatible()
+    {
+        var capabilities = StorageCapability.List |
+            StorageCapability.Upload |
+            StorageCapability.Download |
+            StorageCapability.Delete |
+            StorageCapability.CreateFolder |
+            StorageCapability.Rename |
+            StorageCapability.Move |
+            StorageCapability.MultipartUpload;
+
+        return new ProviderDescriptor(
+            S3CompatibleProviderId,
+            StorageProviderCategory.ObjectStorage,
+            "S3 Compatible",
+            "Amazon S3 compatible object storage provider.",
+            new StorageCapabilitySet(capabilities),
+            [
+                new ProviderConfigFieldDescriptor("endpoint", "Endpoint", ProviderConfigFieldKind.Endpoint, true),
+                new ProviderConfigFieldDescriptor("region", "Region", ProviderConfigFieldKind.Region, true)
+            ]);
     }
 
     private static ProviderDescriptor CreateNetDisk(StorageProviderId id, string displayName)

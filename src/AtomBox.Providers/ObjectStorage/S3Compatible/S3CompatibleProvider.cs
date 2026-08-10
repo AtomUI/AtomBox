@@ -74,22 +74,16 @@ public class S3CompatibleProvider : IStorageProvider
             var objectPath = pathResult.GetValueOrThrow();
             var prefix = objectPath.ToFolderPrefix();
             var listPrefix = ObjectStorageSearchPrefix.Combine(prefix, pageRequest.SearchPrefix);
-            var items = new List<RemoteItem>(pageRequest.PageSize);
-            string? nextToken = cursor;
-            do
-            {
-                var listing = _client.ListObjects(objectPath.BucketName, listPrefix, nextToken, pageRequest.PageSize);
-                items.AddRange(ToRemoteItems(objectPath.BucketName, prefix, listing));
-                nextToken = listing.NextCursor;
-            }
-            while (items.Count < pageRequest.PageSize && !string.IsNullOrWhiteSpace(nextToken));
+            var listing = _client.ListObjects(objectPath.BucketName, listPrefix, cursor, pageRequest.PageSize);
+            var items = ToRemoteItems(objectPath.BucketName, prefix, listing);
+            var nextToken = listing.NextCursor;
 
             RemotePageCursor? nextCursor = string.IsNullOrWhiteSpace(nextToken)
                 ? null
                 : ProviderPageCursor.FromProviderToken("s3-compatible", nextToken);
             return Task.FromResult(OperationResult<RemoteItemPage>.Success(new RemoteItemPage(
                 path,
-                items.Take(pageRequest.PageSize).ToArray(),
+                items,
                 PreviousCursor: null,
                 nextCursor,
                 pageRequest.PageSize)));

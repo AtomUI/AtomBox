@@ -7,6 +7,7 @@
   <ItemGroup>
     <PackageReference Include="Aliyun.OSS.SDK.NetCore" />
     <PackageReference Include="BceSdkDotNetCore" />
+    <PackageReference Include="AWSSDK.S3" />
     <PackageReference Include="FluentFTP" />
     <PackageReference Include="HuaweiCloud.Obs" />
     <PackageReference Include="log4net" />

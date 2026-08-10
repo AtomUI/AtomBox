@@ -90,7 +90,7 @@ internal static class S3CompatibleIntegrationTestHarness
             : $"{message} Code={error.Code}; Category={error.Category}; Retryable={error.IsRetryable}; ProviderErrorCode={error.ProviderErrorCode}; Message={error.Message}";
     }
 
-    private static async Task<IStorageProvider> CreateProviderAsync(
+    internal static async Task<IStorageProvider> CreateProviderAsync(
         S3CompatibleIntegrationEnvironment environment,
         Func<ProviderDescriptor, ProviderCredentialResolver, IStorageProviderCreator> createCreator)
     {
@@ -171,13 +171,19 @@ internal static class S3CompatibleIntegrationTestHarness
             CredentialRef credentialRef,
             CancellationToken cancellationToken = default)
         {
+            var values = new Dictionary<string, string>
+            {
+                ["accessKeyId"] = _environment.AccessKeyId,
+                ["accessKeySecret"] = _environment.AccessKeySecret
+            };
+            if (!string.IsNullOrWhiteSpace(_environment.SessionToken))
+            {
+                values["sessionToken"] = _environment.SessionToken;
+            }
+
             var lease = new CredentialMaterialLease(
                 new EnvironmentCredentialLease(_environment.CredentialName),
-                new CredentialSecretMaterial(new Dictionary<string, string>
-                {
-                    ["accessKeyId"] = _environment.AccessKeyId,
-                    ["accessKeySecret"] = _environment.AccessKeySecret
-                }));
+                new CredentialSecretMaterial(values));
 
             return Task.FromResult(OperationResult<CredentialMaterialLease>.Success(lease));
         }
@@ -220,7 +226,8 @@ internal sealed record S3CompatibleIntegrationEnvironment(
     string Bucket,
     string AccessKeyId,
     string AccessKeySecret,
-    string TestPrefix)
+    string TestPrefix,
+    string? SessionToken)
 {
     public string CredentialName => $"{EnvironmentPrefix.ToLowerInvariant().Replace('_', '-')}-integration";
 
@@ -240,6 +247,7 @@ internal sealed record S3CompatibleIntegrationEnvironment(
         var bucket = Environment.GetEnvironmentVariable($"ATOMBOX_{environmentPrefix}_BUCKET");
         var accessKeyId = Environment.GetEnvironmentVariable($"ATOMBOX_{environmentPrefix}_ACCESS_KEY_ID");
         var accessKeySecret = Environment.GetEnvironmentVariable($"ATOMBOX_{environmentPrefix}_ACCESS_KEY_SECRET");
+        var sessionToken = Environment.GetEnvironmentVariable($"ATOMBOX_{environmentPrefix}_SESSION_TOKEN");
         if (string.IsNullOrWhiteSpace(endpoint) ||
             string.IsNullOrWhiteSpace(region) ||
             string.IsNullOrWhiteSpace(bucket) ||
@@ -264,7 +272,8 @@ internal sealed record S3CompatibleIntegrationEnvironment(
             bucket.Trim(),
             accessKeyId.Trim(),
             accessKeySecret.Trim(),
-            NormalizePrefix(prefix));
+            NormalizePrefix(prefix),
+            string.IsNullOrWhiteSpace(sessionToken) ? null : sessionToken.Trim());
     }
 
     public string CreateVisibleFolderPrefix()

@@ -718,7 +718,7 @@ public sealed class DialogService : IDialogService
             };
 
             _providerInput.ItemTemplate = new FuncDataTemplate<ProviderDescriptor>((provider, _) =>
-                new TextBlock { Text = provider?.DisplayName ?? string.Empty });
+                new TextBlock { Text = provider is null ? string.Empty : GetProviderDisplayName(provider) });
             _providerInput.IsEnabled = _request.ExistingAccount is null;
             _providerInput.MinHeight = 34;
             _providerInput.SelectionChanged += (_, _) =>
@@ -949,7 +949,7 @@ public sealed class DialogService : IDialogService
 
             if (string.IsNullOrWhiteSpace(_displayNameInput.Text))
             {
-                _displayNameInput.Text = provider.DisplayName;
+                _displayNameInput.Text = GetProviderDisplayName(provider);
             }
 
             if (IsFtp(provider))
@@ -1216,6 +1216,10 @@ public sealed class DialogService : IDialogService
 
             config.TryGetValue("endpoint", out var endpoint);
             config.TryGetValue("region", out var region);
+            if (IsGenericS3(provider) && !ValidateGenericS3Configuration(endpoint))
+            {
+                return null;
+            }
             config.Remove("endpoint");
             config.Remove("region");
             SetValidation(string.Empty);
@@ -1244,11 +1248,12 @@ public sealed class DialogService : IDialogService
         {
             if (provider.Category == StorageProviderCategory.ObjectStorage)
             {
-                return
-                [
+                var fields = new List<CredentialField>
+                {
                     new CredentialField("accessKeyId", "AccessKeyId", true, false),
                     new CredentialField("accessKeySecret", "AccessKeySecret", true, true)
-                ];
+                };
+                return fields;
             }
 
             if (IsFtp(provider) || IsWebDav(provider))
@@ -1278,6 +1283,13 @@ public sealed class DialogService : IDialogService
             if (field.Key == "bucket")
             {
                 return L("OptionalBucket");
+            }
+
+            if (field.Key == "endpoint" &&
+                _providerInput.SelectedItem is ProviderDescriptor provider &&
+                IsGenericS3(provider))
+            {
+                return "http://192.168.0.105:9000";
             }
 
             if (field.Key == "rootPath")
@@ -1537,6 +1549,11 @@ public sealed class DialogService : IDialogService
         {
             if (provider.Category == StorageProviderCategory.ObjectStorage)
             {
+                if (IsGenericS3(provider))
+                {
+                    return field.Key is "endpoint" or "region";
+                }
+
                 return field.Key is "endpoint" or "region";
             }
 
@@ -1566,6 +1583,33 @@ public sealed class DialogService : IDialogService
         private static bool IsWebDav(ProviderDescriptor provider)
         {
             return string.Equals(provider.Id.Value, "webdav", StringComparison.Ordinal);
+        }
+
+        private static bool IsGenericS3(ProviderDescriptor provider)
+        {
+            return string.Equals(provider.Id.Value, "s3-compatible", StringComparison.Ordinal);
+        }
+
+        private string GetProviderDisplayName(ProviderDescriptor provider)
+        {
+            return IsGenericS3(provider) ? L("GenericS3Provider") : provider.DisplayName;
+        }
+
+        private bool ValidateGenericS3Configuration(string? endpointText)
+        {
+            if (string.IsNullOrWhiteSpace(endpointText) ||
+                !Uri.TryCreate(endpointText, UriKind.Absolute, out var endpoint) ||
+                (endpoint.Scheme != Uri.UriSchemeHttp && endpoint.Scheme != Uri.UriSchemeHttps) ||
+                !string.IsNullOrEmpty(endpoint.UserInfo) ||
+                (!string.IsNullOrEmpty(endpoint.AbsolutePath) && endpoint.AbsolutePath != "/") ||
+                !string.IsNullOrEmpty(endpoint.Query) ||
+                !string.IsNullOrEmpty(endpoint.Fragment))
+            {
+                SetValidation(L("S3EndpointValidation"));
+                return false;
+            }
+
+            return true;
         }
 
         private bool IsAnonymousFtp(ProviderDescriptor provider)
@@ -1742,6 +1786,7 @@ public sealed class DialogService : IDialogService
     }
 
     private sealed record AuthModeOption(string Value, string DisplayName);
+
 
 }
 

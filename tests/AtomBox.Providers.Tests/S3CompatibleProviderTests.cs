@@ -165,6 +165,42 @@ public sealed class S3CompatibleProviderTests
     }
 
     [Fact]
+    public async Task ListPageAsync_FolderMarkerDoesNotConsumeAndLoseNextPageObjects()
+    {
+        var client = new FakeS3CompatibleClient
+        {
+            CursorListings = new Dictionary<string, S3CompatibleObjectListing>
+            {
+                [""] = new(
+                    [
+                        new S3CompatibleObjectSummary("folder/", 0, null, null, null),
+                        new S3CompatibleObjectSummary("folder/a.txt", 1, null, null, null)
+                    ],
+                    [],
+                    "next"),
+                ["next"] = new(
+                    [new S3CompatibleObjectSummary("folder/b.txt", 1, null, null, null)],
+                    [])
+            }
+        };
+        await using var provider = CreateProvider(client);
+
+        var first = await provider.ListPageAsync(
+            new RemotePath("bucket-a/folder", RemotePathKind.Folder),
+            new RemotePageRequest(2));
+        Assert.True(first.IsSuccess);
+        Assert.Equal(["a.txt"], first.GetValueOrThrow().Items.Select(item => item.Name));
+        Assert.NotNull(first.GetValueOrThrow().NextCursor);
+
+        var second = await provider.ListPageAsync(
+            new RemotePath("bucket-a/folder", RemotePathKind.Folder),
+            new RemotePageRequest(2, first.GetValueOrThrow().NextCursor));
+        Assert.True(second.IsSuccess);
+        Assert.Equal(["b.txt"], second.GetValueOrThrow().Items.Select(item => item.Name));
+        Assert.Null(second.GetValueOrThrow().NextCursor);
+    }
+
+    [Fact]
     public async Task MoveAsync_MapsClientFailureWithoutLeakingExceptionMessage()
     {
         var client = new FakeS3CompatibleClient
@@ -295,6 +331,9 @@ public sealed class S3CompatibleProviderTests
 
         public S3CompatibleObjectListing ObjectListing { get; init; } = new([], []);
 
+        public IReadOnlyDictionary<string, S3CompatibleObjectListing> CursorListings { get; init; } =
+            new Dictionary<string, S3CompatibleObjectListing>();
+
         public string? LastListBucketName { get; private set; }
 
         public string? LastListPrefix { get; private set; }
@@ -339,6 +378,11 @@ public sealed class S3CompatibleProviderTests
         {
             LastListBucketName = bucketName;
             LastListPrefix = prefix;
+            if (CursorListings.Count > 0)
+            {
+                return CursorListings[cursor ?? string.Empty];
+            }
+
             var offset = 0;
             if (!string.IsNullOrWhiteSpace(cursor))
             {

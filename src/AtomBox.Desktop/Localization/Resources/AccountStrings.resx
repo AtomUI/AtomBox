@@ -49,6 +49,8 @@
   <data name="ConnectionConfiguration" xml:space="preserve"><value>Connection Configuration</value></data>
   <data name="Credentials" xml:space="preserve"><value>Credentials</value></data>
   <data name="GenericWebDav" xml:space="preserve"><value>Generic WebDAV</value></data>
+  <data name="GenericS3Provider" xml:space="preserve"><value>S3 Compatible</value></data>
+  <data name="S3EndpointValidation" xml:space="preserve"><value>Endpoint must be an HTTP or HTTPS service root URL without a path, query, or fragment.</value></data>
   <data name="AuthenticationMethod" xml:space="preserve"><value>Authentication Method</value></data>
   <data name="TestingConnection" xml:space="preserve"><value>Testing connection...</value></data>
   <data name="ConnectionAvailable" xml:space="preserve"><value>Connection available: {0}</value></data>

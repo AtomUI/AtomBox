@@ -16,6 +16,7 @@ using AtomBox.Providers.NetDisk.BaiduNetDisk;
 using AtomBox.Providers.ObjectStorage.AliyunOss;
 using AtomBox.Providers.ObjectStorage.BaiduBos;
 using AtomBox.Providers.ObjectStorage.HuaweiObs;
+using AtomBox.Providers.ObjectStorage.GenericS3;
 using AtomBox.Providers.ObjectStorage.JdCloudOss;
 using AtomBox.Providers.ObjectStorage.QiniuKodo;
 using AtomBox.Providers.ObjectStorage.QingStor;
@@ -36,7 +37,7 @@ public sealed class ProviderRegistryAndFactoryTests
         var descriptors = registry.GetAll();
 
         Assert.Equal(
-            ["aliyun-oss", "tencent-cos", "qiniu-kodo", "upyun", "huawei-obs", "baidu-bos", "jdcloud-oss", "qingstor", "volcengine-tos", "ftp", "sftp", "webdav", "aliyun-drive", "baidu-netdisk"],
+            ["aliyun-oss", "tencent-cos", "qiniu-kodo", "upyun", "huawei-obs", "baidu-bos", "jdcloud-oss", "qingstor", "volcengine-tos", "s3-compatible", "ftp", "sftp", "webdav", "aliyun-drive", "baidu-netdisk"],
             descriptors.Select(item => item.Id.Value).ToArray());
         Assert.All(descriptors, descriptor => Assert.NotEmpty(descriptor.DisplayName));
     }
@@ -233,6 +234,7 @@ public sealed class ProviderRegistryAndFactoryTests
         Assert.IsType<JdCloudOssProviderCreator>(creators["jdcloud-oss"]);
         Assert.IsType<QingStorProviderCreator>(creators["qingstor"]);
         Assert.IsType<VolcengineTosProviderCreator>(creators["volcengine-tos"]);
+        Assert.IsType<GenericS3ProviderCreator>(creators["s3-compatible"]);
         Assert.IsType<FtpStorageProviderCreator>(creators["ftp"]);
         Assert.IsType<SftpStorageProviderCreator>(creators["sftp"]);
         Assert.IsType<WebDavStorageProviderCreator>(creators["webdav"]);
@@ -258,6 +260,7 @@ public sealed class ProviderRegistryAndFactoryTests
             "jdcloud-oss",
             "qingstor",
             "volcengine-tos",
+            "s3-compatible",
             "ftp",
             "sftp",
             "webdav",
@@ -291,7 +294,8 @@ public sealed class ProviderRegistryAndFactoryTests
             "baidu-bos",
             "jdcloud-oss",
             "qingstor",
-            "volcengine-tos"
+            "volcengine-tos",
+            "s3-compatible"
         })
         {
             Assert.True(descriptors[providerId].Capabilities.Supports(StorageCapability.CreateFolder), providerId);
@@ -308,6 +312,7 @@ public sealed class ProviderRegistryAndFactoryTests
         Assert.True(descriptors["upyun"].Capabilities.Supports(StorageCapability.MultipartUpload));
         Assert.True(descriptors["huawei-obs"].Capabilities.Supports(StorageCapability.MultipartUpload));
         Assert.True(descriptors["volcengine-tos"].Capabilities.Supports(StorageCapability.MultipartUpload));
+        Assert.True(descriptors["s3-compatible"].Capabilities.Supports(StorageCapability.MultipartUpload));
     }
 
     private static StorageAccount CreateAccount(

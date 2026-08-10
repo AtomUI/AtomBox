@@ -11,6 +11,7 @@ using AtomBox.Providers.ObjectStorage.HuaweiObs;
 using AtomBox.Providers.ObjectStorage.JdCloudOss;
 using AtomBox.Providers.ObjectStorage.QiniuKodo;
 using AtomBox.Providers.ObjectStorage.QingStor;
+using AtomBox.Providers.ObjectStorage.GenericS3;
 using AtomBox.Providers.ObjectStorage.TencentCos;
 using AtomBox.Providers.ObjectStorage.Upyun;
 using AtomBox.Providers.ObjectStorage.VolcengineTos;
@@ -105,6 +106,15 @@ public static class ProviderServiceCollectionExtensions
             {
                 services.AddSingleton<IStorageProviderCreator>(provider =>
                     new VolcengineTosProviderCreator(
+                        descriptor,
+                        provider.GetRequiredService<ProviderCredentialResolver>()));
+                continue;
+            }
+
+            if (descriptor.Id == StorageProviderRegistry.S3CompatibleProviderId)
+            {
+                services.AddSingleton<IStorageProviderCreator>(provider =>
+                    new GenericS3ProviderCreator(
                         descriptor,
                         provider.GetRequiredService<ProviderCredentialResolver>()));
                 continue;
