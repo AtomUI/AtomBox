@@ -106,6 +106,33 @@ public sealed class SftpStorageProviderTests
     }
 
     [Fact]
+    public async Task UploadAsync_CanceledUpload_RemovesTemporaryRemoteFile()
+    {
+        var client = new FakeSftpClient
+        {
+            ExistingDirectories = ["/data"],
+            BlockUploadUntilCanceled = true
+        };
+        await using var provider = CreateProvider(client, rootPath: "/data");
+        await using var content = new MemoryStream(new byte[1024]);
+        using var cancellation = new CancellationTokenSource();
+
+        var uploadTask = provider.UploadAsync(
+            new RemotePath("file.bin"),
+            content,
+            content.Length,
+            cancellationToken: cancellation.Token);
+        await client.UploadStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        await cancellation.CancelAsync();
+        var result = await uploadTask;
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCategory.Canceled, result.Error?.Category);
+        Assert.Equal(client.UploadedTemporaryPath, client.DeletePath);
+        Assert.Null(client.UploadPath);
+    }
+
+    [Fact]
     public async Task UploadAsync_AllowsCurrentWorkingDirectoryRootPath()
     {
         var client = new FakeSftpClient
@@ -392,67 +419,111 @@ public sealed class SftpStorageProviderTests
 
         public string? UploadPath { get; private set; }
 
+        public string? UploadedTemporaryPath { get; private set; }
+
         public byte[] UploadPayload { get; private set; } = [];
 
         public string? DownloadPath { get; private set; }
 
         public byte[] DownloadPayload { get; init; } = [];
 
+        public bool BlockUploadUntilCanceled { get; init; }
+
+        public TaskCompletionSource UploadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public void Connect()
         {
             IsConnected = true;
         }
 
-        public IReadOnlyList<SftpRemoteEntry> ListDirectory(string path)
+        public Task ConnectAsync(CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
+            Connect();
+            return Task.CompletedTask;
+        }
+
+        public Task<IReadOnlyList<SftpRemoteEntry>> ListDirectoryAsync(
+            string path,
+            CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
             LastListPath = path;
-            return Entries;
+            return Task.FromResult(Entries);
         }
 
-        public bool FileExists(string path)
+        public Task<bool> FileExistsAsync(string path, CancellationToken cancellationToken)
         {
-            return ExistingFiles.Contains(path);
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(
+                ExistingFiles.Contains(path) ||
+                string.Equals(UploadedTemporaryPath, path, StringComparison.Ordinal));
         }
 
-        public bool DirectoryExists(string path)
+        public Task<bool> DirectoryExistsAsync(string path, CancellationToken cancellationToken)
         {
-            return ExistingDirectories.Contains(path) || CreatedDirectories.Contains(path);
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(ExistingDirectories.Contains(path) || CreatedDirectories.Contains(path));
         }
 
-        public void CreateDirectory(string path)
+        public Task CreateDirectoryAsync(string path, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             CreatedDirectories.Add(path);
+            return Task.CompletedTask;
         }
 
-        public void DeleteFile(string path)
+        public Task DeleteFileAsync(string path, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             DeletePath = path;
+            return Task.CompletedTask;
         }
 
-        public void DeleteDirectory(string path)
+        public Task DeleteDirectoryAsync(string path, CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             DeletedDirectoryPath = path;
+            return Task.CompletedTask;
         }
 
-        public void Move(string sourcePath, string destinationPath)
+        public Task MoveAsync(
+            string sourcePath,
+            string destinationPath,
+            CancellationToken cancellationToken)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             MovedPath = (sourcePath, destinationPath);
+            if (string.Equals(sourcePath, UploadedTemporaryPath, StringComparison.Ordinal))
+            {
+                UploadPath = destinationPath;
+            }
+
+            return Task.CompletedTask;
         }
 
-        public void UploadFile(Stream content, string path, Action<ulong>? progress = null)
+        public async Task UploadFileAsync(Stream content, string path, CancellationToken cancellationToken)
         {
-            UploadPath = path;
+            UploadedTemporaryPath = path;
+            UploadStarted.TrySetResult();
+            if (BlockUploadUntilCanceled)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+
             using var copy = new MemoryStream();
-            content.CopyTo(copy);
+            await content.CopyToAsync(copy, cancellationToken);
             UploadPayload = copy.ToArray();
-            progress?.Invoke((ulong)UploadPayload.Length);
         }
 
-        public void DownloadFile(string path, Stream destination, Action<ulong>? progress = null)
+        public async Task DownloadFileAsync(
+            string path,
+            Stream destination,
+            CancellationToken cancellationToken)
         {
             DownloadPath = path;
-            destination.Write(DownloadPayload);
-            progress?.Invoke((ulong)DownloadPayload.Length);
+            await destination.WriteAsync(DownloadPayload, cancellationToken);
         }
 
         public void Dispose()

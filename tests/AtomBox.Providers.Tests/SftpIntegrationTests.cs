@@ -15,6 +15,20 @@ public sealed class SftpIntegrationTests
 {
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task SftpIntegration_CancelRunningUploadAndDownload_CleansArtifacts()
+    {
+        var environment = SftpTestEnvironment.TryRead();
+        if (environment is null)
+        {
+            return;
+        }
+
+        await using var provider = await CreateProviderAsync(environment);
+        await FileTransferCancellationIntegrationTestSupport.VerifyAsync(provider, environment.CreateTestRoot());
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task SftpIntegration_ListCreateUploadDownloadRenameMove_LeavesArtifacts()
     {
         var environment = SftpTestEnvironment.TryRead();

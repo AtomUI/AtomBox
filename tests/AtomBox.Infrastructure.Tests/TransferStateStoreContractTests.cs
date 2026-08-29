@@ -64,6 +64,7 @@ public sealed class TransferStateStoreContractTests : IDisposable
     {
         var pending = CreateTask(TransferStatus.Pending);
         var running = CreateTask(TransferStatus.Running);
+        var canceling = CreateTask(TransferStatus.Canceling);
         var succeeded = CreateTask(TransferStatus.Succeeded);
         var failed = CreateTask(TransferStatus.Failed);
         var paused = CreateTask(TransferStatus.Paused);
@@ -71,6 +72,7 @@ public sealed class TransferStateStoreContractTests : IDisposable
 
         await _taskStore.SaveAsync(pending);
         await _taskStore.SaveAsync(running);
+        await _taskStore.SaveAsync(canceling);
         await _taskStore.SaveAsync(succeeded);
         await _taskStore.SaveAsync(failed);
         await _taskStore.SaveAsync(paused);
@@ -81,6 +83,7 @@ public sealed class TransferStateStoreContractTests : IDisposable
         var queueIds = queue.GetValueOrThrow().Select(s => s.Task.Id).ToHashSet();
         Assert.Contains(pending.Id, queueIds);
         Assert.Contains(running.Id, queueIds);
+        Assert.Contains(canceling.Id, queueIds);
         Assert.Contains(paused.Id, queueIds);
         Assert.DoesNotContain(succeeded.Id, queueIds);
         Assert.DoesNotContain(failed.Id, queueIds);

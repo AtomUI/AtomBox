@@ -74,6 +74,7 @@ public sealed class InfrastructureStorageTests : IDisposable
 
         await using var handle = (await store.OpenWriteAsync(new LocalPath(path))).GetValueOrThrow();
         await handle.Stream.WriteAsync(new byte[] { 1, 2, 3 });
+        Assert.True((await handle.CommitAsync()).IsSuccess);
 
         Assert.True(File.Exists(path));
     }

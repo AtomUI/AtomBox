@@ -54,6 +54,17 @@ public sealed class ProviderErrorMapperTests
         Assert.DoesNotContain("raw sdk", error.Message, StringComparison.OrdinalIgnoreCase);
     }
 
+    [Fact]
+    public void FromException_MapsSocketExceptionToRetryableNetworkFailure()
+    {
+        var error = ProviderErrorMapper.FromException(
+            new System.Net.Sockets.SocketException((int)System.Net.Sockets.SocketError.ConnectionRefused));
+
+        Assert.Equal(StorageErrorCategory.Network, error.Category);
+        Assert.Equal(StorageErrorCode.NetworkUnavailable, error.Code);
+        Assert.True(error.IsRetryable);
+    }
+
     [Theory]
     [InlineData(System.Net.HttpStatusCode.Conflict)]
     [InlineData(System.Net.HttpStatusCode.PreconditionFailed)]

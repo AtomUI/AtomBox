@@ -76,6 +76,7 @@ public sealed class TransferModelTests
         Assert.Equal(4, (int)TransferStatus.Succeeded);
         Assert.Equal(5, (int)TransferStatus.Failed);
         Assert.Equal(6, (int)TransferStatus.Canceled);
+        Assert.Equal(7, (int)TransferStatus.Canceling);
     }
 
     [Fact]
@@ -317,6 +318,16 @@ public sealed class TransferModelTests
     }
 
     [Fact]
+    public void Running_To_Canceling()
+    {
+        var task = CreateTask(TransferStatus.Running);
+        var updated = task.WithStatus(TransferStatus.Canceling, Now.AddSeconds(1));
+        Assert.Equal(TransferStatus.Canceling, updated.Status);
+        Assert.False(updated.CanCancel());
+        Assert.False(updated.CanRetry());
+    }
+
+    [Fact]
     public void Running_To_Interrupted()
     {
         var task = CreateTask(TransferStatus.Running);
@@ -383,6 +394,7 @@ public sealed class TransferModelTests
         Assert.True(CreateTask(TransferStatus.Failed).CanRetry());
         Assert.True(CreateTask(TransferStatus.Interrupted).CanRetry());
         Assert.False(CreateTask(TransferStatus.Canceled).CanRetry());
+        Assert.False(CreateTask(TransferStatus.Canceling).CanRetry());
     }
 
     [Fact]
@@ -395,6 +407,7 @@ public sealed class TransferModelTests
         Assert.False(CreateTask(TransferStatus.Failed).CanCancel());
         Assert.False(CreateTask(TransferStatus.Interrupted).CanCancel());
         Assert.False(CreateTask(TransferStatus.Canceled).CanCancel());
+        Assert.False(CreateTask(TransferStatus.Canceling).CanCancel());
     }
 
     [Fact]

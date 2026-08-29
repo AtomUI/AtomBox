@@ -15,6 +15,20 @@ public sealed class WebDavIntegrationTests
 {
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task WebDavIntegration_CancelRunningUploadAndDownload_CleansArtifacts()
+    {
+        var environment = WebDavTestEnvironment.TryRead();
+        if (environment is null)
+        {
+            return;
+        }
+
+        await using var provider = await CreateProviderAsync(environment);
+        await FileTransferCancellationIntegrationTestSupport.VerifyAsync(provider, environment.CreateTestRoot());
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task WebDavIntegration_ListCreateUploadDownloadRenameMove_LeavesArtifacts()
     {
         var environment = WebDavTestEnvironment.TryRead();

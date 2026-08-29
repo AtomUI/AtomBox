@@ -96,7 +96,7 @@ public sealed class LocalTransferFileStoreContractTests : IDisposable
         Assert.True(result.IsSuccess);
         await using var handle = result.GetValueOrThrow();
         await handle.Stream.WriteAsync(new byte[] { 1, 2, 3 });
-        await handle.DisposeAsync();
+        Assert.True((await handle.CommitAsync()).IsSuccess);
         Assert.True(File.Exists(path));
         Assert.True(File.Exists(renamedPath));
     }
@@ -113,7 +113,7 @@ public sealed class LocalTransferFileStoreContractTests : IDisposable
         Assert.True(result.IsSuccess);
         await using var handle = result.GetValueOrThrow();
         await handle.Stream.WriteAsync(new byte[] { 1, 2, 3 });
-        await handle.DisposeAsync();
+        Assert.True((await handle.CommitAsync()).IsSuccess);
         Assert.Equal(3, new FileInfo(path).Length);
     }
 
@@ -134,6 +134,7 @@ public sealed class LocalTransferFileStoreContractTests : IDisposable
         await using (var writeHandle = (await _store.OpenWriteAsync(new LocalPath(path))).GetValueOrThrow())
         {
             await writeHandle.Stream.WriteAsync(content);
+            Assert.True((await writeHandle.CommitAsync()).IsSuccess);
         }
 
         await using var readHandle = (await _store.OpenReadAsync(new LocalPath(path))).GetValueOrThrow();
@@ -164,7 +165,43 @@ public sealed class LocalTransferFileStoreContractTests : IDisposable
         var result = await _store.OpenWriteAsync(new LocalPath(path));
         Assert.True(result.IsSuccess);
         await using var handle = result.GetValueOrThrow();
+        Assert.False(File.Exists(path));
+        Assert.Single(Directory.GetFiles(_root, ".atombox-download-*.part"));
+        Assert.True((await handle.CommitAsync()).IsSuccess);
         Assert.True(File.Exists(path));
+        Assert.Empty(Directory.GetFiles(_root, ".atombox-download-*.part"));
+    }
+
+    [Fact]
+    public async Task OpenWrite_Abort_RemovesTemporaryFileAndLeavesNoTarget()
+    {
+        var path = Path.Combine(_root, "canceled.txt");
+        await using var handle = (await _store.OpenWriteAsync(new LocalPath(path))).GetValueOrThrow();
+        await handle.Stream.WriteAsync(new byte[] { 1, 2, 3 });
+
+        var abortResult = await handle.AbortAsync();
+
+        Assert.True(abortResult.IsSuccess);
+        Assert.False(File.Exists(path));
+        Assert.Empty(Directory.GetFiles(_root, ".atombox-download-*.part"));
+    }
+
+    [Fact]
+    public async Task OpenWrite_OverwriteAbort_PreservesExistingFile()
+    {
+        var path = Path.Combine(_root, "existing.txt");
+        Directory.CreateDirectory(_root);
+        await File.WriteAllTextAsync(path, "original");
+        await using var handle = (await _store.OpenWriteAsync(
+            new LocalPath(path),
+            TransferOverwritePolicy.Overwrite)).GetValueOrThrow();
+        await handle.Stream.WriteAsync(new byte[] { 1, 2, 3 });
+
+        var abortResult = await handle.AbortAsync();
+
+        Assert.True(abortResult.IsSuccess);
+        Assert.Equal("original", await File.ReadAllTextAsync(path));
+        Assert.Empty(Directory.GetFiles(_root, ".atombox-download-*.part"));
     }
 
     [Fact]

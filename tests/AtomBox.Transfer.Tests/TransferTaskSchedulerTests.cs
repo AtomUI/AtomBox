@@ -261,6 +261,78 @@ public sealed class TransferTaskSchedulerTests
     }
 
     [Fact]
+    public async Task CancelAsync_RunningTask_RemainsCancelingUntilProviderCleanupReleasesSlot()
+    {
+        var store = new MemoryTransferStore();
+        var cancellations = new TransferCancellationRegistry();
+        var provider = new CleanupBlockingUploadProvider();
+        var scheduler = new TransferTaskScheduler(
+            store,
+            new TransferQueue(),
+            () => new TransferWorker(
+                new AnyAccountRepository(),
+                new FixedProviderFactory(provider),
+                new MemoryLocalTransferFileStore(),
+                store,
+                cancellations),
+            cancellations,
+            new FixedApplicationSettingsRepository(1));
+        var first = CreateTask(TransferStatus.Pending);
+        var second = CreateTask(TransferStatus.Pending);
+        await scheduler.SubmitAsync(first);
+        await scheduler.SubmitAsync(second);
+
+        var wakeTask = Task.Run(() => scheduler.WakeAsync());
+        await provider.FirstUploadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var cancelResult = await scheduler.CancelAsync(first.Id);
+        await provider.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(cancelResult.IsSuccess);
+        Assert.Equal(TransferStatus.Canceling, store.Tasks.Single(task => task.Id == first.Id).Status);
+        Assert.Equal(TransferStatus.Pending, store.Tasks.Single(task => task.Id == second.Id).Status);
+        Assert.False(provider.SecondUploadStarted.Task.IsCompleted);
+
+        provider.AllowCleanupToFinish.TrySetResult();
+        await provider.SecondUploadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        var wakeResult = await wakeTask;
+
+        Assert.True(wakeResult.IsSuccess);
+        Assert.Equal(TransferStatus.Canceled, store.Tasks.Single(task => task.Id == first.Id).Status);
+        Assert.Equal(TransferStatus.Succeeded, store.Tasks.Single(task => task.Id == second.Id).Status);
+    }
+
+    [Fact]
+    public async Task CancelAsync_RemoteCommitAlreadySucceeded_SuccessWinsLateCancellation()
+    {
+        var store = new MemoryTransferStore();
+        var cancellations = new TransferCancellationRegistry();
+        var provider = new CleanupBlockingUploadProvider(completeAsSuccessAfterCancellation: true);
+        var scheduler = new TransferTaskScheduler(
+            store,
+            new TransferQueue(),
+            () => new TransferWorker(
+                new AnyAccountRepository(),
+                new FixedProviderFactory(provider),
+                new MemoryLocalTransferFileStore(),
+                store,
+                cancellations),
+            cancellations,
+            new FixedApplicationSettingsRepository(1));
+        var task = CreateTask(TransferStatus.Pending);
+        await scheduler.SubmitAsync(task);
+
+        var wakeTask = Task.Run(() => scheduler.WakeAsync());
+        await provider.FirstUploadStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.True((await scheduler.CancelAsync(task.Id)).IsSuccess);
+        await provider.CancellationObserved.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        provider.AllowCleanupToFinish.TrySetResult();
+
+        Assert.True((await wakeTask).IsSuccess);
+        Assert.Equal(TransferStatus.Succeeded, store.Tasks.Single().Status);
+    }
+
+    [Fact]
     public async Task CancelAsync_FailedTask_ReturnsConflict()
     {
         var store = new MemoryTransferStore();
@@ -614,7 +686,7 @@ public sealed class TransferTaskSchedulerTests
             lock (_syncRoot)
             {
                 var queue = _tasks
-                    .Where(task => task.Status is TransferStatus.Pending or TransferStatus.Running or TransferStatus.Paused or TransferStatus.Interrupted)
+                    .Where(task => task.Status is TransferStatus.Pending or TransferStatus.Running or TransferStatus.Canceling or TransferStatus.Paused or TransferStatus.Interrupted)
                     .Select(task => new TransferStateSnapshot(task, null))
                     .ToArray();
                 return Task.FromResult(OperationResult<IReadOnlyList<TransferStateSnapshot>>.Success(queue));
@@ -649,6 +721,39 @@ public sealed class TransferTaskSchedulerTests
             }
 
             return await SaveAsync(task, cancellationToken).ConfigureAwait(false);
+        }
+
+        public Task<OperationResult<bool>> TryTransitionStatusAsync(
+            TransferTaskId taskId,
+            TransferStatus expectedStatus,
+            TransferStatus targetStatus,
+            DateTimeOffset updatedAt,
+            string? statusReason = null,
+            StorageErrorCategory? errorCategory = null,
+            bool isRetryable = false,
+            CancellationToken cancellationToken = default)
+        {
+            lock (_syncRoot)
+            {
+                var index = _tasks.FindIndex(task => task.Id == taskId);
+                if (index < 0)
+                {
+                    return Task.FromResult(OperationResult<bool>.Failure(StorageError.NotFound("not found")));
+                }
+
+                if (_tasks[index].Status != expectedStatus)
+                {
+                    return Task.FromResult(OperationResult<bool>.Success(false));
+                }
+
+                _tasks[index] = _tasks[index].WithStatus(
+                    targetStatus,
+                    updatedAt,
+                    statusReason,
+                    errorCategory,
+                    isRetryable);
+                return Task.FromResult(OperationResult<bool>.Success(true));
+            }
         }
     }
 
@@ -1057,6 +1162,94 @@ public sealed class TransferTaskSchedulerTests
                 throw;
             }
 
+            return OperationResult.Success();
+        }
+
+        public Task<OperationResult> DownloadAsync(
+            RemotePath path,
+            Stream destination,
+            IProgress<TransferProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(OperationResult.Success());
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class CleanupBlockingUploadProvider : IStorageProvider
+    {
+        private readonly bool _completeAsSuccessAfterCancellation;
+        private int _uploadCount;
+
+        public CleanupBlockingUploadProvider(bool completeAsSuccessAfterCancellation = false)
+        {
+            _completeAsSuccessAfterCancellation = completeAsSuccessAfterCancellation;
+        }
+
+        public TaskCompletionSource FirstUploadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource CancellationObserved { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource AllowCleanupToFinish { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource SecondUploadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public StorageCapabilitySet Capabilities { get; } =
+            new(StorageCapability.List | StorageCapability.Upload | StorageCapability.Download);
+
+        public Task<OperationResult<IReadOnlyList<RemoteItem>>> ListAsync(
+            RemotePath path,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(OperationResult<IReadOnlyList<RemoteItem>>.Success([]));
+        }
+
+        public Task<OperationResult> DeleteAsync(
+            RemotePath path,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(OperationResult.Success());
+        }
+
+        public async Task<OperationResult> UploadAsync(
+            RemotePath path,
+            Stream content,
+            long? contentLength,
+            IProgress<TransferProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (Interlocked.Increment(ref _uploadCount) == 1)
+            {
+                FirstUploadStarted.TrySetResult();
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    CancellationObserved.TrySetResult();
+                    await AllowCleanupToFinish.Task.ConfigureAwait(false);
+                    if (_completeAsSuccessAfterCancellation)
+                    {
+                        return OperationResult.Success();
+                    }
+
+                    return OperationResult.Failure(new StorageError(
+                        StorageErrorCode.OperationCanceled,
+                        "Provider cleanup completed after cancellation.",
+                        StorageErrorCategory.Canceled));
+                }
+            }
+
+            SecondUploadStarted.TrySetResult();
             return OperationResult.Success();
         }
 

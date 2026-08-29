@@ -41,6 +41,22 @@ public sealed class TransferRuntimeInitializerTests
     }
 
     [Fact]
+    public async Task InitializeAsync_CancelingTask_MarkedCanceledWithCleanupWarning()
+    {
+        var store = new MemoryTransferStore();
+        var canceling = TransferTaskFactory.Create(TransferStatus.Canceling);
+        await store.SaveAsync(canceling);
+        var initializer = new TransferRuntimeInitializer(store);
+
+        var result = await initializer.InitializeAsync();
+
+        Assert.True(result.IsSuccess);
+        var canceled = store.Tasks.Single(task => task.Id == canceling.Id);
+        Assert.Equal(TransferStatus.Canceled, canceled.Status);
+        Assert.Contains("清理结果未知", canceled.StatusReason);
+    }
+
+    [Fact]
     public async Task InitializeAsync_MixedRunningAndPending()
     {
         var store = new MemoryTransferStore();

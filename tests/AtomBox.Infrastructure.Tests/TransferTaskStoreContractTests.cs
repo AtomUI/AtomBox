@@ -101,6 +101,43 @@ public sealed class TransferTaskStoreContractTests : IDisposable
     }
 
     [Fact]
+    public async Task TryTransitionStatus_ExpectedStatusMatches_UpdatesAtomically()
+    {
+        var task = CreateTask(TransferStatus.Running);
+        await _store.SaveAsync(task);
+
+        var result = await _store.TryTransitionStatusAsync(
+            task.Id,
+            TransferStatus.Running,
+            TransferStatus.Canceling,
+            DateTimeOffset.UtcNow,
+            "Cancel requested");
+
+        Assert.True(result.IsSuccess);
+        Assert.True(result.GetValueOrThrow());
+        var saved = (await _store.GetByIdAsync(task.Id)).GetValueOrThrow();
+        Assert.Equal(TransferStatus.Canceling, saved.Status);
+        Assert.Equal("Cancel requested", saved.StatusReason);
+    }
+
+    [Fact]
+    public async Task TryTransitionStatus_ExpectedStatusDoesNotMatch_DoesNotOverwriteTask()
+    {
+        var task = CreateTask(TransferStatus.Succeeded);
+        await _store.SaveAsync(task);
+
+        var result = await _store.TryTransitionStatusAsync(
+            task.Id,
+            TransferStatus.Running,
+            TransferStatus.Canceling,
+            DateTimeOffset.UtcNow);
+
+        Assert.True(result.IsSuccess);
+        Assert.False(result.GetValueOrThrow());
+        Assert.Equal(TransferStatus.Succeeded, (await _store.GetByIdAsync(task.Id)).GetValueOrThrow().Status);
+    }
+
+    [Fact]
     public async Task List_ReturnsAllSavedTasks()
     {
         var t1 = CreateTask(TransferStatus.Pending);

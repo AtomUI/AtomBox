@@ -14,6 +14,20 @@ namespace AtomBox.Providers.Tests;
 public sealed class FtpIntegrationTests
 {
     [Fact]
+    [Trait("Category", "Integration")]
+    public async Task FtpIntegration_CancelRunningUploadAndDownload_CleansArtifacts()
+    {
+        var environment = FtpTestEnvironment.TryRead();
+        if (environment is null)
+        {
+            return;
+        }
+
+        await using var provider = await CreateProviderAsync(environment);
+        await FileTransferCancellationIntegrationTestSupport.VerifyAsync(provider, environment.CreateTestRoot());
+    }
+
+    [Fact]
     [Trait("Category", "ManualIntegration")]
     public async Task FtpIntegration_ManualUploadFileAndFolder_WhenExplicitlyEnabled()
     {

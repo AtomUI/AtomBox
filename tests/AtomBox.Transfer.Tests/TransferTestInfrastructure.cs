@@ -57,7 +57,7 @@ public sealed class MemoryTransferStore : ITransferTaskStore, ITransferStateStor
     public Task<OperationResult<IReadOnlyList<TransferStateSnapshot>>> ListQueueAsync(CancellationToken cancellationToken = default)
     {
         var queue = _tasks
-            .Where(task => task.Status is TransferStatus.Pending or TransferStatus.Running or TransferStatus.Paused or TransferStatus.Interrupted)
+            .Where(task => task.Status is TransferStatus.Pending or TransferStatus.Running or TransferStatus.Canceling or TransferStatus.Paused or TransferStatus.Interrupted)
             .Select(task => new TransferStateSnapshot(task, null))
             .ToArray();
         return Task.FromResult(OperationResult<IReadOnlyList<TransferStateSnapshot>>.Success(queue));
