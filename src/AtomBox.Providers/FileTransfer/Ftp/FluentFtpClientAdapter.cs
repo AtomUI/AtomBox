@@ -4,7 +4,7 @@ namespace AtomBox.Providers.FileTransfer.Ftp;
 
 internal sealed class FluentFtpClientAdapter : IFtpClientAdapter
 {
-    private readonly FtpClient _client;
+    private readonly AsyncFtpClient _client;
 
     public FluentFtpClientAdapter(
         string host,
@@ -14,7 +14,7 @@ internal sealed class FluentFtpClientAdapter : IFtpClientAdapter
         bool passiveMode,
         int timeoutSeconds)
     {
-        _client = new FtpClient(host, username, password, port);
+        _client = new AsyncFtpClient(host, username, password, port);
         Configure(passiveMode, timeoutSeconds);
     }
 
@@ -25,17 +25,20 @@ internal sealed class FluentFtpClientAdapter : IFtpClientAdapter
 
     public bool IsConnected => _client.IsConnected;
 
-    public void Connect()
+    public async Task ConnectAsync(CancellationToken cancellationToken)
     {
         if (!_client.IsConnected)
         {
-            _client.Connect();
+            await _client.Connect(cancellationToken).ConfigureAwait(false);
         }
     }
 
-    public IReadOnlyList<FtpRemoteEntry> ListDirectory(string path)
+    public async Task<IReadOnlyList<FtpRemoteEntry>> ListDirectoryAsync(
+        string path,
+        CancellationToken cancellationToken)
     {
-        return _client.GetListing(path)
+        var items = await _client.GetListing(path, cancellationToken).ConfigureAwait(false);
+        return items
             .Select(item => new FtpRemoteEntry(
                 item.Name,
                 item.Type == FtpObjectType.Directory,
@@ -45,57 +48,93 @@ internal sealed class FluentFtpClientAdapter : IFtpClientAdapter
             .ToArray();
     }
 
-    public bool FileExists(string path)
+    public Task<bool> FileExistsAsync(string path, CancellationToken cancellationToken)
     {
-        return _client.FileExists(path);
+        return _client.FileExists(path, cancellationToken);
     }
 
-    public bool DirectoryExists(string path)
+    public Task<bool> DirectoryExistsAsync(string path, CancellationToken cancellationToken)
     {
-        return _client.DirectoryExists(path);
+        return _client.DirectoryExists(path, cancellationToken);
     }
 
-    public void CreateDirectory(string path)
+    public Task CreateDirectoryAsync(string path, CancellationToken cancellationToken)
     {
-        _client.CreateDirectory(path, force: true);
+        return _client.CreateDirectory(path, force: true, cancellationToken);
     }
 
-    public void DeleteFile(string path)
+    public Task DeleteFileAsync(string path, CancellationToken cancellationToken)
     {
-        _client.DeleteFile(path);
+        return _client.DeleteFile(path, cancellationToken);
     }
 
-    public void DeleteDirectory(string path)
+    public Task DeleteDirectoryAsync(string path, CancellationToken cancellationToken)
     {
-        _client.DeleteDirectory(path);
+        return _client.DeleteDirectory(path, cancellationToken);
     }
 
-    public void MoveFile(string sourcePath, string destinationPath)
+    public async Task MoveFileAsync(
+        string sourcePath,
+        string destinationPath,
+        bool overwrite,
+        CancellationToken cancellationToken)
     {
-        _client.MoveFile(sourcePath, destinationPath, FtpRemoteExists.Skip);
+        var moved = await _client.MoveFile(
+            sourcePath,
+            destinationPath,
+            overwrite ? FtpRemoteExists.Overwrite : FtpRemoteExists.Skip,
+            cancellationToken).ConfigureAwait(false);
+        if (!moved)
+        {
+            throw new InvalidOperationException("FTP server did not move the remote file.");
+        }
     }
 
-    public void MoveDirectory(string sourcePath, string destinationPath)
+    public async Task MoveDirectoryAsync(
+        string sourcePath,
+        string destinationPath,
+        CancellationToken cancellationToken)
     {
-        _client.MoveDirectory(sourcePath, destinationPath, FtpRemoteExists.Skip);
+        var moved = await _client.MoveDirectory(
+            sourcePath,
+            destinationPath,
+            FtpRemoteExists.Skip,
+            cancellationToken).ConfigureAwait(false);
+        if (!moved)
+        {
+            throw new InvalidOperationException("FTP server did not move the remote directory.");
+        }
     }
 
-    public void UploadFile(Stream content, string path, Action<long>? progress = null)
+    public async Task UploadFileAsync(Stream content, string path, CancellationToken cancellationToken)
     {
-        _client.UploadStream(
+        var uploaded = await _client.UploadStream(
             content,
             path,
             FtpRemoteExists.Overwrite,
             createRemoteDir: true,
-            progress: progress is null ? null : report => progress(report.TransferredBytes));
+            progress: null,
+            cancellationToken).ConfigureAwait(false);
+        if (uploaded != FtpStatus.Success)
+        {
+            throw new InvalidOperationException("FTP server did not accept the uploaded file.");
+        }
     }
 
-    public void DownloadFile(string path, Stream destination, Action<long>? progress = null)
+    public async Task DownloadFileAsync(
+        string path,
+        Stream destination,
+        CancellationToken cancellationToken)
     {
-        _client.DownloadStream(
+        var downloaded = await _client.DownloadStream(
             destination,
             path,
-            progress: progress is null ? null : report => progress(report.TransferredBytes));
+            progress: null,
+            token: cancellationToken).ConfigureAwait(false);
+        if (!downloaded)
+        {
+            throw new InvalidOperationException("FTP server did not return the requested file.");
+        }
     }
 
     public void Dispose()

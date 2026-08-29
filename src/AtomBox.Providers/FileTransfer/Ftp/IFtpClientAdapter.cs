@@ -4,25 +4,29 @@ internal interface IFtpClientAdapter : IDisposable
 {
     bool IsConnected { get; }
 
-    void Connect();
+    Task ConnectAsync(CancellationToken cancellationToken);
 
-    IReadOnlyList<FtpRemoteEntry> ListDirectory(string path);
+    Task<IReadOnlyList<FtpRemoteEntry>> ListDirectoryAsync(string path, CancellationToken cancellationToken);
 
-    bool FileExists(string path);
+    Task<bool> FileExistsAsync(string path, CancellationToken cancellationToken);
 
-    bool DirectoryExists(string path);
+    Task<bool> DirectoryExistsAsync(string path, CancellationToken cancellationToken);
 
-    void CreateDirectory(string path);
+    Task CreateDirectoryAsync(string path, CancellationToken cancellationToken);
 
-    void DeleteFile(string path);
+    Task DeleteFileAsync(string path, CancellationToken cancellationToken);
 
-    void DeleteDirectory(string path);
+    Task DeleteDirectoryAsync(string path, CancellationToken cancellationToken);
 
-    void MoveFile(string sourcePath, string destinationPath);
+    Task MoveFileAsync(
+        string sourcePath,
+        string destinationPath,
+        bool overwrite,
+        CancellationToken cancellationToken);
 
-    void MoveDirectory(string sourcePath, string destinationPath);
+    Task MoveDirectoryAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken);
 
-    void UploadFile(Stream content, string path, Action<long>? progress = null);
+    Task UploadFileAsync(Stream content, string path, CancellationToken cancellationToken);
 
-    void DownloadFile(string path, Stream destination, Action<long>? progress = null);
+    Task DownloadFileAsync(string path, Stream destination, CancellationToken cancellationToken);
 }

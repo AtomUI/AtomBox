@@ -78,6 +78,11 @@ public static class ProviderErrorMapper
             AliyunDriveApiException driveException => FromAliyunDriveApiException(driveException),
             BaiduNetDiskApiException baiduException => FromBaiduNetDiskApiException(baiduException),
             WebDavHttpException webDavException => FromWebDavHttpException(webDavException),
+            System.Net.Sockets.SocketException => new StorageError(
+                StorageErrorCode.NetworkUnavailable,
+                "Provider network connection failed.",
+                StorageErrorCategory.Network,
+                isRetryable: true),
             HttpRequestException httpException when httpException.StatusCode is not null => FromHttpRequestException(httpException),
             HttpRequestException => new StorageError(
                 StorageErrorCode.NetworkUnavailable,

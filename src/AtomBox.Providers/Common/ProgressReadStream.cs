@@ -53,6 +53,19 @@ internal sealed class ProgressReadStream : Stream
         return read;
     }
 
+    public override async Task<int> ReadAsync(
+        byte[] buffer,
+        int offset,
+        int count,
+        CancellationToken cancellationToken)
+    {
+        var read = await _inner
+            .ReadAsync(buffer.AsMemory(offset, count), cancellationToken)
+            .ConfigureAwait(false);
+        Report(read);
+        return read;
+    }
+
     public override long Seek(long offset, SeekOrigin origin)
     {
         return _inner.Seek(offset, origin);

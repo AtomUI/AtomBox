@@ -66,59 +66,81 @@ internal sealed class SshNetSftpClientAdapter : ISftpClientAdapter
         }
     }
 
-    public IReadOnlyList<SftpRemoteEntry> ListDirectory(string path)
+    public async Task ConnectAsync(CancellationToken cancellationToken)
     {
-        return _client.ListDirectory(path)
-            .Select(item => new SftpRemoteEntry(
+        if (!_client.IsConnected)
+        {
+            await _client.ConnectAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
+    public async Task<IReadOnlyList<SftpRemoteEntry>> ListDirectoryAsync(
+        string path,
+        CancellationToken cancellationToken)
+    {
+        var entries = new List<SftpRemoteEntry>();
+        await foreach (var item in _client.ListDirectoryAsync(path, cancellationToken).ConfigureAwait(false))
+        {
+            entries.Add(new SftpRemoteEntry(
                 item.Name,
                 item.IsDirectory,
                 item.IsRegularFile,
                 item.Length,
-                item.LastWriteTime))
-            .ToArray();
+                item.LastWriteTime));
+        }
+
+        return entries;
     }
 
-    public bool FileExists(string path)
+    public async Task<bool> FileExistsAsync(string path, CancellationToken cancellationToken)
     {
-        return _client.Exists(path) && _client.GetAttributes(path).IsRegularFile;
+        return await _client.ExistsAsync(path, cancellationToken).ConfigureAwait(false) &&
+               (await _client.GetAttributesAsync(path, cancellationToken).ConfigureAwait(false)).IsRegularFile;
     }
 
-    public bool DirectoryExists(string path)
+    public async Task<bool> DirectoryExistsAsync(string path, CancellationToken cancellationToken)
     {
-        return _client.Exists(path) && _client.GetAttributes(path).IsDirectory;
+        return await _client.ExistsAsync(path, cancellationToken).ConfigureAwait(false) &&
+               (await _client.GetAttributesAsync(path, cancellationToken).ConfigureAwait(false)).IsDirectory;
     }
 
-    public void CreateDirectory(string path)
+    public async Task CreateDirectoryAsync(string path, CancellationToken cancellationToken)
     {
-        if (!_client.Exists(path))
+        if (!await _client.ExistsAsync(path, cancellationToken).ConfigureAwait(false))
         {
-            _client.CreateDirectory(path);
+            await _client.CreateDirectoryAsync(path, cancellationToken).ConfigureAwait(false);
         }
     }
 
-    public void DeleteFile(string path)
+    public Task DeleteFileAsync(string path, CancellationToken cancellationToken)
     {
-        _client.DeleteFile(path);
+        return _client.DeleteFileAsync(path, cancellationToken);
     }
 
-    public void DeleteDirectory(string path)
+    public Task DeleteDirectoryAsync(string path, CancellationToken cancellationToken)
     {
-        _client.DeleteDirectory(path);
+        return _client.DeleteDirectoryAsync(path, cancellationToken);
     }
 
-    public void Move(string sourcePath, string destinationPath)
+    public Task MoveAsync(
+        string sourcePath,
+        string destinationPath,
+        CancellationToken cancellationToken)
     {
-        _client.RenameFile(sourcePath, destinationPath);
+        return _client.RenameFileAsync(sourcePath, destinationPath, cancellationToken);
     }
 
-    public void UploadFile(Stream content, string path, Action<ulong>? progress = null)
+    public Task UploadFileAsync(Stream content, string path, CancellationToken cancellationToken)
     {
-        _client.UploadFile(content, path, canOverride: true, uploadCallback: progress);
+        return _client.UploadFileAsync(content, path, cancellationToken);
     }
 
-    public void DownloadFile(string path, Stream destination, Action<ulong>? progress = null)
+    public Task DownloadFileAsync(
+        string path,
+        Stream destination,
+        CancellationToken cancellationToken)
     {
-        _client.DownloadFile(path, destination, downloadCallback: progress);
+        return _client.DownloadFileAsync(path, destination, cancellationToken);
     }
 
     public void Dispose()

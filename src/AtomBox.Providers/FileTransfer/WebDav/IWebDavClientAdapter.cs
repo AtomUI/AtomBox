@@ -2,19 +2,23 @@ namespace AtomBox.Providers.FileTransfer.WebDav;
 
 internal interface IWebDavClientAdapter : IDisposable
 {
-    IReadOnlyList<WebDavRemoteEntry> ListDirectory(string path);
+    Task<IReadOnlyList<WebDavRemoteEntry>> ListDirectoryAsync(string path, CancellationToken cancellationToken);
 
-    bool FileExists(string path);
+    Task<bool> FileExistsAsync(string path, CancellationToken cancellationToken);
 
-    bool DirectoryExists(string path);
+    Task<bool> DirectoryExistsAsync(string path, CancellationToken cancellationToken);
 
-    void CreateDirectory(string path);
+    Task CreateDirectoryAsync(string path, CancellationToken cancellationToken);
 
-    void Delete(string path);
+    Task DeleteAsync(string path, CancellationToken cancellationToken);
 
-    void Move(string sourcePath, string destinationPath);
+    Task MoveAsync(
+        string sourcePath,
+        string destinationPath,
+        bool overwrite,
+        CancellationToken cancellationToken);
 
-    void UploadFile(Stream content, string path, Action<long>? progress = null);
+    Task UploadFileAsync(Stream content, string path, CancellationToken cancellationToken);
 
-    void DownloadFile(string path, Stream destination, Action<long>? progress = null);
+    Task DownloadFileAsync(string path, Stream destination, CancellationToken cancellationToken);
 }

@@ -35,28 +35,34 @@ internal sealed class WebDavHttpClientAdapter : IWebDavClientAdapter
         }
     }
 
-    public IReadOnlyList<WebDavRemoteEntry> ListDirectory(string path)
+    public async Task<IReadOnlyList<WebDavRemoteEntry>> ListDirectoryAsync(
+        string path,
+        CancellationToken cancellationToken)
     {
-        var entries = PropFind(path, "1");
+        var entries = await PropFindAsync(path, "1", cancellationToken).ConfigureAwait(false);
         return entries
             .Where(entry => !IsSamePath(entry.Path, path))
             .Select(entry => entry.ToRemoteEntry())
             .ToArray();
     }
 
-    public bool FileExists(string path)
+    public async Task<bool> FileExistsAsync(string path, CancellationToken cancellationToken)
     {
-        return TryGetEntry(path, out var entry) && !entry.IsDirectory;
+        var entry = await TryGetEntryAsync(path, cancellationToken).ConfigureAwait(false);
+        return entry is not null && !entry.IsDirectory;
     }
 
-    public bool DirectoryExists(string path)
+    public async Task<bool> DirectoryExistsAsync(string path, CancellationToken cancellationToken)
     {
-        return TryGetEntry(path, out var entry) && entry.IsDirectory;
+        var entry = await TryGetEntryAsync(path, cancellationToken).ConfigureAwait(false);
+        return entry?.IsDirectory == true;
     }
 
-    public void CreateDirectory(string path)
+    public async Task CreateDirectoryAsync(string path, CancellationToken cancellationToken)
     {
-        using var response = Send(new HttpRequestMessage(new HttpMethod("MKCOL"), BuildUri(path)));
+        using var response = await SendAsync(
+            new HttpRequestMessage(new HttpMethod("MKCOL"), BuildUri(path)),
+            cancellationToken).ConfigureAwait(false);
         if (response.StatusCode is HttpStatusCode.Created or HttpStatusCode.MethodNotAllowed)
         {
             return;
@@ -65,48 +71,46 @@ internal sealed class WebDavHttpClientAdapter : IWebDavClientAdapter
         EnsureSuccess(response);
     }
 
-    public void Delete(string path)
+    public async Task DeleteAsync(string path, CancellationToken cancellationToken)
     {
-        using var response = Send(new HttpRequestMessage(HttpMethod.Delete, BuildUri(path)));
+        using var response = await SendAsync(
+            new HttpRequestMessage(HttpMethod.Delete, BuildUri(path)),
+            cancellationToken).ConfigureAwait(false);
         EnsureSuccess(response, HttpStatusCode.NoContent, HttpStatusCode.OK, HttpStatusCode.MultiStatus);
     }
 
-    public void Move(string sourcePath, string destinationPath)
+    public async Task MoveAsync(
+        string sourcePath,
+        string destinationPath,
+        bool overwrite,
+        CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(new HttpMethod("MOVE"), BuildUri(sourcePath));
         request.Headers.TryAddWithoutValidation("Destination", BuildUri(destinationPath).AbsoluteUri);
-        request.Headers.TryAddWithoutValidation("Overwrite", "F");
-        using var response = Send(request);
+        request.Headers.TryAddWithoutValidation("Overwrite", overwrite ? "T" : "F");
+        using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
         EnsureSuccess(response, HttpStatusCode.Created, HttpStatusCode.NoContent);
     }
 
-    public void UploadFile(Stream content, string path, Action<long>? progress = null)
+    public async Task UploadFileAsync(Stream content, string path, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, BuildUri(path));
-        request.Content = new ProgressHttpContent(content, progress);
-        using var response = Send(request);
+        request.Content = new StreamContent(content);
+        using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
         EnsureSuccess(response, HttpStatusCode.Created, HttpStatusCode.NoContent, HttpStatusCode.OK);
     }
 
-    public void DownloadFile(string path, Stream destination, Action<long>? progress = null)
+    public async Task DownloadFileAsync(
+        string path,
+        Stream destination,
+        CancellationToken cancellationToken)
     {
-        using var response = Send(new HttpRequestMessage(HttpMethod.Get, BuildUri(path)));
+        using var response = await SendAsync(
+            new HttpRequestMessage(HttpMethod.Get, BuildUri(path)),
+            cancellationToken).ConfigureAwait(false);
         EnsureSuccess(response, HttpStatusCode.OK);
-        using var stream = response.Content.ReadAsStream();
-        var buffer = new byte[81920];
-        long transferred = 0;
-        while (true)
-        {
-            var read = stream.Read(buffer, 0, buffer.Length);
-            if (read == 0)
-            {
-                break;
-            }
-
-            destination.Write(buffer, 0, read);
-            transferred += read;
-            progress?.Invoke(transferred);
-        }
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+        await stream.CopyToAsync(destination, cancellationToken).ConfigureAwait(false);
     }
 
     public void Dispose()
@@ -114,26 +118,27 @@ internal sealed class WebDavHttpClientAdapter : IWebDavClientAdapter
         _client.Dispose();
     }
 
-    private bool TryGetEntry(string path, out WebDavEntry entry)
+    private async Task<WebDavEntry?> TryGetEntryAsync(string path, CancellationToken cancellationToken)
     {
         try
         {
-            entry = PropFind(path, "0").First(item => IsSamePath(item.Path, path));
-            return true;
+            return (await PropFindAsync(path, "0", cancellationToken).ConfigureAwait(false))
+                .First(item => IsSamePath(item.Path, path));
         }
         catch (WebDavHttpException exception) when (exception.StatusCode == 404)
         {
-            entry = default!;
-            return false;
+            return null;
         }
         catch (InvalidOperationException)
         {
-            entry = default!;
-            return false;
+            return null;
         }
     }
 
-    private IReadOnlyList<WebDavEntry> PropFind(string path, string depth)
+    private async Task<IReadOnlyList<WebDavEntry>> PropFindAsync(
+        string path,
+        string depth,
+        CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(new HttpMethod("PROPFIND"), BuildUri(path));
         request.Headers.TryAddWithoutValidation("Depth", depth);
@@ -152,9 +157,9 @@ internal sealed class WebDavHttpClientAdapter : IWebDavClientAdapter
             Encoding.UTF8,
             "application/xml");
 
-        using var response = Send(request);
+        using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
         EnsureSuccess(response, HttpStatusCode.MultiStatus);
-        var xml = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+        var xml = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         var document = XDocument.Parse(xml);
         return document
             .Descendants(Dav + "response")
@@ -207,9 +212,11 @@ internal sealed class WebDavHttpClientAdapter : IWebDavClientAdapter
         return new WebDavEntry(NormalizePath(decodedPath), name, isDirectory, length, modified);
     }
 
-    private HttpResponseMessage Send(HttpRequestMessage request)
+    private Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
     {
-        return _client.Send(request, HttpCompletionOption.ResponseHeadersRead);
+        return _client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken);
     }
 
     private static void EnsureSuccess(HttpResponseMessage response, params HttpStatusCode[] accepted)
@@ -285,63 +292,4 @@ internal sealed class WebDavHttpClientAdapter : IWebDavClientAdapter
         }
     }
 
-    private sealed class ProgressHttpContent : HttpContent
-    {
-        private readonly Stream _source;
-        private readonly Action<long>? _progress;
-
-        public ProgressHttpContent(Stream source, Action<long>? progress)
-        {
-            _source = source;
-            _progress = progress;
-        }
-
-        protected override void SerializeToStream(Stream stream, TransportContext? context, CancellationToken cancellationToken)
-        {
-            var buffer = new byte[81920];
-            long transferred = 0;
-            while (true)
-            {
-                var read = _source.Read(buffer, 0, buffer.Length);
-                if (read == 0)
-                {
-                    break;
-                }
-
-                stream.Write(buffer, 0, read);
-                transferred += read;
-                _progress?.Invoke(transferred);
-            }
-        }
-
-        protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
-        {
-            var buffer = new byte[81920];
-            long transferred = 0;
-            while (true)
-            {
-                var read = await _source.ReadAsync(buffer).ConfigureAwait(false);
-                if (read == 0)
-                {
-                    break;
-                }
-
-                await stream.WriteAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
-                transferred += read;
-                _progress?.Invoke(transferred);
-            }
-        }
-
-        protected override bool TryComputeLength(out long length)
-        {
-            if (_source.CanSeek)
-            {
-                length = _source.Length - _source.Position;
-                return true;
-            }
-
-            length = 0;
-            return false;
-        }
-    }
 }

@@ -30,31 +30,31 @@ public sealed class FtpStorageProvider : IStorageProvider
 
     public StorageCapabilitySet Capabilities { get; }
 
-    public Task<OperationResult<IReadOnlyList<RemoteItem>>> ListAsync(
+    public async Task<OperationResult<IReadOnlyList<RemoteItem>>> ListAsync(
         RemotePath path,
         CancellationToken cancellationToken = default)
     {
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            EnsureConnected();
+            await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
 
-            var items = _client.ListDirectory(ToFtpPath(path))
+            var entries = await _client.ListDirectoryAsync(ToFtpPath(path), cancellationToken).ConfigureAwait(false);
+            var items = entries
                 .Where(item => item.Name is not "." and not "..")
                 .Where(item => item.IsDirectory || item.IsFile)
                 .Select(item => ToRemoteItem(path, item))
                 .ToArray();
 
-            return Task.FromResult(OperationResult<IReadOnlyList<RemoteItem>>.Success(items));
+            return OperationResult<IReadOnlyList<RemoteItem>>.Success(items);
         }
         catch (Exception exception)
         {
-            return Task.FromResult(OperationResult<IReadOnlyList<RemoteItem>>.Failure(
-                ProviderErrorMapper.FromException(exception)));
+            return OperationResult<IReadOnlyList<RemoteItem>>.Failure(ProviderErrorMapper.FromException(exception));
         }
     }
 
-    public Task<OperationResult> DeleteAsync(
+    public async Task<OperationResult> DeleteAsync(
         RemotePath path,
         CancellationToken cancellationToken = default)
     {
@@ -63,73 +63,102 @@ public sealed class FtpStorageProvider : IStorageProvider
             cancellationToken.ThrowIfCancellationRequested();
             if (path.IsRoot)
             {
-                return Task.FromResult(OperationResult.Failure(StorageError.Validation("Root path cannot be deleted.")));
+                return OperationResult.Failure(StorageError.Validation("Root path cannot be deleted."));
             }
 
-            EnsureConnected();
+            await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
             var remotePath = ToFtpPath(path);
             if (path.Kind == RemotePathKind.Folder)
             {
-                if (!_client.DirectoryExists(remotePath))
+                if (!await _client.DirectoryExistsAsync(remotePath, cancellationToken).ConfigureAwait(false))
                 {
-                    return Task.FromResult(OperationResult.Failure(StorageError.NotFound("Remote folder was not found.")));
+                    return OperationResult.Failure(StorageError.NotFound("Remote folder was not found."));
                 }
 
-                _client.DeleteDirectory(remotePath);
+                await _client.DeleteDirectoryAsync(remotePath, cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                if (!_client.FileExists(remotePath))
+                if (!await _client.FileExistsAsync(remotePath, cancellationToken).ConfigureAwait(false))
                 {
-                    return Task.FromResult(OperationResult.Failure(StorageError.NotFound("Remote file was not found.")));
+                    return OperationResult.Failure(StorageError.NotFound("Remote file was not found."));
                 }
 
-                _client.DeleteFile(remotePath);
+                await _client.DeleteFileAsync(remotePath, cancellationToken).ConfigureAwait(false);
             }
 
-            return Task.FromResult(OperationResult.Success());
+            return OperationResult.Success();
         }
         catch (Exception exception)
         {
-            return Task.FromResult(OperationResult.Failure(ProviderErrorMapper.FromException(exception)));
+            return OperationResult.Failure(ProviderErrorMapper.FromException(exception));
         }
     }
 
-    public Task<OperationResult> UploadAsync(
+    public async Task<OperationResult> UploadAsync(
         RemotePath path,
         Stream content,
         long? contentLength,
         IProgress<TransferProgress>? progress = null,
         CancellationToken cancellationToken = default)
     {
+        string? temporaryPath = null;
+        var committed = false;
+        OperationResult operationResult;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
             ArgumentNullException.ThrowIfNull(content);
             if (path.IsRoot)
             {
-                return Task.FromResult(OperationResult.Failure(StorageError.Validation("Upload target path is required.")));
+                return OperationResult.Failure(StorageError.Validation("Upload target path is required."));
             }
 
-            EnsureConnected();
+            await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
             var remotePath = ToFtpPath(path);
-            EnsureParentDirectories(remotePath);
-            _client.UploadFile(content, remotePath, bytes =>
-                progress?.Report(new TransferProgress(bytes, contentLength, null)));
+            await EnsureParentDirectoriesAsync(remotePath, cancellationToken).ConfigureAwait(false);
+            temporaryPath = RemoteTransferTemporaryPath.CreateUploadPath(remotePath);
+            var progressStream = new ProgressReadStream(content, contentLength, progress);
+            await _client.UploadFileAsync(progressStream, temporaryPath, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            await _client.MoveFileAsync(
+                temporaryPath,
+                remotePath,
+                overwrite: true,
+                CancellationToken.None).ConfigureAwait(false);
+            committed = true;
             if (contentLength is not null)
             {
                 progress?.Report(new TransferProgress(contentLength.Value, contentLength.Value, null));
             }
 
-            return Task.FromResult(OperationResult.Success());
+            return OperationResult.Success();
         }
         catch (Exception exception)
         {
-            return Task.FromResult(OperationResult.Failure(ProviderErrorMapper.FromException(exception)));
+            operationResult = OperationResult.Failure(ProviderErrorMapper.FromException(exception));
         }
+
+        if (temporaryPath is null || committed)
+        {
+            return operationResult;
+        }
+
+        var cleanupResult = await TemporaryTransferCleanup.RunAsync(
+            async cleanupToken =>
+            {
+                await EnsureConnectedAsync(cleanupToken).ConfigureAwait(false);
+                if (await _client.FileExistsAsync(temporaryPath, cleanupToken).ConfigureAwait(false))
+                {
+                    await _client.DeleteFileAsync(temporaryPath, cleanupToken).ConfigureAwait(false);
+                }
+            },
+            temporaryPath).ConfigureAwait(false);
+        return TemporaryTransferCleanup.AppendWarning(operationResult, cleanupResult);
     }
 
-    public Task<OperationResult> CreateFolderAsync(
+    public async Task<OperationResult> CreateFolderAsync(
         RemotePath path,
         CancellationToken cancellationToken = default)
     {
@@ -138,34 +167,34 @@ public sealed class FtpStorageProvider : IStorageProvider
             cancellationToken.ThrowIfCancellationRequested();
             if (path.IsRoot)
             {
-                return Task.FromResult(OperationResult.Failure(StorageError.Validation("Folder path is required.")));
+                return OperationResult.Failure(StorageError.Validation("Folder path is required."));
             }
 
-            EnsureConnected();
+            await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
             var remotePath = ToFtpPath(path);
-            if (_client.FileExists(remotePath))
+            if (await _client.FileExistsAsync(remotePath, cancellationToken).ConfigureAwait(false))
             {
-                return Task.FromResult(OperationResult.Failure(new StorageError(
+                return OperationResult.Failure(new StorageError(
                     StorageErrorCode.Conflict,
                     "Remote path already exists as a file.",
-                    StorageErrorCategory.Conflict)));
+                    StorageErrorCategory.Conflict));
             }
 
-            EnsureParentDirectories(remotePath);
-            if (!_client.DirectoryExists(remotePath))
+            await EnsureParentDirectoriesAsync(remotePath, cancellationToken).ConfigureAwait(false);
+            if (!await _client.DirectoryExistsAsync(remotePath, cancellationToken).ConfigureAwait(false))
             {
-                _client.CreateDirectory(remotePath);
+                await _client.CreateDirectoryAsync(remotePath, cancellationToken).ConfigureAwait(false);
             }
 
-            return Task.FromResult(OperationResult.Success());
+            return OperationResult.Success();
         }
         catch (Exception exception)
         {
-            return Task.FromResult(OperationResult.Failure(ProviderErrorMapper.FromException(exception)));
+            return OperationResult.Failure(ProviderErrorMapper.FromException(exception));
         }
     }
 
-    public Task<OperationResult> MoveAsync(
+    public async Task<OperationResult> MoveAsync(
         RemotePath sourcePath,
         RemotePath destinationPath,
         CancellationToken cancellationToken = default)
@@ -175,48 +204,53 @@ public sealed class FtpStorageProvider : IStorageProvider
             cancellationToken.ThrowIfCancellationRequested();
             if (sourcePath.IsRoot || destinationPath.IsRoot)
             {
-                return Task.FromResult(OperationResult.Failure(StorageError.Validation("Source and destination paths are required.")));
+                return OperationResult.Failure(StorageError.Validation("Source and destination paths are required."));
             }
 
-            EnsureConnected();
+            await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
             var sourceRemotePath = ToFtpPath(sourcePath);
             var destinationRemotePath = ToFtpPath(destinationPath);
             var isFolder = sourcePath.Kind == RemotePathKind.Folder;
             if (isFolder)
             {
-                if (!_client.DirectoryExists(sourceRemotePath))
+                if (!await _client.DirectoryExistsAsync(sourceRemotePath, cancellationToken).ConfigureAwait(false))
                 {
-                    return Task.FromResult(OperationResult.Failure(StorageError.NotFound("Remote folder was not found.")));
+                    return OperationResult.Failure(StorageError.NotFound("Remote folder was not found."));
                 }
             }
-            else if (!_client.FileExists(sourceRemotePath))
+            else if (!await _client.FileExistsAsync(sourceRemotePath, cancellationToken).ConfigureAwait(false))
             {
-                return Task.FromResult(OperationResult.Failure(StorageError.NotFound("Remote file was not found.")));
+                return OperationResult.Failure(StorageError.NotFound("Remote file was not found."));
             }
 
-            if (_client.FileExists(destinationRemotePath) || _client.DirectoryExists(destinationRemotePath))
+            if (await _client.FileExistsAsync(destinationRemotePath, cancellationToken).ConfigureAwait(false) ||
+                await _client.DirectoryExistsAsync(destinationRemotePath, cancellationToken).ConfigureAwait(false))
             {
-                return Task.FromResult(OperationResult.Failure(new StorageError(
+                return OperationResult.Failure(new StorageError(
                     StorageErrorCode.Conflict,
                     "Remote destination path already exists.",
-                    StorageErrorCategory.Conflict)));
+                    StorageErrorCategory.Conflict));
             }
 
-            EnsureParentDirectories(destinationRemotePath);
+            await EnsureParentDirectoriesAsync(destinationRemotePath, cancellationToken).ConfigureAwait(false);
             if (isFolder)
             {
-                _client.MoveDirectory(sourceRemotePath, destinationRemotePath);
+                await _client.MoveDirectoryAsync(sourceRemotePath, destinationRemotePath, cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                _client.MoveFile(sourceRemotePath, destinationRemotePath);
+                await _client.MoveFileAsync(
+                    sourceRemotePath,
+                    destinationRemotePath,
+                    overwrite: false,
+                    cancellationToken).ConfigureAwait(false);
             }
 
-            return Task.FromResult(OperationResult.Success());
+            return OperationResult.Success();
         }
         catch (Exception exception)
         {
-            return Task.FromResult(OperationResult.Failure(ProviderErrorMapper.FromException(exception)));
+            return OperationResult.Failure(ProviderErrorMapper.FromException(exception));
         }
     }
 
@@ -241,7 +275,7 @@ public sealed class FtpStorageProvider : IStorageProvider
         return MoveAsync(path, parent.Combine(newName, path.Kind), cancellationToken);
     }
 
-    public Task<OperationResult> DownloadAsync(
+    public async Task<OperationResult> DownloadAsync(
         RemotePath path,
         Stream destination,
         IProgress<TransferProgress>? progress = null,
@@ -253,28 +287,28 @@ public sealed class FtpStorageProvider : IStorageProvider
             ArgumentNullException.ThrowIfNull(destination);
             if (path.IsRoot)
             {
-                return Task.FromResult(OperationResult.Failure(StorageError.Validation("Download source path is required.")));
+                return OperationResult.Failure(StorageError.Validation("Download source path is required."));
             }
 
-            EnsureConnected();
+            await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
             var remotePath = ToFtpPath(path);
-            if (_client.DirectoryExists(remotePath))
+            if (await _client.DirectoryExistsAsync(remotePath, cancellationToken).ConfigureAwait(false))
             {
-                return Task.FromResult(OperationResult.Failure(StorageError.Validation("Download source path is a folder.")));
+                return OperationResult.Failure(StorageError.Validation("Download source path is a folder."));
             }
 
-            if (!_client.FileExists(remotePath))
+            if (!await _client.FileExistsAsync(remotePath, cancellationToken).ConfigureAwait(false))
             {
-                return Task.FromResult(OperationResult.Failure(StorageError.NotFound("Remote file was not found.")));
+                return OperationResult.Failure(StorageError.NotFound("Remote file was not found."));
             }
 
-            _client.DownloadFile(remotePath, destination, bytes =>
-                progress?.Report(new TransferProgress(bytes, null, null)));
-            return Task.FromResult(OperationResult.Success());
+            var progressStream = new ProgressWriteStream(destination, totalBytes: null, progress);
+            await _client.DownloadFileAsync(remotePath, progressStream, cancellationToken).ConfigureAwait(false);
+            return OperationResult.Success();
         }
         catch (Exception exception)
         {
-            return Task.FromResult(OperationResult.Failure(ProviderErrorMapper.FromException(exception)));
+            return OperationResult.Failure(ProviderErrorMapper.FromException(exception));
         }
     }
 
@@ -284,12 +318,11 @@ public sealed class FtpStorageProvider : IStorageProvider
         await _credentialLease.DisposeAsync().ConfigureAwait(false);
     }
 
-    private void EnsureConnected()
+    private Task EnsureConnectedAsync(CancellationToken cancellationToken)
     {
-        if (!_client.IsConnected)
-        {
-            _client.Connect();
-        }
+        return _client.IsConnected
+            ? Task.CompletedTask
+            : _client.ConnectAsync(cancellationToken);
     }
 
     private RemoteItem ToRemoteItem(RemotePath currentPath, FtpRemoteEntry entry)
@@ -316,16 +349,17 @@ public sealed class FtpStorageProvider : IStorageProvider
             : $"{_rootPath}/{relativePath}";
     }
 
-    private void EnsureParentDirectories(string remotePath)
+    private async Task EnsureParentDirectoriesAsync(string remotePath, CancellationToken cancellationToken)
     {
         var parent = GetParentPath(remotePath);
-        if (string.IsNullOrWhiteSpace(parent) || parent == "/" || _client.DirectoryExists(parent))
+        if (string.IsNullOrWhiteSpace(parent) || parent == "/" ||
+            await _client.DirectoryExistsAsync(parent, cancellationToken).ConfigureAwait(false))
         {
             return;
         }
 
-        EnsureParentDirectories(parent);
-        _client.CreateDirectory(parent);
+        await EnsureParentDirectoriesAsync(parent, cancellationToken).ConfigureAwait(false);
+        await _client.CreateDirectoryAsync(parent, cancellationToken).ConfigureAwait(false);
     }
 
     private static string? GetParentPath(string remotePath)

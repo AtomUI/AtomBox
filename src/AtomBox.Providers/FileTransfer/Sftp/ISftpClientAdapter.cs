@@ -8,21 +8,23 @@ internal interface ISftpClientAdapter : IDisposable
 
     void Connect();
 
-    IReadOnlyList<SftpRemoteEntry> ListDirectory(string path);
+    Task ConnectAsync(CancellationToken cancellationToken);
 
-    bool FileExists(string path);
+    Task<IReadOnlyList<SftpRemoteEntry>> ListDirectoryAsync(string path, CancellationToken cancellationToken);
 
-    bool DirectoryExists(string path);
+    Task<bool> FileExistsAsync(string path, CancellationToken cancellationToken);
 
-    void CreateDirectory(string path);
+    Task<bool> DirectoryExistsAsync(string path, CancellationToken cancellationToken);
 
-    void DeleteFile(string path);
+    Task CreateDirectoryAsync(string path, CancellationToken cancellationToken);
 
-    void DeleteDirectory(string path);
+    Task DeleteFileAsync(string path, CancellationToken cancellationToken);
 
-    void Move(string sourcePath, string destinationPath);
+    Task DeleteDirectoryAsync(string path, CancellationToken cancellationToken);
 
-    void UploadFile(Stream content, string path, Action<ulong>? progress = null);
+    Task MoveAsync(string sourcePath, string destinationPath, CancellationToken cancellationToken);
 
-    void DownloadFile(string path, Stream destination, Action<ulong>? progress = null);
+    Task UploadFileAsync(Stream content, string path, CancellationToken cancellationToken);
+
+    Task DownloadFileAsync(string path, Stream destination, CancellationToken cancellationToken);
 }
