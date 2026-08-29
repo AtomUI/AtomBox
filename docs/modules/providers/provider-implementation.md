@@ -134,6 +134,16 @@ Provider 负责：
 
 Provider 可以在内部使用对象存储 multipart、SFTP 流式写入、网盘分片上传等协议能力，但这些实现细节不能泄漏给 Transfer。Transfer 只根据 Core 能力模型做任务级调度，不理解某个 SDK 的分片对象。
 
+FTP、SFTP 和 WebDAV 的上传必须先写入目标同目录的 `.atombox-upload-<guid>.part`，上传完成且未收到取消后，
+再通过远端 rename/move 提交到最终路径。取消或失败时使用独立的 10 秒清理令牌删除临时文件，不能继续使用
+已经取消的任务令牌。下载由 Infrastructure 先写入本地同目录 `.atombox-download-<guid>.part`，成功后原子移动
+到最终路径；取消或失败时删除临时文件，并保留原有目标文件。
+
+文件传输适配器必须使用底层库的异步可取消接口：FTP 使用 FluentFTP `AsyncFtpClient`，SFTP 使用 SSH.NET
+异步 API，WebDAV 使用 `HttpClient.SendAsync` 并传入任务令牌。同步 SDK 调用外包一层 `Task` 不构成真实取消。
+当前规则只覆盖 FTP、SFTP 和 WebDAV；对象存储 Provider 的请求级取消、multipart abort 和部分对象清理属于
+后续独立批次。
+
 ## 8. 异常与日志
 
 Provider 内部必须建立错误映射。

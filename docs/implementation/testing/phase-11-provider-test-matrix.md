@@ -361,6 +361,7 @@ ATOMBOX_OSS_TEST_PREFIX=atombox-tests/
 | `Sftp_PathMapping_Should_SupportCurrentWorkingDirectoryRoot` | `rootPath=.` 时使用登录后的当前工作目录，不强制拼成绝对路径。 |
 | `Sftp_PathMapping_Should_SupportSlashRootWithoutDuplicateSeparators` | `rootPath=/` 时远端路径形如 `/folder/file.txt`，不能出现重复斜杠。 |
 | `Sftp_PathMapping_Should_PreserveSpecialCharacterSegments` | 中文、空格、`#`、`+` 等路径段应原样传递给 SFTP adapter。 |
+| `Sftp_CancelRunningUpload_Should_StopSdkAndDeleteTemporaryFile` | 运行中取消必须进入 SSH.NET 异步取消，删除 `.atombox-upload-*.part`，且不得覆盖原目标。 |
 
 ### 10.3 FTP 配置与认证
 
@@ -389,6 +390,7 @@ ATOMBOX_OSS_TEST_PREFIX=atombox-tests/
 | `Ftp_DeleteFile_Should_CallDeleteFile` | 文件路径删除走协议 file delete。 |
 | `Ftp_DeleteFolder_Should_CallDeleteDirectory` | `RemotePathKind.Folder` 删除走协议 directory delete。 |
 | `Ftp_DeleteRoot_Should_ReturnValidation` | root 不允许删除。 |
+| `Ftp_CancelRunningUpload_Should_StopSdkAndDeleteTemporaryFile` | 运行中取消必须进入 FluentFTP 异步取消，删除 `.atombox-upload-*.part`，且不得覆盖原目标。 |
 
 ### 10.5 SFTP / FTP Opt-in Integration Tests
 
@@ -458,6 +460,7 @@ ATOMBOX_FTP_TEST_PREFIX=atombox-tests/
 | `WebDav_MoveFolder_Should_CreateDestinationParentAndMove` | 目录移动前创建目标父目录，并走 MOVE。 |
 | `WebDav_MoveToExistingDestination_Should_ReturnConflict` | 目标路径已存在返回 Conflict。 |
 | `WebDav_DeleteRoot_Should_ReturnValidation` | root 不允许删除。 |
+| `WebDav_CancelRunningUpload_Should_StopHttpRequestAndDeleteTemporaryFile` | 运行中取消必须取消 HTTP 请求，删除 `.atombox-upload-*.part`，且不得覆盖原目标。 |
 
 ### 10.8 WebDAV Opt-in Integration Tests
 

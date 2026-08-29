@@ -18,7 +18,7 @@
 
 ## 1. 阶段目标
 
-对 `AtomBox.Transfer` 模块进行独立、完备的功能性测试。Round 1 用 fake provider + in-memory store 覆盖全部 7 种状态流转、调度器编排、worker 执行路径和队列/历史快照，不依赖 Application 层和真实 provider。Round 2 接入真实 `IStorageProvider` 实现验证 Transfer 端到端集成。
+对 `AtomBox.Transfer` 模块进行独立、完备的功能性测试。Round 1 用 fake provider + in-memory store 覆盖全部 8 种状态流转、调度器编排、worker 执行路径和队列/历史快照，不依赖 Application 层和真实 provider。Round 2 接入真实 `IStorageProvider` 实现验证 Transfer 端到端集成。
 
 Transfer 是调度器，不是 Application，不是 Provider。测试必须围绕调度语义设计，不能退化为 Application scenario 或 provider 集成测试。
 
@@ -26,7 +26,7 @@ Transfer 是调度器，不是 Application，不是 Provider。测试必须围�
 
 ### 2.1 Round 1 必须覆盖（本轮核心）
 
-- TransferTask 模型校验与状态机规则（7 种状态，合法/非法流转）
+- TransferTask 模型校验与状态机规则（8 种状态，合法/非法流转）
 - TransferQueue 队列选择逻辑（排序、过滤）
 - TransferWorker 完整执行路径（upload + download + 失败 + 取消 + 中断）
 - TransferTaskScheduler 编排逻辑（submit / cancel / retry / wake）
@@ -111,7 +111,7 @@ Round 2 需要：
 | `TransferProgress_NegativeSpeed_Throws` | speedBytesPerSecond \< 0 抛 ArgumentOutOfRangeException |
 | `TransferProgress_Percent_ComputesCorrectly` | (25, 100) → 25%；TotalBytes=null → null |
 | `TransferProgress_Percent_ClampsTo100` | (150, 100) → 100 |
-| `TransferStatus_Values_AreStable` | 枚举值顺序不变（后端持久化依赖数值）：Pending=0, Running=1, Paused=2, Interrupted=3, Succeeded=4, Failed=5, Canceled=6 |
+| `TransferStatus_Values_AreStable` | 枚举值顺序不变（后端持久化依赖数值）：Pending=0, Running=1, Paused=2, Interrupted=3, Succeeded=4, Failed=5, Canceled=6, Canceling=7 |
 
 ### 5.2 状态机规则
 
@@ -123,6 +123,7 @@ Round 2 需要：
 | `Running_To_Succeeded` | 成功流转，UpdatedAt 更新 |
 | `Running_To_Failed` | StatusReason / ErrorCategory / IsRetryable 正确填充 |
 | `Running_To_Canceled` | 运行中取消成功 |
+| `Running_To_Canceling_To_Canceled` | 用户取消先进入 Canceling，底层退出并清理完成后才进入 Canceled |
 | `Running_To_Interrupted` | 应用关闭中断，IsRetryable=true |
 | `Failed_CanRetry_CanCancel_State` | CanRetry=true，CanCancel=false |
 | `Failed_To_Pending` | Retry 重置，清除 StatusReason / ErrorCategory / IsRetryable |
@@ -161,7 +162,7 @@ Round 2 需要：
 | `Upload_LocalFileNotFound` | Status=Failed，ErrorCategory=NotFound（本地文件不存在） |
 | `Upload_RemoteConflict` | Status=Failed，ErrorCategory=Conflict |
 | `Upload_NetworkTimeout` | Status=Failed，ErrorCategory=Network，IsRetryable=true |
-| `Upload_CancelledDuringExecution` | Status=Interrupted，IsRetryable=true |
+| `Upload_CancelledDuringExecution` | 用户取消时 Status=Canceling→Canceled；应用关闭时 Status=Interrupted，IsRetryable=true |
 | `Upload_ProgressCallback_ReceivesUpdates` | IProgress\<TransferProgress\>.Report 至少被调用一次 |
 | `Upload_AccountLookupFailed` | Status=Failed，ErrorCategory=Unknown 或 ProviderUnavailable |
 
@@ -173,7 +174,8 @@ Round 2 需要：
 | `Download_ProviderCreationFailed` | Status=Failed，ErrorCategory=ProviderUnavailable |
 | `Download_RemoteFileNotFound` | Status=Failed，ErrorCategory=NotFound |
 | `Download_LocalWriteFailed` | Status=Failed，ErrorCategory=Unknown 或 StorageError |
-| `Download_CancelledDuringExecution` | Status=Interrupted，IsRetryable=true |
+| `Download_CancelledDuringExecution` | 用户取消时删除本地 `.part` 后 Status=Canceled；应用关闭时 Status=Interrupted |
+| `Download_CancelledDuringOverwrite_PreservesOriginal` | 覆盖下载取消后原目标内容不变，本地 `.atombox-download-*.part` 被删除 |
 | `Download_ProgressCallback_ReceivesUpdates` | IProgress\<TransferProgress\>.Report 至少被调用一次 |
 
 ### 7.3 生命周期与错误
@@ -202,7 +204,9 @@ Round 2 需要：
 | Case | 期望 |
 | --- | --- |
 | `CancelAsync_PendingTask_StatusCanceled` | Pending → Canceled |
-| `CancelAsync_RunningTask_StatusCanceled` | Running → Canceled |
+| `CancelAsync_RunningTask_StatusCancelingThenCanceled` | Running → Canceling，Provider 退出和清理完成后 → Canceled |
+| `CancelAsync_RunningTask_DoesNotReleaseSlotBeforeCleanup` | Canceling 任务仍占并发槽位；清理结束后 Pending 任务立即获得槽位 |
+| `CancelAsync_CommitWinsLateCancellation` | 远端或本地提交已经成功时最终状态为 Succeeded，迟到取消不得覆盖成功 |
 | `CancelAsync_SucceededTask_ReturnsConflict` | 返回 Conflict 错误 |
 | `CancelAsync_FailedTask_ReturnsConflict` | 返回 Conflict 错误 |
 | `CancelAsync_InterruptedTask_ReturnsConflict` | 返回 Conflict 错误 |
@@ -242,6 +246,7 @@ Round 2 需要：
 | --- | --- |
 | `InitializeAsync_NoRunningTasks_Success` | 状态无变化 |
 | `InitializeAsync_RunningTasks_MarkedInterrupted` | 所有 Running → Interrupted，IsRetryable=true，StatusReason 有值 |
+| `InitializeAsync_CancelingTask_MarkedCanceledWithWarning` | 遗留 Canceling → Canceled，StatusReason 说明临时文件清理结果未知 |
 | `InitializeAsync_MixedRunningAndPending` | Running → Interrupted，Pending 不变 |
 | `InitializeAsync_StoreUnavailable_ReturnsError` | 返回失败结果 |
 | `InitializeAsync_Idempotent_SecondCallNoOp` | 第二次调用时已无 Running，空操作 |
@@ -253,7 +258,7 @@ Round 2 需要：
 
 | Case | 期望 |
 | --- | --- |
-| `ListQueue_ReturnsPendingAndRunningTasks` | 包含 Pending + Running 状态的任务+进度 |
+| `ListQueue_ReturnsActiveTasks` | 包含 Pending + Running + Canceling 状态的任务+进度 |
 | `ListQueue_ExcludesTerminalStates` | Succeeded / Failed / Canceled / Interrupted 不出现 |
 | `ListQueue_Empty_ReturnsEmptyList` | 无任务时返回空 |
 | `ListQueue_TaskWithProgress_ProgressPopulated` | Progress 字段正确填充 |

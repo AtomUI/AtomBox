@@ -45,6 +45,7 @@ Interrupted
 Succeeded
 Failed
 Canceled
+Canceling
 ```
 
 状态语义：
@@ -58,6 +59,7 @@ Canceled
 | `Succeeded` | 成功完成。 |
 | `Failed` | 执行失败，可根据错误和策略决定是否可重试。 |
 | `Canceled` | 用户取消。 |
+| `Canceling` | 已接受用户取消请求，正在等待底层网络操作退出并清理临时文件；仍属于活动队列。 |
 
 第一版不自动恢复 `Paused` / `Interrupted` 任务。它们可以展示给用户，由用户手动恢复或重试。
 
@@ -69,6 +71,8 @@ Canceled
 Pending -> Running -> Succeeded
 Pending -> Running -> Failed
 Pending -> Running -> Canceled
+Pending -> Running -> Canceling -> Canceled
+Pending -> Canceling -> Canceled // worker 已取得任务但尚未进入 Running
 Pending -> Running -> Paused
 Pending -> Running -> Interrupted
 Failed -> Pending   // Retry
@@ -77,6 +81,13 @@ Interrupted -> Pending // Recover / manual restart
 ```
 
 取消不是删除。失败不是对象消亡。历史记录和队列展示应以任务状态为依据。
+
+运行中任务收到用户取消后不得直接持久化为 `Canceled`。调度器先通过
+`ITransferTaskStore.TryTransitionStatusAsync` 原子执行 `Running -> Canceling`，再向该任务唯一的
+`CancellationTokenSource` 发出取消信号。只有 Provider 网络调用退出、远端或本地临时文件清理完成后，
+worker 才写入最终 `Canceled`。提交已经完成时以成功为准，迟到的取消不得覆盖 `Succeeded`。
+
+应用启动时发现遗留 `Canceling`，将其恢复为 `Canceled`，并在 `StatusReason` 中说明临时文件清理结果未知。
 
 ## 4. 进度模型
 
@@ -110,6 +121,7 @@ TransferHistoryPage
 
 - 保存任务。
 - 更新任务状态。
+- 按预期源状态原子转换任务状态，避免取消、完成和进度更新互相覆盖。
 - 读取待执行任务。
 - 读取历史任务。
 

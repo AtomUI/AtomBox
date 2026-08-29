@@ -65,6 +65,13 @@ Core 端口 `ITransferTaskScheduler` 是 Transfer 对外暴露的调度入口。
 
 Application 可以调用 `ITransferTaskScheduler`，但只能表达用户用例，例如创建任务后提交、取消、重试。Application 不能指挥 worker 如何执行，也不能决定 provider 生命周期。
 
+取消请求是异步完成语义：`CancelAsync` 接受请求后立即返回，任务进入 `Canceling`。取消令牌沿
+`Scheduler -> Worker -> IStorageProvider -> Provider Adapter -> SDK/HTTP client` 传递。Provider 完成
+网络中断和临时文件清理后，worker 才写入最终 `Canceled`。
+
+并发槽位属于 worker 的完整生命周期。任务处于 `Canceling`、底层请求或清理尚未退出时不得释放槽位；
+因此等待任务只会在前一任务真正停止后开始，不会与仍在传输的“已取消”任务形成隐性超额并发。
+
 ## 4. 执行批次
 
 `TransferWorker` 执行的是批次，不等于用户点击一次，也不等于单个文件。
@@ -156,6 +163,8 @@ Phase 9 不改变 Transfer 的职责边界，但要求传输结果具备可解�
 
 - 失败任务必须保存失败原因摘要和错误类别。
 - 用户取消任务必须与网络失败、权限失败、provider 错误区分。
+- 用户取消运行中任务时先显示 `Canceling`；底层退出和清理完成后才显示 `Canceled`。
+- 用户取消使用任务级取消令牌；应用关闭使用调度器外层令牌，后者最终记为 `Interrupted`。
 - 应用关闭或 worker 超时导致的未确认结果必须保存为 `Interrupted` 或等价状态。
 - `Interrupted` 不能自动恢复执行；后续只能由用户通过 Application 重试用例显式恢复。
 
