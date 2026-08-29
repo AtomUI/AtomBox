@@ -110,7 +110,7 @@ public sealed class HomeViewModel : LocalizedViewModelBase
         else
         {
             var queue = queueResult.GetValueOrThrow().Tasks;
-            var runningCount = queue.Count(task => task.Task.Status == TransferStatus.Running);
+            var runningCount = queue.Count(task => task.Task.Status is TransferStatus.Running or TransferStatus.Canceling);
             var pendingCount = queue.Count(task => task.Task.Status == TransferStatus.Pending);
             SetQueueSummary(new("Transfer", "RunningPendingSummary", runningCount, pendingCount));
         }

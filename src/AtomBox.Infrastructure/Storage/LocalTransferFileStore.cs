@@ -75,16 +75,21 @@ public sealed class LocalTransferFileStore : ILocalTransferFileStore
                     StorageErrorCategory.Conflict)));
             }
 
+            var temporaryPath = CreateTemporaryPath(directory);
             var stream = new FileStream(
-                targetPath,
-                overwritePolicy == TransferOverwritePolicy.Overwrite ? FileMode.Create : FileMode.CreateNew,
+                temporaryPath,
+                FileMode.CreateNew,
                 FileAccess.Write,
                 FileShare.None,
                 bufferSize: 1024 * 64,
                 FileOptions.Asynchronous | FileOptions.SequentialScan);
 
             return Task.FromResult(OperationResult<LocalTransferWriteHandle>.Success(
-                new LocalTransferWriteHandle(stream, new LocalPath(targetPath))));
+                new LocalTransferWriteHandle(
+                    stream,
+                    new LocalPath(targetPath),
+                    commitAsync: token => CommitWriteAsync(temporaryPath, targetPath, overwritePolicy, token),
+                    abortAsync: token => AbortWriteAsync(temporaryPath, token))));
         }
         catch (Exception exception)
         {
@@ -127,6 +132,66 @@ public sealed class LocalTransferFileStore : ILocalTransferFileStore
         return Path.Combine(
             string.IsNullOrWhiteSpace(directory) ? string.Empty : directory,
             $"{fileName} ({Guid.NewGuid():N}){extension}");
+    }
+
+    private static string CreateTemporaryPath(string? directory)
+    {
+        var root = string.IsNullOrWhiteSpace(directory) ? Directory.GetCurrentDirectory() : directory;
+        string candidate;
+        do
+        {
+            candidate = Path.Combine(root, $".atombox-download-{Guid.NewGuid():N}.part");
+        }
+        while (File.Exists(candidate));
+
+        return candidate;
+    }
+
+    private static Task<OperationResult> CommitWriteAsync(
+        string temporaryPath,
+        string targetPath,
+        TransferOverwritePolicy overwritePolicy,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var overwrite = overwritePolicy == TransferOverwritePolicy.Overwrite;
+            if (!overwrite && File.Exists(targetPath))
+            {
+                return Task.FromResult(OperationResult.Failure(new StorageError(
+                    StorageErrorCode.Conflict,
+                    "Local target file already exists.",
+                    StorageErrorCategory.Conflict)));
+            }
+
+            File.Move(temporaryPath, targetPath, overwrite);
+            return Task.FromResult(OperationResult.Success());
+        }
+        catch (Exception exception)
+        {
+            return Task.FromResult(OperationResult.Failure(MapException(exception)));
+        }
+    }
+
+    private static Task<OperationResult> AbortWriteAsync(
+        string temporaryPath,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            if (File.Exists(temporaryPath))
+            {
+                File.Delete(temporaryPath);
+            }
+
+            return Task.FromResult(OperationResult.Success());
+        }
+        catch (Exception exception)
+        {
+            return Task.FromResult(OperationResult.Failure(MapException(exception)));
+        }
     }
 
     private static StorageError MapException(Exception exception)

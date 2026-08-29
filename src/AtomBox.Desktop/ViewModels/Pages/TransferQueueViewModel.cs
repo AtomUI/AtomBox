@@ -87,7 +87,7 @@ public sealed class TransferQueueViewModel : LocalizedViewModelBase
 
     public bool IsEmptyStateVisible => !IsLoading && !HasTasks;
 
-    public bool HasCancelableTasks => Tasks.Any(task => task.Status == TransferStatus.Pending);
+    public bool HasCancelableTasks => Tasks.Any(task => task.Status is TransferStatus.Pending or TransferStatus.Running);
 
     public bool HasRetryableTasks => Tasks.Any(task => task.Status is TransferStatus.Failed or TransferStatus.Interrupted);
 
@@ -164,7 +164,7 @@ public sealed class TransferQueueViewModel : LocalizedViewModelBase
             .Select(snapshot => snapshot.Task.Id)
             .ToHashSet();
         var completedCandidates = _lastObservedTasks.Values
-            .Where(task => task.Status is TransferStatus.Pending or TransferStatus.Running &&
+            .Where(task => (task.Status is TransferStatus.Pending or TransferStatus.Running or TransferStatus.Canceling) &&
                            !currentTaskIds.Contains(task.TaskId) &&
                            !IsCompletionNotificationShown(task.TaskId))
             .ToArray();
@@ -446,6 +446,7 @@ public sealed record TransferTaskRowViewModel(
             TransferStatus.Pending => localization.GetString("Transfer", "Pending"),
             TransferStatus.Running when progress?.Percent is { } percent => $"{percent:0}%",
             TransferStatus.Running => localization.GetString("Transfer", "Running"),
+            TransferStatus.Canceling => localization.GetString("Transfer", "Canceling"),
             TransferStatus.Paused when progress?.Percent is { } percent => localization.Format("Transfer", "PausedPercent", percent),
             TransferStatus.Paused => localization.GetString("Transfer", "Paused"),
             TransferStatus.Interrupted => localization.GetString("Transfer", "Interrupted"),
@@ -487,6 +488,7 @@ public sealed record TransferTaskRowViewModel(
         {
             TransferStatus.Pending => localization.GetString("Common", "Cancel"),
             TransferStatus.Running => localization.GetString("Common", "Cancel"),
+            TransferStatus.Canceling => "-",
             TransferStatus.Paused => "-",
             TransferStatus.Interrupted => localization.GetString("Common", "Retry"),
             TransferStatus.Succeeded => "-",

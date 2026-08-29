@@ -33,8 +33,7 @@ public sealed class TransferCancellationRegistry : ITransferCancellationState
             return false;
         }
 
-        cancellation.CancelByUser();
-        return true;
+        return cancellation.CancelByUser();
     }
 
     public bool IsUserCancellationRequested(TransferTaskId taskId)
@@ -54,7 +53,9 @@ public sealed class TransferCancellationRegistry : ITransferCancellationState
     private sealed class RunningTransferCancellation : IDisposable
     {
         private readonly CancellationTokenSource _cancellationTokenSource;
+        private readonly object _gate = new();
         private int _isUserCancellationRequested;
+        private bool _disposed;
 
         public RunningTransferCancellation(CancellationToken cancellationToken)
         {
@@ -65,15 +66,33 @@ public sealed class TransferCancellationRegistry : ITransferCancellationState
 
         public bool IsUserCancellationRequested => Volatile.Read(ref _isUserCancellationRequested) == 1;
 
-        public void CancelByUser()
+        public bool CancelByUser()
         {
-            Interlocked.Exchange(ref _isUserCancellationRequested, 1);
-            _cancellationTokenSource.Cancel();
+            lock (_gate)
+            {
+                if (_disposed)
+                {
+                    return false;
+                }
+
+                Interlocked.Exchange(ref _isUserCancellationRequested, 1);
+                _cancellationTokenSource.Cancel();
+                return true;
+            }
         }
 
         public void Dispose()
         {
-            _cancellationTokenSource.Dispose();
+            lock (_gate)
+            {
+                if (_disposed)
+                {
+                    return;
+                }
+
+                _disposed = true;
+                _cancellationTokenSource.Dispose();
+            }
         }
     }
 

@@ -34,7 +34,7 @@ public sealed class TransferStateStore : ITransferStateStore
 
         var progressByTask = progressResult.GetValueOrThrow();
         var queue = tasksResult.GetValueOrThrow()
-            .Where(task => task.Status is TransferStatus.Pending or TransferStatus.Running or TransferStatus.Paused or TransferStatus.Interrupted)
+            .Where(task => task.Status is TransferStatus.Pending or TransferStatus.Running or TransferStatus.Canceling or TransferStatus.Paused or TransferStatus.Interrupted)
             .OrderBy(task => task.CreatedAt)
             .Select(task => new TransferStateSnapshot(task, GetProgress(progressByTask, task)))
             .ToArray();

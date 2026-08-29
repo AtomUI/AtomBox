@@ -42,29 +42,92 @@ public sealed class TransferTaskScheduler : ITransferTaskScheduler
         TransferTaskId taskId,
         CancellationToken cancellationToken = default)
     {
-        var taskResult = await _taskStore.GetByIdAsync(taskId, cancellationToken).ConfigureAwait(false);
-        if (taskResult.IsFailure)
+        for (var attempt = 0; attempt < 3; attempt++)
         {
-            return OperationResult.Failure(taskResult.Error!);
-        }
+            var taskResult = await _taskStore.GetByIdAsync(taskId, cancellationToken).ConfigureAwait(false);
+            if (taskResult.IsFailure)
+            {
+                return OperationResult.Failure(taskResult.Error!);
+            }
 
-        var task = taskResult.GetValueOrThrow();
-        if (!task.CanCancel())
-        {
-            return OperationResult.Failure(new StorageError(
-                StorageErrorCode.Conflict,
-                "Transfer task cannot be canceled in its current state.",
-                StorageErrorCategory.Conflict));
-        }
+            var task = taskResult.GetValueOrThrow();
+            if (!task.CanCancel())
+            {
+                return OperationResult.Failure(CannotCancelError());
+            }
 
-        _cancellations.Cancel(task.Id);
+            if (task.Status == TransferStatus.Pending)
+            {
+                var activeCancellationRequested = _cancellations.Cancel(task.Id);
+                var targetStatus = activeCancellationRequested
+                    ? TransferStatus.Canceling
+                    : TransferStatus.Canceled;
+                var reason = activeCancellationRequested
+                    ? "正在取消传输任务。"
+                    : "用户取消了传输任务。";
+                var transitionResult = await _taskStore.TryTransitionStatusAsync(
+                    task.Id,
+                    TransferStatus.Pending,
+                    targetStatus,
+                    DateTimeOffset.UtcNow,
+                    reason,
+                    cancellationToken: cancellationToken).ConfigureAwait(false);
+                if (transitionResult.IsFailure)
+                {
+                    return OperationResult.Failure(transitionResult.Error!);
+                }
 
-        return await _taskStore.SaveAsync(
-            task.WithStatus(
+                if (transitionResult.GetValueOrThrow())
+                {
+                    return OperationResult.Success();
+                }
+
+                continue;
+            }
+
+            var cancelingResult = await _taskStore.TryTransitionStatusAsync(
+                task.Id,
+                TransferStatus.Running,
+                TransferStatus.Canceling,
+                DateTimeOffset.UtcNow,
+                "正在取消传输任务。",
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            if (cancelingResult.IsFailure)
+            {
+                return OperationResult.Failure(cancelingResult.Error!);
+            }
+
+            if (!cancelingResult.GetValueOrThrow())
+            {
+                continue;
+            }
+
+            if (_cancellations.Cancel(task.Id))
+            {
+                return OperationResult.Success();
+            }
+
+            var orphanedResult = await _taskStore.TryTransitionStatusAsync(
+                task.Id,
+                TransferStatus.Canceling,
                 TransferStatus.Canceled,
                 DateTimeOffset.UtcNow,
-                "用户取消了传输任务。"),
-            cancellationToken).ConfigureAwait(false);
+                "传输任务已取消，但未找到正在运行的传输，临时文件清理结果未知。",
+                cancellationToken: cancellationToken).ConfigureAwait(false);
+            return orphanedResult.IsFailure
+                ? OperationResult.Failure(orphanedResult.Error!)
+                : OperationResult.Success();
+        }
+
+        return OperationResult.Failure(CannotCancelError());
+    }
+
+    private static StorageError CannotCancelError()
+    {
+        return new StorageError(
+            StorageErrorCode.Conflict,
+            "Transfer task cannot be canceled in its current state.",
+            StorageErrorCategory.Conflict);
     }
 
     public async Task<OperationResult> RetryAsync(

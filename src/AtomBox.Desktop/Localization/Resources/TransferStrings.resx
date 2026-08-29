@@ -45,6 +45,7 @@
   <data name="TaskDetails" xml:space="preserve"><value>Transfer Task Details</value></data>
   <data name="Pending" xml:space="preserve"><value>Pending</value></data>
   <data name="Running" xml:space="preserve"><value>In Progress</value></data>
+  <data name="Canceling" xml:space="preserve"><value>Canceling</value></data>
   <data name="Paused" xml:space="preserve"><value>Paused</value></data>
   <data name="PausedPercent" xml:space="preserve"><value>Paused {0:0}%</value></data>
   <data name="TaskCompletedSingle" xml:space="preserve"><value>{0} {1} completed</value></data>

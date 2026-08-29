@@ -119,7 +119,7 @@ public sealed class AccountAppService
 
         var hasUnfinishedTask = tasksResult.GetValueOrThrow().Any(task =>
             task.StorageAccountId == request.Id &&
-            task.Status is TransferStatus.Pending or TransferStatus.Running or TransferStatus.Paused or TransferStatus.Interrupted);
+            task.Status is TransferStatus.Pending or TransferStatus.Running or TransferStatus.Canceling or TransferStatus.Paused or TransferStatus.Interrupted);
 
         if (hasUnfinishedTask)
         {

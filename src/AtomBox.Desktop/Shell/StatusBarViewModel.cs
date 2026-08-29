@@ -110,7 +110,8 @@ public sealed class StatusBarViewModel : LocalizedViewModelBase
 
                 var tasks = result.GetValueOrThrow().Tasks;
                 ActiveTransferCount = tasks.Count;
-                RunningTransfers = tasks.Count(item => item.Task.Status == TransferStatus.Running);
+                RunningTransfers = tasks.Count(item =>
+                    item.Task.Status is TransferStatus.Running or TransferStatus.Canceling);
                 ErrorCount = tasks.Count(item => item.Task.Status is TransferStatus.Failed or TransferStatus.Interrupted);
                 _uploadSpeed = SumSpeed(tasks, TransferDirection.Upload);
                 _downloadSpeed = SumSpeed(tasks, TransferDirection.Download);

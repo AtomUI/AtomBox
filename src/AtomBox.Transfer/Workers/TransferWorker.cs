@@ -36,6 +36,15 @@ public sealed class TransferWorker
     {
         ArgumentNullException.ThrowIfNull(task);
 
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return await MarkCanceledOrInterruptedAsync(
+                task,
+                progress: null,
+                "传输任务在启动前被中断。",
+                CancellationToken.None).ConfigureAwait(false);
+        }
+
         var now = DateTimeOffset.UtcNow;
         var running = task.WithStatus(TransferStatus.Running, now);
         var runningResult = await _stateStore.UpdateStatusAsync(
@@ -45,6 +54,15 @@ public sealed class TransferWorker
 
         if (runningResult.IsFailure)
         {
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return await MarkCanceledOrInterruptedAsync(
+                    running,
+                    progress: null,
+                    "传输任务在启动时被中断。",
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+
             return runningResult;
         }
 
@@ -72,20 +90,30 @@ public sealed class TransferWorker
                 CancellationToken.None).ConfigureAwait(false);
         }
 
-        if (cancellationToken.IsCancellationRequested)
-        {
-            return await MarkCanceledOrInterruptedAsync(
-                progress.CurrentTask,
-                progress.Latest,
-                "传输任务在执行完成前被中断。",
-                CancellationToken.None).ConfigureAwait(false);
-        }
-
         if (executeResult.IsFailure)
         {
             if (_cancellationState.IsUserCancellationRequested(progress.CurrentTask.Id))
             {
-                return await MarkCanceledAsync(progress.CurrentTask, progress.Latest, CancellationToken.None).ConfigureAwait(false);
+                var providerReason = executeResult.Error?.Message;
+                var reason = executeResult.Error?.Category == StorageErrorCategory.Canceled
+                    ? providerReason ?? "用户取消了传输任务。"
+                    : string.IsNullOrWhiteSpace(providerReason)
+                        ? "用户取消了传输任务。"
+                        : $"用户取消了传输任务。底层操作结果：{providerReason}";
+                return await MarkCanceledAsync(
+                    progress.CurrentTask,
+                    progress.Latest,
+                    reason,
+                    CancellationToken.None).ConfigureAwait(false);
+            }
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return await MarkInterruptedAsync(
+                    progress.CurrentTask,
+                    progress.Latest,
+                    "传输任务被应用关闭或取消令牌中断，最终传输结果未知。",
+                    CancellationToken.None).ConfigureAwait(false);
             }
 
             var failed = progress.CurrentTask.WithStatus(
@@ -106,7 +134,7 @@ public sealed class TransferWorker
         return await _stateStore.UpdateStatusAsync(
             completed,
             progress.Latest ?? new TransferProgress(1, 1, null),
-            cancellationToken).ConfigureAwait(false);
+            CancellationToken.None).ConfigureAwait(false);
     }
 
     private Task<OperationResult> MarkCanceledOrInterruptedAsync(
@@ -116,19 +144,20 @@ public sealed class TransferWorker
         CancellationToken cancellationToken)
     {
         return _cancellationState.IsUserCancellationRequested(running.Id)
-            ? MarkCanceledAsync(running, progress, cancellationToken)
+            ? MarkCanceledAsync(running, progress, "用户取消了传输任务。", cancellationToken)
             : MarkInterruptedAsync(running, progress, reason, cancellationToken);
     }
 
     private Task<OperationResult> MarkCanceledAsync(
         TransferTask running,
         TransferProgress? progress,
+        string reason,
         CancellationToken cancellationToken)
     {
         var canceled = running.WithStatus(
             TransferStatus.Canceled,
             DateTimeOffset.UtcNow,
-            "用户取消了传输任务。");
+            reason);
 
         return _stateStore.UpdateStatusAsync(canceled, progress, cancellationToken);
     }
@@ -225,11 +254,61 @@ public sealed class TransferWorker
             progress.UpdateTask(renamedTask);
         }
 
-        return await provider.DownloadAsync(
+        var downloadResult = await provider.DownloadAsync(
             task.RemotePath,
             file.Stream,
             progress,
             cancellationToken).ConfigureAwait(false);
+        if (downloadResult.IsSuccess)
+        {
+            var commitResult = await file.CommitAsync(CancellationToken.None).ConfigureAwait(false);
+            if (commitResult.IsSuccess)
+            {
+                return OperationResult.Success();
+            }
+
+            var abortAfterCommitFailure = await AbortLocalWriteAsync(file).ConfigureAwait(false);
+            return AppendCleanupWarning(commitResult, abortAfterCommitFailure);
+        }
+
+        var abortResult = await AbortLocalWriteAsync(file).ConfigureAwait(false);
+        return AppendCleanupWarning(downloadResult, abortResult);
+    }
+
+    private static async Task<OperationResult> AbortLocalWriteAsync(LocalTransferWriteHandle file)
+    {
+        using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        try
+        {
+            return await file.AbortAsync(cleanup.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return OperationResult.Failure(new StorageError(
+                StorageErrorCode.InfrastructureUnavailable,
+                "Local temporary file cleanup timed out.",
+                StorageErrorCategory.Infrastructure,
+                isRetryable: true));
+        }
+    }
+
+    private static OperationResult AppendCleanupWarning(
+        OperationResult operationResult,
+        OperationResult cleanupResult)
+    {
+        if (cleanupResult.IsSuccess)
+        {
+            return operationResult;
+        }
+
+        var original = operationResult.Error ?? StorageError.Unknown("Transfer operation failed.");
+        var cleanupMessage = cleanupResult.Error?.Message ?? "Local temporary file cleanup failed.";
+        return OperationResult.Failure(new StorageError(
+            original.Code,
+            $"{original.Message} Local temporary file cleanup failed: {cleanupMessage}",
+            original.Category,
+            original.IsRetryable,
+            original.ProviderErrorCode));
     }
 
     private sealed class TransferProgressSink : IProgress<TransferProgress>

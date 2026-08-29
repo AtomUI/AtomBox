@@ -89,6 +89,55 @@ public sealed class TransferTaskStore : ITransferTaskStore
         }
     }
 
+    public async Task<OperationResult<bool>> TryTransitionStatusAsync(
+        TransferTaskId taskId,
+        TransferStatus expectedStatus,
+        TransferStatus targetStatus,
+        DateTimeOffset updatedAt,
+        string? statusReason = null,
+        StorageErrorCategory? errorCategory = null,
+        bool isRetryable = false,
+        CancellationToken cancellationToken = default)
+    {
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var tasksResult = await ReadTasksAsync(cancellationToken).ConfigureAwait(false);
+            if (tasksResult.IsFailure)
+            {
+                return OperationResult<bool>.Failure(tasksResult.Error!);
+            }
+
+            var tasks = tasksResult.GetValueOrThrow();
+            var index = tasks.FindIndex(item => item.Id == taskId);
+            if (index < 0)
+            {
+                return OperationResult<bool>.Failure(StorageError.NotFound("Transfer task was not found."));
+            }
+
+            var current = tasks[index];
+            if (current.Status != expectedStatus)
+            {
+                return OperationResult<bool>.Success(false);
+            }
+
+            tasks[index] = current.WithStatus(
+                targetStatus,
+                updatedAt,
+                statusReason,
+                errorCategory,
+                isRetryable);
+            var writeResult = await _store.WriteAsync(tasks, cancellationToken).ConfigureAwait(false);
+            return writeResult.IsFailure
+                ? OperationResult<bool>.Failure(writeResult.Error!)
+                : OperationResult<bool>.Success(true);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
     public async Task<OperationResult> DeleteAsync(
         TransferTaskId taskId,
         CancellationToken cancellationToken = default)
