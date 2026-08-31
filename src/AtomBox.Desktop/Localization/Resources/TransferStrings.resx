@@ -46,6 +46,12 @@
   <data name="Pending" xml:space="preserve"><value>Pending</value></data>
   <data name="Running" xml:space="preserve"><value>In Progress</value></data>
   <data name="Canceling" xml:space="preserve"><value>Canceling</value></data>
+  <data name="TryCancel" xml:space="preserve"><value>Try to cancel</value></data>
+  <data name="AttemptingCancellation" xml:space="preserve"><value>Trying to cancel</value></data>
+  <data name="TryCancelTitle" xml:space="preserve"><value>Try to cancel transfer</value></data>
+  <data name="TryCancelMessage" xml:space="preserve"><value>This storage service does not support reliable immediate cancellation. The current request may continue, and the final remote file state should be verified by refreshing the directory after the transfer finishes.</value></data>
+  <data name="ContinueTryCancel" xml:space="preserve"><value>Continue</value></data>
+  <data name="Return" xml:space="preserve"><value>Back</value></data>
   <data name="Paused" xml:space="preserve"><value>Paused</value></data>
   <data name="PausedPercent" xml:space="preserve"><value>Paused {0:0}%</value></data>
   <data name="TaskCompletedSingle" xml:space="preserve"><value>{0} {1} completed</value></data>

@@ -116,7 +116,8 @@ Factory / Registry 分工：
 
 第一版发布说明：
 
-- OSS 主路径已覆盖阿里云 OSS、腾讯 COS、七牛 Kodo、又拍云 USS、华为云 OBS、火山引擎 TOS 等真实账号验证；百度 BOS、京东云 OSS、青云 QingStor 已接入但真实验收依赖用户后续提供账号。
+- OSS 主路径已覆盖通用 S3、阿里云 OSS、腾讯 COS、七牛 Kodo、又拍云 USS、华为云 OBS、百度 BOS、火山引擎 TOS 等实现；百度 BOS 使用百度官方 C# SDK。京东云 OSS、青云 QingStor 的代码继续保留，但 Desktop 添加账号入口隐藏，不属于当前可选 Provider。
+- 运行中取消能力必须按 Provider 和传输方向判断：通用 S3、腾讯 COS 支持上传/下载，七牛 Kodo 支持下载；不能把该结论扩展到全部 OSS。
 - SFTP、FTP、WebDAV 已进入第一版文件传输主路径。
 - FTPS、完整 OAuth 授权流程、网盘 token refresh 和更复杂网盘产品体验不作为第一版发布承诺。
 

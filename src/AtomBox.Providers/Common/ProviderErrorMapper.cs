@@ -99,6 +99,11 @@ public static class ProviderErrorMapper
                 "Provider client failed before the remote service completed the request.",
                 StorageErrorCategory.Provider,
                 isRetryable: true),
+            ProviderOperationCanceledException canceledException => new StorageError(
+                StorageErrorCode.OperationCanceled,
+                canceledException.Message,
+                StorageErrorCategory.Canceled,
+                isRetryable: true),
             OperationCanceledException => new StorageError(
                 StorageErrorCode.OperationCanceled,
                 "Provider operation was canceled.",

@@ -1,11 +1,13 @@
 using Amazon.S3;
 using Amazon.S3.Model;
+using AtomBox.Providers.Common;
 using AtomBox.Providers.ObjectStorage.S3Compatible;
 
 namespace AtomBox.Providers.ObjectStorage.GenericS3;
 
-internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
+internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient, ICancellableS3TransferClient
 {
+    private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(10);
     private readonly IAmazonS3 _client;
 
     public AwsSdkS3CompatibleClient(IAmazonS3 client)
@@ -74,13 +76,22 @@ internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
 
     public void PutObject(string bucketName, string key, Stream content)
     {
-        Wait(_client.PutObjectAsync(new PutObjectRequest
+        PutObjectAsync(bucketName, key, content).ConfigureAwait(false).GetAwaiter().GetResult();
+    }
+
+    public async Task PutObjectAsync(
+        string bucketName,
+        string key,
+        Stream content,
+        CancellationToken cancellationToken = default)
+    {
+        await _client.PutObjectAsync(new PutObjectRequest
         {
             BucketName = bucketName,
             Key = key,
             InputStream = content,
             AutoCloseStream = false
-        }));
+        }, cancellationToken).ConfigureAwait(false);
     }
 
     public void PutObjectMultipart(
@@ -90,11 +101,23 @@ internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
         long contentLength,
         Action<long, long>? progress = null)
     {
-        var initiation = Wait(_client.InitiateMultipartUploadAsync(new InitiateMultipartUploadRequest
+        PutObjectMultipartAsync(bucketName, key, content, contentLength, progress)
+            .ConfigureAwait(false).GetAwaiter().GetResult();
+    }
+
+    public async Task PutObjectMultipartAsync(
+        string bucketName,
+        string key,
+        Stream content,
+        long contentLength,
+        Action<long, long>? progress = null,
+        CancellationToken cancellationToken = default)
+    {
+        var initiation = await _client.InitiateMultipartUploadAsync(new InitiateMultipartUploadRequest
         {
             BucketName = bucketName,
             Key = key
-        }));
+        }, cancellationToken).ConfigureAwait(false);
         var parts = new List<PartETag>();
         var transferred = 0L;
 
@@ -104,14 +127,14 @@ internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
             while (transferred < contentLength)
             {
                 var expectedLength = (int)Math.Min(ObjectStorageUploadPolicy.PartSize, contentLength - transferred);
-                var payload = ReadPart(content, expectedLength);
+                var payload = await ReadPartAsync(content, expectedLength, cancellationToken).ConfigureAwait(false);
                 if (payload.Length == 0)
                 {
                     throw new EndOfStreamException("S3 multipart input ended before contentLength bytes were read.");
                 }
 
                 using var partStream = new MemoryStream(payload, writable: false);
-                var response = Wait(_client.UploadPartAsync(new UploadPartRequest
+                var response = await _client.UploadPartAsync(new UploadPartRequest
                 {
                     BucketName = bucketName,
                     Key = key,
@@ -119,7 +142,7 @@ internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
                     PartNumber = partNumber,
                     PartSize = payload.LongLength,
                     InputStream = partStream
-                }));
+                }, cancellationToken).ConfigureAwait(false);
                 parts.Add(new PartETag(partNumber, response.ETag));
                 transferred += payload.LongLength;
                 progress?.Invoke(transferred, contentLength);
@@ -133,23 +156,27 @@ internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
                 UploadId = initiation.UploadId
             };
             completion.AddPartETags(parts);
-            Wait(_client.CompleteMultipartUploadAsync(completion));
+            await _client.CompleteMultipartUploadAsync(completion, cancellationToken).ConfigureAwait(false);
             progress?.Invoke(contentLength, contentLength);
         }
-        catch
+        catch (Exception exception)
         {
             try
             {
-                Wait(_client.AbortMultipartUploadAsync(new AbortMultipartUploadRequest
+                using var cleanup = new CancellationTokenSource(CleanupTimeout);
+                await _client.AbortMultipartUploadAsync(new AbortMultipartUploadRequest
                 {
                     BucketName = bucketName,
                     Key = key,
                     UploadId = initiation.UploadId
-                }));
+                }, cleanup.Token).ConfigureAwait(false);
             }
-            catch
+            catch (Exception cleanupException)
             {
-                // Preserve the original multipart failure.
+                if (exception is OperationCanceledException || cancellationToken.IsCancellationRequested)
+                {
+                    throw CreateCleanupWarning(cleanupException, cancellationToken);
+                }
             }
 
             throw;
@@ -158,7 +185,19 @@ internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
 
     public S3CompatibleDownloadObject GetObject(string bucketName, string key)
     {
-        var response = Wait(_client.GetObjectAsync(bucketName, key));
+        return GetObjectAsync(bucketName, key).ConfigureAwait(false).GetAwaiter().GetResult();
+    }
+
+    public async Task<S3CompatibleDownloadObject> GetObjectAsync(
+        string bucketName,
+        string key,
+        CancellationToken cancellationToken = default)
+    {
+        var response = await _client.GetObjectAsync(new GetObjectRequest
+        {
+            BucketName = bucketName,
+            Key = key
+        }, cancellationToken).ConfigureAwait(false);
         return new S3CompatibleDownloadObject(response.ResponseStream, response.ContentLength, response);
     }
 
@@ -172,13 +211,18 @@ internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
         return operation.ConfigureAwait(false).GetAwaiter().GetResult();
     }
 
-    private static byte[] ReadPart(Stream content, int expectedLength)
+    private static async Task<byte[]> ReadPartAsync(
+        Stream content,
+        int expectedLength,
+        CancellationToken cancellationToken)
     {
         var payload = new byte[expectedLength];
         var offset = 0;
         while (offset < payload.Length)
         {
-            var read = content.Read(payload, offset, payload.Length - offset);
+            var read = await content.ReadAsync(
+                payload.AsMemory(offset, payload.Length - offset),
+                cancellationToken).ConfigureAwait(false);
             if (read == 0)
             {
                 break;
@@ -188,6 +232,19 @@ internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
         }
 
         return offset == payload.Length ? payload : payload[..offset];
+    }
+
+    private static ProviderOperationCanceledException CreateCleanupWarning(
+        Exception cleanupException,
+        CancellationToken cancellationToken)
+    {
+        var reason = cleanupException is OperationCanceledException
+            ? "Remote multipart cleanup timed out; incomplete parts may remain."
+            : "Remote multipart cleanup failed; incomplete parts may remain.";
+        return new ProviderOperationCanceledException(
+            $"Provider operation was canceled. {reason}",
+            cleanupException,
+            cancellationToken);
     }
 
     private static DateTimeOffset? ToDateTimeOffset(DateTime? value)

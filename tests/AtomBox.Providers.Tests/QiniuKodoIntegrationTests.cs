@@ -2,7 +2,9 @@ using AtomBox.Core.Accounts;
 using AtomBox.Core.Credentials;
 using AtomBox.Core.Errors;
 using AtomBox.Core.Providers;
+using AtomBox.Core.RemoteItems;
 using AtomBox.Core.Results;
+using AtomBox.Core.Transfers;
 using AtomBox.Core.ValueObjects;
 using AtomBox.Providers.Common;
 using AtomBox.Providers.ObjectStorage.QiniuKodo;
@@ -40,6 +42,104 @@ public sealed class QiniuKodoIntegrationTests
         Assert.True(uploadResult.IsSuccess, FormatError("Expected manual upload to succeed.", uploadResult.Error));
     }
 
+    [Fact]
+    [Trait("Category", "RealCancellationIntegration")]
+    public async Task QiniuKodoCancellationIntegration_StopsRunningDownload()
+    {
+        var environment = QiniuKodoTestEnvironment.TryRead();
+        if (environment is null || !CancellationIntegrationEnabled())
+        {
+            return;
+        }
+
+        await using var provider = await CreateProviderAsync(environment);
+        var key = $"{environment.TestPrefix}cancel-{Guid.NewGuid():N}/download.bin";
+        var objectPath = new RemotePath($"{environment.Bucket}/{key}", RemotePathKind.ObjectPath);
+        var createdProbe = false;
+
+        try
+        {
+            await using (var setup = new MemoryStream(new byte[4 * 1024 * 1024], writable: false))
+            {
+                var upload = await provider.UploadAsync(objectPath, setup, setup.Length);
+                if (upload.IsSuccess)
+                {
+                    createdProbe = true;
+                }
+                else if (upload.Error?.Category == StorageErrorCategory.Authorization)
+                {
+                    objectPath = await FindExistingProbeAsync(provider, environment) ??
+                        throw new Xunit.Sdk.XunitException(FormatError(
+                            "Qiniu download cancellation needs write permission or an existing object under the test prefix.",
+                            upload.Error));
+                }
+                else
+                {
+                    throw new Xunit.Sdk.XunitException(FormatError(
+                        "Expected cancellation download setup to succeed.",
+                        upload.Error));
+                }
+            }
+
+            using var cancellation = new CancellationTokenSource();
+            var progress = new CancelOnFirstProgress(cancellation);
+            await using var destination = new MemoryStream();
+            var download = await provider.DownloadAsync(
+                objectPath,
+                destination,
+                progress,
+                cancellation.Token);
+
+            Assert.Equal(StorageErrorCategory.Canceled, download.Error?.Category);
+            Assert.True(progress.WasReported);
+        }
+        finally
+        {
+            if (createdProbe)
+            {
+                await provider.DeleteAsync(objectPath);
+            }
+        }
+    }
+
+    private static async Task<RemotePath?> FindExistingProbeAsync(
+        IStorageProvider provider,
+        QiniuKodoTestEnvironment environment)
+    {
+        var root = new RemotePath(
+            $"{environment.Bucket}/{environment.TestPrefix.TrimEnd('/')}",
+            RemotePathKind.Folder);
+        var pending = new Queue<RemotePath>();
+        pending.Enqueue(root);
+        var visited = 0;
+        RemoteItem? best = null;
+
+        while (pending.Count > 0 && visited < 20)
+        {
+            var folder = pending.Dequeue();
+            visited++;
+            var list = await provider.ListAsync(folder);
+            if (list.IsFailure)
+            {
+                continue;
+            }
+
+            foreach (var item in list.GetValueOrThrow())
+            {
+                if (item.Kind == RemoteItemKind.File && (best is null || item.Size > best.Size))
+                {
+                    best = item;
+                }
+                else if (item.Kind == RemoteItemKind.Folder)
+                {
+                    pending.Enqueue(item.Path);
+                }
+            }
+        }
+
+        return best?.Path;
+    }
+
     private static async Task<IStorageProvider> CreateProviderAsync(QiniuKodoTestEnvironment environment)
     {
         var descriptor = StorageProviderRegistry.CreateDefaultDescriptors()
@@ -73,6 +173,32 @@ public sealed class QiniuKodoIntegrationTests
         return error is null
             ? message
             : $"{message} Code={error.Code}; Category={error.Category}; Retryable={error.IsRetryable}; ProviderErrorCode={error.ProviderErrorCode}; Message={error.Message}";
+    }
+
+    private static bool CancellationIntegrationEnabled()
+    {
+        return string.Equals(
+            Environment.GetEnvironmentVariable("ATOMBOX_TEST_OSS_CANCELLATION"),
+            "1",
+            StringComparison.Ordinal);
+    }
+
+    private sealed class CancelOnFirstProgress : IProgress<TransferProgress>
+    {
+        private readonly CancellationTokenSource _cancellation;
+
+        public CancelOnFirstProgress(CancellationTokenSource cancellation)
+        {
+            _cancellation = cancellation;
+        }
+
+        public bool WasReported { get; private set; }
+
+        public void Report(TransferProgress value)
+        {
+            WasReported = true;
+            _cancellation.Cancel();
+        }
     }
 
     private sealed record QiniuKodoTestEnvironment(

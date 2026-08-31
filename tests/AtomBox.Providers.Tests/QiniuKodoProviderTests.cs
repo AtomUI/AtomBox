@@ -161,6 +161,28 @@ public sealed class QiniuKodoProviderTests
     }
 
     [Fact]
+    public async Task DownloadAsync_CancelsBodyCopyAndDisposesRemoteStream()
+    {
+        var remoteStream = new BlockingReadStream();
+        var client = new FakeQiniuKodoClient { DownloadStream = remoteStream };
+        await using var provider = CreateProvider(client);
+        await using var destination = new MemoryStream();
+        using var cancellation = new CancellationTokenSource();
+
+        var operation = provider.DownloadAsync(
+            new RemotePath("bucket-a/folder/file.txt", RemotePathKind.ObjectPath),
+            destination,
+            cancellationToken: cancellation.Token);
+        await remoteStream.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        cancellation.Cancel();
+
+        var result = await operation;
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCategory.Canceled, result.Error?.Category);
+        Assert.True(remoteStream.WasDisposed);
+    }
+
+    [Fact]
     public async Task DeleteAsync_FolderDeletesFolderMarkerKey()
     {
         var client = new FakeQiniuKodoClient();
@@ -251,6 +273,8 @@ public sealed class QiniuKodoProviderTests
 
         public byte[] DownloadPayload { get; init; } = [];
 
+        public Stream? DownloadStream { get; init; }
+
         public IReadOnlyList<QiniuKodoBucket> ListBuckets()
         {
             return Buckets;
@@ -296,6 +320,11 @@ public sealed class QiniuKodoProviderTests
         {
             GetBucketName = bucketName;
             GetKey = key;
+            if (DownloadStream is not null)
+            {
+                return Task.FromResult(new QiniuKodoDownloadObject(DownloadStream, contentLength: null));
+            }
+
             return Task.FromResult(new QiniuKodoDownloadObject(
                 new MemoryStream(DownloadPayload),
                 DownloadPayload.LongLength));
@@ -303,6 +332,67 @@ public sealed class QiniuKodoProviderTests
 
         public void Dispose()
         {
+        }
+    }
+
+    private sealed class BlockingReadStream : Stream
+    {
+        public TaskCompletionSource ReadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool WasDisposed { get; private set; }
+
+        public override bool CanRead => true;
+
+        public override bool CanSeek => false;
+
+        public override bool CanWrite => false;
+
+        public override long Length => throw new NotSupportedException();
+
+        public override long Position
+        {
+            get => throw new NotSupportedException();
+            set => throw new NotSupportedException();
+        }
+
+        public override void Flush()
+        {
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            ReadStarted.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return 0;
+        }
+
+        public override long Seek(long offset, SeekOrigin origin)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void SetLength(long value)
+        {
+            throw new NotSupportedException();
+        }
+
+        public override void Write(byte[] buffer, int offset, int count)
+        {
+            throw new NotSupportedException();
+        }
+
+        protected override void Dispose(bool disposing)
+        {
+            WasDisposed = true;
+            base.Dispose(disposing);
         }
     }
 

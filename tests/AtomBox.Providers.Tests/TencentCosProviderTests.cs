@@ -160,6 +160,47 @@ public sealed class TencentCosProviderTests
     }
 
     [Fact]
+    public async Task UploadAsync_MapsRunningCancellationFromCosClient()
+    {
+        var client = new FakeTencentCosClient { BlockTransfersUntilCanceled = true };
+        await using var provider = CreateProvider(client);
+        await using var content = new MemoryStream([1, 2, 3]);
+        using var cancellation = new CancellationTokenSource();
+
+        var operation = provider.UploadAsync(
+            new RemotePath("bucket-a-1250000000/file.bin", RemotePathKind.ObjectPath),
+            content,
+            content.Length,
+            cancellationToken: cancellation.Token);
+        await client.TransferStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        cancellation.Cancel();
+
+        var result = await operation;
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCategory.Canceled, result.Error?.Category);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_MapsRunningCancellationFromCosClient()
+    {
+        var client = new FakeTencentCosClient { BlockTransfersUntilCanceled = true };
+        await using var provider = CreateProvider(client);
+        await using var destination = new MemoryStream();
+        using var cancellation = new CancellationTokenSource();
+
+        var operation = provider.DownloadAsync(
+            new RemotePath("bucket-a-1250000000/file.bin", RemotePathKind.ObjectPath),
+            destination,
+            cancellationToken: cancellation.Token);
+        await client.TransferStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        cancellation.Cancel();
+
+        var result = await operation;
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCategory.Canceled, result.Error?.Category);
+    }
+
+    [Fact]
     public async Task DeleteAsync_FolderDeletesFolderMarkerKey()
     {
         var client = new FakeTencentCosClient();
@@ -250,6 +291,11 @@ public sealed class TencentCosProviderTests
 
         public byte[] DownloadPayload { get; init; } = [];
 
+        public bool BlockTransfersUntilCanceled { get; init; }
+
+        public TaskCompletionSource TransferStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public IReadOnlyList<TencentCosBucket> ListBuckets()
         {
             return Buckets;
@@ -287,10 +333,40 @@ public sealed class TencentCosProviderTests
             progress?.Invoke(PutPayload.LongLength, PutPayload.LongLength);
         }
 
+        public async Task PutObjectAsync(
+            string bucketName,
+            string key,
+            Stream content,
+            Action<long, long>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            if (BlockTransfersUntilCanceled)
+            {
+                TransferStarted.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            PutObject(bucketName, key, content, progress);
+        }
+
         public void PutObjectMultipart(string bucketName, string key, Stream content, long contentLength, Action<long, long>? progress = null)
         {
             PutObject(bucketName, key, content, progress);
             progress?.Invoke(contentLength, contentLength);
+        }
+
+        public Task PutObjectMultipartAsync(
+            string bucketName,
+            string key,
+            Stream content,
+            long contentLength,
+            Action<long, long>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PutObjectMultipart(bucketName, key, content, contentLength, progress);
+            return Task.CompletedTask;
         }
 
         public TencentCosDownloadObject GetObject(string bucketName, string key)
@@ -298,6 +374,21 @@ public sealed class TencentCosProviderTests
             GetBucketName = bucketName;
             GetKey = key;
             return new TencentCosDownloadObject(new MemoryStream(DownloadPayload), DownloadPayload.LongLength);
+        }
+
+        public async Task<TencentCosDownloadObject> GetObjectAsync(
+            string bucketName,
+            string key,
+            CancellationToken cancellationToken = default)
+        {
+            if (BlockTransfersUntilCanceled)
+            {
+                TransferStarted.TrySetResult();
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            return GetObject(bucketName, key);
         }
     }
 

@@ -66,8 +66,10 @@ Core 端口 `ITransferTaskScheduler` 是 Transfer 对外暴露的调度入口。
 Application 可以调用 `ITransferTaskScheduler`，但只能表达用户用例，例如创建任务后提交、取消、重试。Application 不能指挥 worker 如何执行，也不能决定 provider 生命周期。
 
 取消请求是异步完成语义：`CancelAsync` 接受请求后立即返回，任务进入 `Canceling`。取消令牌沿
-`Scheduler -> Worker -> IStorageProvider -> Provider Adapter -> SDK/HTTP client` 传递。Provider 完成
-网络中断和临时文件清理后，worker 才写入最终 `Canceled`。
+`Scheduler -> Worker -> IStorageProvider -> Provider Adapter` 传递；能否继续进入 SDK/HTTP client 并真正
+中断网络请求取决于具体 Provider。FTP、SFTP、WebDAV、通用 S3、腾讯 COS 上传/下载以及七牛 Kodo 下载
+已经实现该路径，其他 OSS 仍可能只能阻止未开始的操作。Provider 完成可确认的网络退出和临时资源清理后，
+worker 才写入最终 `Canceled`；无法确认时必须在状态原因中保留远端状态未知告警。
 
 并发槽位属于 worker 的完整生命周期。任务处于 `Canceling`、底层请求或清理尚未退出时不得释放槽位；
 因此等待任务只会在前一任务真正停止后开始，不会与仍在传输的“已取消”任务形成隐性超额并发。

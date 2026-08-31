@@ -301,8 +301,51 @@ public sealed class S3CompatibleProviderTests
             });
     }
 
+    [Fact]
+    public async Task UploadAsync_UsesCancellableClientAndMapsCancellation()
+    {
+        var client = new CancellableS3CompatibleClient();
+        await using var provider = CreateProvider(client);
+        await using var content = new MemoryStream([1, 2, 3]);
+        using var cancellation = new CancellationTokenSource();
+
+        var operation = provider.UploadAsync(
+            new RemotePath("bucket-a/file.bin", RemotePathKind.ObjectPath),
+            content,
+            content.Length,
+            cancellationToken: cancellation.Token);
+        await client.OperationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        cancellation.Cancel();
+
+        var result = await operation;
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCategory.Canceled, result.Error?.Category);
+        Assert.Equal(cancellation.Token, client.ObservedCancellationToken);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_UsesCancellableClientAndMapsCancellation()
+    {
+        var client = new CancellableS3CompatibleClient();
+        await using var provider = CreateProvider(client);
+        await using var destination = new MemoryStream();
+        using var cancellation = new CancellationTokenSource();
+
+        var operation = provider.DownloadAsync(
+            new RemotePath("bucket-a/file.bin", RemotePathKind.ObjectPath),
+            destination,
+            cancellationToken: cancellation.Token);
+        await client.OperationStarted.Task.WaitAsync(TimeSpan.FromSeconds(2));
+        cancellation.Cancel();
+
+        var result = await operation;
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCategory.Canceled, result.Error?.Category);
+        Assert.Equal(cancellation.Token, client.ObservedCancellationToken);
+    }
+
     private static S3CompatibleProvider CreateProvider(
-        FakeS3CompatibleClient client,
+        IS3CompatibleClient client,
         TrackableCredentialLease? lease = null)
     {
         lease ??= new TrackableCredentialLease(new CredentialRef("cred-1"));
@@ -322,7 +365,100 @@ public sealed class S3CompatibleProviderTests
                 StorageCapability.Delete |
                 StorageCapability.CreateFolder |
                 StorageCapability.Rename |
-                StorageCapability.Move));
+                StorageCapability.Move |
+                StorageCapability.MultipartUpload));
+    }
+
+    private sealed class CancellableS3CompatibleClient : IS3CompatibleClient, ICancellableS3TransferClient
+    {
+        public TaskCompletionSource OperationStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public CancellationToken ObservedCancellationToken { get; private set; }
+
+        public IReadOnlyList<S3CompatibleBucket> ListBuckets() => [];
+
+        public void CreateBucket(string bucketName)
+        {
+        }
+
+        public S3CompatibleObjectListing ListObjects(
+            string bucketName,
+            string prefix,
+            string? cursor = null,
+            int maxKeys = 1000) => new([], []);
+
+        public void DeleteObject(string bucketName, string key)
+        {
+        }
+
+        public void CopyObject(
+            string sourceBucketName,
+            string sourceKey,
+            string destinationBucketName,
+            string destinationKey)
+        {
+        }
+
+        public void PutObject(string bucketName, string key, Stream content)
+        {
+            throw new InvalidOperationException("The cancellable path should be used.");
+        }
+
+        public void PutObjectMultipart(
+            string bucketName,
+            string key,
+            Stream content,
+            long contentLength,
+            Action<long, long>? progress = null)
+        {
+            throw new InvalidOperationException("The cancellable path should be used.");
+        }
+
+        public S3CompatibleDownloadObject GetObject(string bucketName, string key)
+        {
+            throw new InvalidOperationException("The cancellable path should be used.");
+        }
+
+        public Task PutObjectAsync(
+            string bucketName,
+            string key,
+            Stream content,
+            CancellationToken cancellationToken = default)
+        {
+            return WaitForCancellationAsync(cancellationToken);
+        }
+
+        public Task PutObjectMultipartAsync(
+            string bucketName,
+            string key,
+            Stream content,
+            long contentLength,
+            Action<long, long>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            return WaitForCancellationAsync(cancellationToken);
+        }
+
+        public async Task<S3CompatibleDownloadObject> GetObjectAsync(
+            string bucketName,
+            string key,
+            CancellationToken cancellationToken = default)
+        {
+            await WaitForCancellationAsync(cancellationToken);
+            throw new InvalidOperationException("Cancellation should have interrupted the operation.");
+        }
+
+        public void Dispose()
+        {
+        }
+
+        private async Task WaitForCancellationAsync(CancellationToken cancellationToken)
+        {
+            ObservedCancellationToken = cancellationToken;
+            OperationStarted.TrySetResult();
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+        }
     }
 
     private sealed class FakeS3CompatibleClient : IS3CompatibleClient

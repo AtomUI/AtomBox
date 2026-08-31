@@ -126,7 +126,7 @@ public class S3CompatibleProvider : IStorageProvider
         }
     }
 
-    public Task<OperationResult> UploadAsync(
+    public async Task<OperationResult> UploadAsync(
         RemotePath path,
         Stream content,
         long? contentLength,
@@ -140,32 +140,56 @@ public class S3CompatibleProvider : IStorageProvider
             var pathResult = GetObjectPath(path, "Upload target object path is required.");
             if (pathResult.IsFailure)
             {
-                return Task.FromResult(OperationResult.Failure(pathResult.Error!));
+                return OperationResult.Failure(pathResult.Error!);
             }
 
             var objectPath = pathResult.GetValueOrThrow();
             if (Capabilities.Supports(StorageCapability.MultipartUpload) &&
                 ObjectStorageUploadPolicy.ShouldUseMultipart(contentLength))
             {
-                _client.PutObjectMultipart(
-                    objectPath.BucketName,
-                    objectPath.KeyPrefix,
-                    content,
-                    contentLength!.Value,
-                    (completed, total) => progress?.Report(new TransferProgress(completed, total, null)));
+                if (_client is ICancellableS3TransferClient cancellableClient)
+                {
+                    await cancellableClient.PutObjectMultipartAsync(
+                        objectPath.BucketName,
+                        objectPath.KeyPrefix,
+                        content,
+                        contentLength!.Value,
+                        (completed, total) => progress?.Report(new TransferProgress(completed, total, null)),
+                        cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    _client.PutObjectMultipart(
+                        objectPath.BucketName,
+                        objectPath.KeyPrefix,
+                        content,
+                        contentLength!.Value,
+                        (completed, total) => progress?.Report(new TransferProgress(completed, total, null)));
+                }
             }
             else
             {
                 var progressStream = new ProgressReadStream(content, contentLength, progress);
-                _client.PutObject(objectPath.BucketName, objectPath.KeyPrefix, progressStream);
+                if (_client is ICancellableS3TransferClient cancellableClient)
+                {
+                    await cancellableClient.PutObjectAsync(
+                        objectPath.BucketName,
+                        objectPath.KeyPrefix,
+                        progressStream,
+                        cancellationToken).ConfigureAwait(false);
+                }
+                else
+                {
+                    _client.PutObject(objectPath.BucketName, objectPath.KeyPrefix, progressStream);
+                }
                 progress?.Report(new TransferProgress(contentLength ?? progressStream.BytesRead, contentLength ?? progressStream.BytesRead, null));
             }
 
-            return Task.FromResult(OperationResult.Success());
+            return OperationResult.Success();
         }
         catch (Exception exception)
         {
-            return Task.FromResult(OperationResult.Failure(ProviderErrorMapper.FromException(exception)));
+            return OperationResult.Failure(ProviderErrorMapper.FromException(exception));
         }
     }
 
@@ -276,7 +300,12 @@ public class S3CompatibleProvider : IStorageProvider
             }
 
             var objectPath = pathResult.GetValueOrThrow();
-            using var remoteObject = _client.GetObject(objectPath.BucketName, objectPath.KeyPrefix);
+            using var remoteObject = _client is ICancellableS3TransferClient cancellableClient
+                ? await cancellableClient.GetObjectAsync(
+                    objectPath.BucketName,
+                    objectPath.KeyPrefix,
+                    cancellationToken).ConfigureAwait(false)
+                : _client.GetObject(objectPath.BucketName, objectPath.KeyPrefix);
             await CopyToAsync(remoteObject.Content, destination, remoteObject.ContentLength, progress, cancellationToken)
                 .ConfigureAwait(false);
             return OperationResult.Success();

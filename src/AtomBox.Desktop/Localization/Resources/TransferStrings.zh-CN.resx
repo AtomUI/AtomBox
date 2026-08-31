@@ -46,6 +46,12 @@
   <data name="Pending" xml:space="preserve"><value>等待中</value></data>
   <data name="Running" xml:space="preserve"><value>运行中</value></data>
   <data name="Canceling" xml:space="preserve"><value>正在取消</value></data>
+  <data name="TryCancel" xml:space="preserve"><value>尝试取消</value></data>
+  <data name="AttemptingCancellation" xml:space="preserve"><value>正在尝试取消</value></data>
+  <data name="TryCancelTitle" xml:space="preserve"><value>尝试取消传输</value></data>
+  <data name="TryCancelMessage" xml:space="preserve"><value>该存储服务不支持可靠的即时取消。当前请求可能继续执行，远端文件最终状态请在传输结束后刷新目录确认。</value></data>
+  <data name="ContinueTryCancel" xml:space="preserve"><value>继续尝试取消</value></data>
+  <data name="Return" xml:space="preserve"><value>返回</value></data>
   <data name="Paused" xml:space="preserve"><value>暂停</value></data>
   <data name="PausedPercent" xml:space="preserve"><value>暂停 {0:0}%</value></data>
   <data name="TaskCompletedSingle" xml:space="preserve"><value>{0}{1}完毕</value></data>

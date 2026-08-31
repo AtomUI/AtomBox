@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Windows.Input;
+using AtomBox.Application.Accounts;
 using AtomBox.Application.Transfers;
 using AtomBox.Core.Transfers;
 using AtomBox.Core.ValueObjects;
@@ -7,6 +8,7 @@ using AtomBox.Desktop.Dialogs;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Services;
 using AtomBox.Desktop.Shell;
+using AtomBox.Providers.Common;
 using Avalonia.Threading;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
@@ -14,6 +16,7 @@ namespace AtomBox.Desktop.ViewModels.Pages;
 public sealed class TransferQueueViewModel : LocalizedViewModelBase
 {
     private readonly TransferAppService _transfers;
+    private readonly AccountAppService _accounts;
     private readonly IMessageService _messages;
     private readonly IDialogService _dialogs;
     private readonly StatusBarViewModel _statusBar;
@@ -21,6 +24,7 @@ public sealed class TransferQueueViewModel : LocalizedViewModelBase
     private static readonly Lock CompletionNotificationLock = new();
     private static readonly HashSet<TransferTaskId> CompletionNotificationsShown = [];
     private readonly Dictionary<TransferTaskId, TransferTaskRowViewModel> _lastObservedTasks = [];
+    private readonly Dictionary<StorageAccountId, StorageProviderId> _providerIdsByAccount = [];
     private LocalizedText _statusMessage = new("Transfer", "LoadingQueue");
     private IReadOnlyList<TransferStateSnapshot> _currentSnapshots = [];
     private bool _isLoading;
@@ -29,6 +33,7 @@ public sealed class TransferQueueViewModel : LocalizedViewModelBase
 
     public TransferQueueViewModel(
         TransferAppService transfers,
+        AccountAppService accounts,
         IMessageService messages,
         IDialogService dialogs,
         StatusBarViewModel statusBar,
@@ -36,6 +41,7 @@ public sealed class TransferQueueViewModel : LocalizedViewModelBase
         : base(localization)
     {
         _transfers = transfers;
+        _accounts = accounts;
         _messages = messages;
         _dialogs = dialogs;
         _statusBar = statusBar;
@@ -133,11 +139,12 @@ public sealed class TransferQueueViewModel : LocalizedViewModelBase
 
             var snapshots = result.GetValueOrThrow().Tasks;
             _currentSnapshots = snapshots;
+            await EnsureProviderIdsAsync(snapshots).ConfigureAwait(true);
             await NotifyCompletedTasksAsync(snapshots).ConfigureAwait(true);
 
             foreach (var task in snapshots)
             {
-                Tasks.Add(TransferTaskRowViewModel.From(task, ExecuteTaskActionCommand, ShowTaskDetailsCommand, Localization));
+                Tasks.Add(CreateTaskRow(task));
             }
 
             SetStatus(Tasks.Count == 0
@@ -195,7 +202,7 @@ public sealed class TransferQueueViewModel : LocalizedViewModelBase
                 continue;
             }
 
-            var completed = TransferTaskRowViewModel.From(snapshot, ExecuteTaskActionCommand, ShowTaskDetailsCommand, Localization);
+            var completed = CreateTaskRow(snapshot);
             completedTasks.Add(completed);
         }
 
@@ -251,6 +258,19 @@ public sealed class TransferQueueViewModel : LocalizedViewModelBase
         if (parameter is not TransferTaskRowViewModel row)
         {
             return;
+        }
+
+        if (row.Status == TransferStatus.Running && row.UsesBestEffortCancellation)
+        {
+            var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogRequest(
+                Localization.GetString("Transfer", "TryCancelTitle"),
+                Localization.GetString("Transfer", "TryCancelMessage"),
+                Localization.GetString("Transfer", "ContinueTryCancel"),
+                Localization.GetString("Transfer", "Return"))).ConfigureAwait(true);
+            if (!confirmed)
+            {
+                return;
+            }
         }
 
         var result = row.Status switch
@@ -358,6 +378,36 @@ public sealed class TransferQueueViewModel : LocalizedViewModelBase
         OnPropertyChanged(nameof(StatusMessage));
     }
 
+    private async Task EnsureProviderIdsAsync(IReadOnlyList<TransferStateSnapshot> snapshots)
+    {
+        if (snapshots.All(snapshot => _providerIdsByAccount.ContainsKey(snapshot.Task.StorageAccountId)))
+        {
+            return;
+        }
+
+        var accountsResult = await _accounts.ListAsync(new ListStorageAccountsRequest()).ConfigureAwait(true);
+        if (accountsResult.IsFailure)
+        {
+            return;
+        }
+
+        foreach (var account in accountsResult.GetValueOrThrow())
+        {
+            _providerIdsByAccount[account.Id] = account.ProviderId;
+        }
+    }
+
+    private TransferTaskRowViewModel CreateTaskRow(TransferStateSnapshot snapshot)
+    {
+        _providerIdsByAccount.TryGetValue(snapshot.Task.StorageAccountId, out var providerId);
+        return TransferTaskRowViewModel.From(
+            snapshot,
+            providerId,
+            ExecuteTaskActionCommand,
+            ShowTaskDetailsCommand,
+            Localization);
+    }
+
     protected override void OnLanguageChanged()
     {
         OnPropertyChanged(nameof(Title));
@@ -365,7 +415,7 @@ public sealed class TransferQueueViewModel : LocalizedViewModelBase
         Tasks.Clear();
         foreach (var task in _currentSnapshots)
         {
-            Tasks.Add(TransferTaskRowViewModel.From(task, ExecuteTaskActionCommand, ShowTaskDetailsCommand, Localization));
+            Tasks.Add(CreateTaskRow(task));
         }
         RaiseTaskCollectionStateChanged();
     }
@@ -389,6 +439,7 @@ public sealed record TransferTaskRowViewModel(
     string Speed,
     string? Reason,
     bool HasDetails,
+    bool UsesBestEffortCancellation,
     string Action,
     bool CanExecuteAction,
     ICommand ActionCommand,
@@ -398,6 +449,7 @@ public sealed record TransferTaskRowViewModel(
 
     public static TransferTaskRowViewModel From(
         TransferStateSnapshot snapshot,
+        StorageProviderId providerId,
         ICommand actionCommand,
         ICommand detailsCommand,
         ILocalizationService localization)
@@ -406,6 +458,7 @@ public sealed record TransferTaskRowViewModel(
         var targetOrSource = task.Direction == TransferDirection.Upload
             ? task.RemotePath.ToString()
             : task.LocalPath.ToString();
+        var usesBestEffortCancellation = UsesBestEffortCancellationFor(providerId, task.Direction);
 
         return new TransferTaskRowViewModel(
             task.Id,
@@ -413,13 +466,14 @@ public sealed record TransferTaskRowViewModel(
             GetFileName(task, localization),
             FormatDirection(task.Direction, localization),
             string.IsNullOrWhiteSpace(targetOrSource) ? "/" : targetOrSource,
-            FormatProgress(task.Status, snapshot.Progress, localization),
+            FormatProgress(task.Status, snapshot.Progress, usesBestEffortCancellation, localization),
             snapshot.Progress?.Percent ?? 0,
             task.Status == TransferStatus.Running && snapshot.Progress?.Percent is not null,
             FormatSpeed(task.Status, snapshot.Progress),
             task.StatusReason,
             !string.IsNullOrWhiteSpace(task.StatusReason) || task.Status is TransferStatus.Failed or TransferStatus.Interrupted,
-            FormatAction(task.Status, localization),
+            usesBestEffortCancellation,
+            FormatAction(task.Status, usesBestEffortCancellation, localization),
             CanExecuteActionFor(task.Status, snapshot.CanRetry),
             actionCommand,
             detailsCommand);
@@ -439,14 +493,20 @@ public sealed record TransferTaskRowViewModel(
         return localization.GetString("Transfer", direction == TransferDirection.Upload ? "Upload" : "Download");
     }
 
-    private static string FormatProgress(TransferStatus status, TransferProgress? progress, ILocalizationService localization)
+    private static string FormatProgress(
+        TransferStatus status,
+        TransferProgress? progress,
+        bool usesBestEffortCancellation,
+        ILocalizationService localization)
     {
         return status switch
         {
             TransferStatus.Pending => localization.GetString("Transfer", "Pending"),
             TransferStatus.Running when progress?.Percent is { } percent => $"{percent:0}%",
             TransferStatus.Running => localization.GetString("Transfer", "Running"),
-            TransferStatus.Canceling => localization.GetString("Transfer", "Canceling"),
+            TransferStatus.Canceling => localization.GetString(
+                "Transfer",
+                usesBestEffortCancellation ? "AttemptingCancellation" : "Canceling"),
             TransferStatus.Paused when progress?.Percent is { } percent => localization.Format("Transfer", "PausedPercent", percent),
             TransferStatus.Paused => localization.GetString("Transfer", "Paused"),
             TransferStatus.Interrupted => localization.GetString("Transfer", "Interrupted"),
@@ -482,12 +542,17 @@ public sealed record TransferTaskRowViewModel(
         return $"{bytesPerSecond:0} B/s";
     }
 
-    private static string FormatAction(TransferStatus status, ILocalizationService localization)
+    private static string FormatAction(
+        TransferStatus status,
+        bool usesBestEffortCancellation,
+        ILocalizationService localization)
     {
         return status switch
         {
             TransferStatus.Pending => localization.GetString("Common", "Cancel"),
-            TransferStatus.Running => localization.GetString("Common", "Cancel"),
+            TransferStatus.Running => usesBestEffortCancellation
+                ? localization.GetString("Transfer", "TryCancel")
+                : localization.GetString("Common", "Cancel"),
             TransferStatus.Canceling => "-",
             TransferStatus.Paused => "-",
             TransferStatus.Interrupted => localization.GetString("Common", "Retry"),
@@ -496,6 +561,23 @@ public sealed record TransferTaskRowViewModel(
             TransferStatus.Canceled => "-",
             _ => "-"
         };
+    }
+
+    private static bool UsesBestEffortCancellationFor(
+        StorageProviderId providerId,
+        TransferDirection direction)
+    {
+        if (providerId == StorageProviderRegistry.S3CompatibleProviderId ||
+            providerId == StorageProviderRegistry.TencentCosProviderId ||
+            providerId == StorageProviderRegistry.FtpProviderId ||
+            providerId == StorageProviderRegistry.SftpProviderId ||
+            providerId == StorageProviderRegistry.WebDavProviderId)
+        {
+            return false;
+        }
+
+        return providerId != StorageProviderRegistry.QiniuKodoProviderId ||
+               direction != TransferDirection.Download;
     }
 
     private static bool CanExecuteActionFor(TransferStatus status, bool canRetry)

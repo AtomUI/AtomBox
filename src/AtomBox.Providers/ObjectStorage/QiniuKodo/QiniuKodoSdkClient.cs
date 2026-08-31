@@ -155,15 +155,26 @@ internal sealed class QiniuKodoSdkClient : IQiniuKodoClient
         }
 
         var url = DownloadManager.CreatePrivateUrl(_mac, _downloadDomain, key, expireInSeconds: 3600);
-        using var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+        var response = await _httpClient.GetAsync(url, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            throw new QiniuKodoHttpException((int)response.StatusCode, response.ReasonPhrase);
+            using (response)
+            {
+                throw new QiniuKodoHttpException((int)response.StatusCode, response.ReasonPhrase);
+            }
         }
 
-        var content = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
-        return new QiniuKodoDownloadObject(new MemoryStream(content, writable: false), content.LongLength);
+        try
+        {
+            var content = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            return new QiniuKodoDownloadObject(content, response.Content.Headers.ContentLength, response);
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
     }
 
     private async Task<QiniuKodoDownloadObject> GetObjectViaS3Async(
@@ -182,15 +193,26 @@ internal sealed class QiniuKodoSdkClient : IQiniuKodoClient
         }.Uri;
         using var request = new HttpRequestMessage(HttpMethod.Get, uri);
         SignS3Request(request, path, ExtractS3Region(endpoint.Host));
-        using var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+        var response = await _httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
             .ConfigureAwait(false);
         if (!response.IsSuccessStatusCode)
         {
-            throw new QiniuKodoHttpException((int)response.StatusCode, response.ReasonPhrase);
+            using (response)
+            {
+                throw new QiniuKodoHttpException((int)response.StatusCode, response.ReasonPhrase);
+            }
         }
 
-        var content = await response.Content.ReadAsByteArrayAsync(cancellationToken).ConfigureAwait(false);
-        return new QiniuKodoDownloadObject(new MemoryStream(content, writable: false), content.LongLength);
+        try
+        {
+            var content = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
+            return new QiniuKodoDownloadObject(content, response.Content.Headers.ContentLength, response);
+        }
+        catch
+        {
+            response.Dispose();
+            throw;
+        }
     }
 
     public void Dispose()

@@ -87,8 +87,8 @@
 当前 v0.1 发布基线能力：
 
 - Desktop Shell、首页、左侧菜单、远程存储汇总页、账号管理、应用设置、传输队列、传输历史已经形成可用闭环。
-- Provider 主路径包含对象存储、SFTP、FTP、WebDAV；对象存储已接入阿里云 OSS、腾讯 COS、七牛 Kodo、又拍云 USS、华为云 OBS、百度 BOS、京东云 OSS、青云 QingStor、火山引擎 TOS 等 provider。
-- Transfer 支持上传、下载、多任务并发、运行中取消、失败/中断重试、速度统计、队列和历史查询。
+- Provider 主路径包含对象存储、SFTP、FTP、WebDAV；对象存储已接入通用 S3、阿里云 OSS、腾讯 COS、七牛 Kodo、又拍云 USS、华为云 OBS、百度 BOS、火山引擎 TOS 等 provider。京东云 OSS、青云 QingStor 的代码保留，但 Desktop 添加账号入口继续隐藏。
+- Transfer 支持上传、下载、多任务并发、取消生命周期、失败/中断重试、速度统计、队列和历史查询。运行中网络请求的真实取消当前覆盖 FTP/SFTP/WebDAV、通用 S3 和腾讯 COS 上传/下载，以及七牛 Kodo 下载；其他 OSS 方向不能仅凭 Transfer 状态推断底层请求已经退出。
 - 账号、凭据、本地设置、日志、状态和传输记录通过 Application / Infrastructure 路径进入 UI，不允许 UI 绕过 Application 直接访问 Provider 或存储实现。
 - Windows self-contained 单文件发布脚本已经作为第一版发包路径；trim / AOT 仍属于后续体积优化探索。
 

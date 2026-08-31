@@ -143,6 +143,102 @@ public sealed class TencentCosIntegrationTests
         }
     }
 
+    [Fact]
+    [Trait("Category", "RealCancellationIntegration")]
+    public async Task TencentCosCancellationIntegration_StopsRunningPut()
+    {
+        var environment = TencentCosTestEnvironment.TryRead();
+        if (environment is null || !CancellationIntegrationEnabled())
+        {
+            return;
+        }
+
+        var path = CreateCancellationPath(environment, "put.bin");
+
+        try
+        {
+            await AssertUploadCanceledAsync(environment, path, 4 * 1024 * 1024)
+                .WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.False(await ObjectExistsAsync(environment, path).WaitAsync(TimeSpan.FromSeconds(15)));
+        }
+        finally
+        {
+            await DeleteIfPresentAsync(environment, path).WaitAsync(TimeSpan.FromSeconds(15));
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "RealCancellationIntegration")]
+    public async Task TencentCosCancellationIntegration_StopsMultipartAndAbortsUpload()
+    {
+        var environment = TencentCosTestEnvironment.TryRead();
+        if (environment is null || !CancellationIntegrationEnabled())
+        {
+            return;
+        }
+
+        var path = CreateCancellationPath(environment, "multipart.bin");
+        try
+        {
+            await AssertUploadCanceledAsync(environment, path, 6 * 1024 * 1024)
+                .WaitAsync(TimeSpan.FromSeconds(15));
+            Assert.False(await ObjectExistsAsync(environment, path).WaitAsync(TimeSpan.FromSeconds(15)));
+        }
+        finally
+        {
+            await DeleteIfPresentAsync(environment, path).WaitAsync(TimeSpan.FromSeconds(15));
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "RealCancellationIntegration")]
+    public async Task TencentCosCancellationIntegration_StopsRunningDownload()
+    {
+        var environment = TencentCosTestEnvironment.TryRead();
+        if (environment is null || !CancellationIntegrationEnabled())
+        {
+            return;
+        }
+
+        var path = CreateCancellationPath(environment, "download.bin");
+        try
+        {
+            await using var setupProvider = await CreateProviderAsync(environment);
+            await using (var setup = new MemoryStream(new byte[8 * 1024 * 1024], writable: false))
+            {
+                var setupResult = await setupProvider.UploadAsync(path, setup, setup.Length);
+                Assert.True(setupResult.IsSuccess, FormatError("Expected cancellation download setup to succeed.", setupResult.Error));
+            }
+
+            await using var downloadProvider = await CreateProviderAsync(environment);
+            using var downloadCancellation = new CancellationTokenSource(TimeSpan.FromMilliseconds(50));
+            await using var destination = new MemoryStream();
+            var downloadResult = await downloadProvider.DownloadAsync(
+                path,
+                destination,
+                cancellationToken: downloadCancellation.Token);
+            Assert.Equal(StorageErrorCategory.Canceled, downloadResult.Error?.Category);
+        }
+        finally
+        {
+            await DeleteIfPresentAsync(environment, path).WaitAsync(TimeSpan.FromSeconds(15));
+        }
+    }
+
+    private static RemotePath CreateCancellationPath(TencentCosTestEnvironment environment, string fileName)
+    {
+        var key = $"{environment.TestPrefix}cancel-{Guid.NewGuid():N}/{fileName}";
+        return new RemotePath($"{environment.Bucket}/{key}", RemotePathKind.ObjectPath);
+    }
+
+    private static async Task DeleteIfPresentAsync(
+        TencentCosTestEnvironment environment,
+        RemotePath path)
+    {
+        await using var provider = await CreateProviderAsync(environment);
+        await provider.DeleteAsync(path);
+    }
+
     private static async Task<IStorageProvider> CreateProviderAsync(TencentCosTestEnvironment environment)
     {
         var descriptor = StorageProviderRegistry.CreateDefaultDescriptors()
@@ -176,6 +272,86 @@ public sealed class TencentCosIntegrationTests
         return error is null
             ? message
             : $"{message} Code={error.Code}; Category={error.Category}; Retryable={error.IsRetryable}; ProviderErrorCode={error.ProviderErrorCode}; Message={error.Message}";
+    }
+
+    private static async Task AssertUploadCanceledAsync(
+        TencentCosTestEnvironment environment,
+        RemotePath path,
+        int payloadSize)
+    {
+        await using var provider = await CreateProviderAsync(environment);
+        await using var source = new GatedReadStream(new byte[payloadSize]);
+        using var cancellation = new CancellationTokenSource();
+
+        var operation = Task.Run(() =>
+            provider.UploadAsync(path, source, source.Length, cancellationToken: cancellation.Token));
+        await source.ReadStarted.Task.WaitAsync(TimeSpan.FromSeconds(10));
+        cancellation.Cancel();
+        source.Release();
+        var result = await operation;
+
+        Assert.Equal(StorageErrorCategory.Canceled, result.Error?.Category);
+    }
+
+    private static async Task<bool> ObjectExistsAsync(
+        TencentCosTestEnvironment environment,
+        RemotePath objectPath)
+    {
+        await using var provider = await CreateProviderAsync(environment);
+        var parent = objectPath.GetParent() ?? RemotePath.Root;
+        var result = await provider.ListAsync(parent);
+        Assert.True(result.IsSuccess, FormatError("Expected cancellation verification list to succeed.", result.Error));
+        return result.GetValueOrThrow().Any(item => item.Path.Value == objectPath.Value);
+    }
+
+    private static bool CancellationIntegrationEnabled()
+    {
+        return string.Equals(
+            Environment.GetEnvironmentVariable("ATOMBOX_TEST_OSS_CANCELLATION"),
+            "1",
+            StringComparison.Ordinal);
+    }
+
+    private sealed class GatedReadStream : MemoryStream
+    {
+        private readonly TaskCompletionSource _release =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public GatedReadStream(byte[] payload)
+            : base(payload, writable: false)
+        {
+        }
+
+        public TaskCompletionSource ReadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public void Release()
+        {
+            _release.TrySetResult();
+        }
+
+        public override int Read(byte[] buffer, int offset, int count)
+        {
+            ReadStarted.TrySetResult();
+            _release.Task.ConfigureAwait(false).GetAwaiter().GetResult();
+            return base.Read(buffer, offset, count);
+        }
+
+        public override int Read(Span<byte> buffer)
+        {
+            ReadStarted.TrySetResult();
+            _release.Task.ConfigureAwait(false).GetAwaiter().GetResult();
+            return base.Read(buffer);
+        }
+
+        public override async ValueTask<int> ReadAsync(
+            Memory<byte> buffer,
+            CancellationToken cancellationToken = default)
+        {
+            ReadStarted.TrySetResult();
+            await _release.Task.WaitAsync(cancellationToken);
+            return await base.ReadAsync(buffer, cancellationToken);
+        }
     }
 
     private sealed record TencentCosTestEnvironment(

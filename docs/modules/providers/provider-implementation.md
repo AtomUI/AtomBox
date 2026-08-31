@@ -141,8 +141,10 @@ FTP、SFTP 和 WebDAV 的上传必须先写入目标同目录的 `.atombox-uploa
 
 文件传输适配器必须使用底层库的异步可取消接口：FTP 使用 FluentFTP `AsyncFtpClient`，SFTP 使用 SSH.NET
 异步 API，WebDAV 使用 `HttpClient.SendAsync` 并传入任务令牌。同步 SDK 调用外包一层 `Task` 不构成真实取消。
-当前规则只覆盖 FTP、SFTP 和 WebDAV；对象存储 Provider 的请求级取消、multipart abort 和部分对象清理属于
-后续独立批次。
+FTP、SFTP 和 WebDAV 已完整执行上述规则。对象存储的运行中取消按 Provider 和方向逐步开放：通用 S3、
+腾讯云 COS 支持上传与下载，七牛 Kodo 仅支持下载；其他对象存储和七牛上传仍不承诺底层请求能够立即退出。
+通用 S3 使用 AWS SDK 请求级 Token；腾讯 COS 组合 `Cancel(CosRequest)`、可取消正文流、回调确认和 multipart
+Abort；七牛下载使用可取消的 HTTP 响应流。不能把 Transfer 已进入 `Canceling` 等同于任意 SDK 已经停止网络请求。
 
 ## 8. 异常与日志
 
@@ -207,6 +209,7 @@ S3 compatible 对象存储分层：
 
 - `S3CompatibleProvider` 承载通用对象存储运行时行为：bucket/key 路径解析、prefix 伪目录列表、上传、下载、删除和统一错误映射。
 - `IS3CompatibleClient` 隔离具体 SDK/API，返回中性 `S3Compatible*` 数据模型。
+- `ICancellableS3TransferClient` 是可选的内部传输扩展，只由能够提供请求级取消的客户端实现；当前通用 S3 的 AWS SDK 客户端实现该接口，其他共享 S3 客户端继续使用原同步契约。
 - `S3CompatibleAwsV4Client` 用于 AWS Signature V4 且 S3 API 兼容的服务，例如华为云 OBS、京东云 OSS、青云 QingStor 当前适配路径。
 - 百度智能云 BOS 使用百度官方 C# SDK（`BaiduBce.Services.Bos.BosClient`）实现 `BaiduBosSdkClient`，再适配到 `IS3CompatibleClient`，运行时仍复用 `S3CompatibleProvider`。
 - 火山引擎 TOS 使用官方 `Volcengine.TOS.SDK.NetCore`，通过 `VolcengineTosSdkClient` 适配到 `IS3CompatibleClient`，运行时仍复用 `S3CompatibleProvider`。

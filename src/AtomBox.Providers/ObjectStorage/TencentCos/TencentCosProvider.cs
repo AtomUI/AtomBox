@@ -137,7 +137,7 @@ public sealed class TencentCosProvider : IStorageProvider
         }
     }
 
-    public Task<OperationResult> UploadAsync(
+    public async Task<OperationResult> UploadAsync(
         RemotePath path,
         Stream content,
         long? contentLength,
@@ -152,32 +152,37 @@ public sealed class TencentCosProvider : IStorageProvider
             var pathResult = GetObjectPath(path, "Upload target object path is required.");
             if (pathResult.IsFailure)
             {
-                return Task.FromResult(OperationResult.Failure(pathResult.Error!));
+                return OperationResult.Failure(pathResult.Error!);
             }
 
             var cosPath = pathResult.GetValueOrThrow();
             if (Capabilities.Supports(StorageCapability.MultipartUpload) &&
                 ObjectStorageUploadPolicy.ShouldUseMultipart(contentLength))
             {
-                _client.PutObjectMultipart(
+                await _client.PutObjectMultipartAsync(
                     cosPath.BucketName,
                     cosPath.KeyPrefix,
                     content,
                     contentLength!.Value,
-                    (completed, total) => progress?.Report(new TransferProgress(completed, total, null)));
+                    (completed, total) => progress?.Report(new TransferProgress(completed, total, null)),
+                    cancellationToken).ConfigureAwait(false);
             }
             else
             {
-                _client.PutObject(cosPath.BucketName, cosPath.KeyPrefix, content, (completed, total) =>
-                    progress?.Report(new TransferProgress(completed, total > 0 ? total : contentLength, null)));
+                await _client.PutObjectAsync(
+                    cosPath.BucketName,
+                    cosPath.KeyPrefix,
+                    content,
+                    (completed, total) => progress?.Report(new TransferProgress(completed, total > 0 ? total : contentLength, null)),
+                    cancellationToken).ConfigureAwait(false);
                 progress?.Report(new TransferProgress(contentLength ?? 0, contentLength ?? 0, null));
             }
 
-            return Task.FromResult(OperationResult.Success());
+            return OperationResult.Success();
         }
         catch (Exception exception)
         {
-            return Task.FromResult(OperationResult.Failure(ProviderErrorMapper.FromException(exception)));
+            return OperationResult.Failure(ProviderErrorMapper.FromException(exception));
         }
     }
 
@@ -199,7 +204,10 @@ public sealed class TencentCosProvider : IStorageProvider
             }
 
             var cosPath = pathResult.GetValueOrThrow();
-            using var cosObject = _client.GetObject(cosPath.BucketName, cosPath.KeyPrefix);
+            using var cosObject = await _client.GetObjectAsync(
+                cosPath.BucketName,
+                cosPath.KeyPrefix,
+                cancellationToken).ConfigureAwait(false);
             await CopyToAsync(
                 cosObject.Content,
                 destination,

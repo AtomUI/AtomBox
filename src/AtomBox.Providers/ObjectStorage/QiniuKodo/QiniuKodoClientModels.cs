@@ -16,10 +16,13 @@ internal sealed record QiniuKodoObjectSummary(
 
 internal sealed class QiniuKodoDownloadObject : IDisposable
 {
-    public QiniuKodoDownloadObject(Stream content, long? contentLength)
+    private readonly IDisposable? _owner;
+
+    public QiniuKodoDownloadObject(Stream content, long? contentLength, IDisposable? owner = null)
     {
         Content = content ?? throw new ArgumentNullException(nameof(content));
         ContentLength = contentLength;
+        _owner = owner;
     }
 
     public Stream Content { get; }
@@ -28,6 +31,13 @@ internal sealed class QiniuKodoDownloadObject : IDisposable
 
     public void Dispose()
     {
-        Content.Dispose();
+        try
+        {
+            Content.Dispose();
+        }
+        finally
+        {
+            _owner?.Dispose();
+        }
     }
 }

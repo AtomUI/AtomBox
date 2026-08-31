@@ -45,7 +45,7 @@ AtomBox 遵循以下原则：
 | 2 | Application | 编排用户用例，把 UI 动作转换为应用流程，例如账号管理、连接测试、远程目录浏览、创建上传下载任务、触发删除或刷新。 |
 | 3 | Transfer Engine | 管理传输任务生命周期，包括任务队列、并发调度、取消、重试、进度聚合、速度统计和任务状态更新；`Paused` / `Interrupted` 状态用于关闭、中断和后续恢复设计，第一版不承诺对外暂停/恢复调度能力。 |
 | 4 | Provider Abstraction | 表达统一存储能力，定义 provider 需要暴露的最小公共行为和可选能力。该层的核心抽象通常定义在 Core 中。 |
-| 5 | Provider Implementation | 适配具体存储后端，把阿里云 OSS、腾讯 COS、七牛 Kodo、又拍云 USS、华为云 OBS、百度智能云 BOS、京东云 OSS、青云 QingStor、火山引擎 TOS、FTP/SFTP/WebDAV、阿里云盘、百度网盘等 SDK/API 转换为 AtomBox 的统一模型和错误语义。 |
+| 5 | Provider Implementation | 适配具体存储后端，把通用 S3、阿里云 OSS、腾讯 COS、七牛 Kodo、又拍云 USS、华为云 OBS、百度智能云 BOS、火山引擎 TOS、FTP/SFTP/WebDAV、阿里云盘、百度网盘等 SDK/API 转换为 AtomBox 的统一模型和错误语义。京东云 OSS、青云 QingStor 的代码保留但 UI 入口隐藏。 |
 | 6 | External Systems | 真正的外部系统，包括云厂商 SDK、FTP/SFTP 服务、网盘 HTTP API、远程对象存储服务等。 |
 
 从上至下的典型运行流程如下：
