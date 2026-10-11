@@ -1,3 +1,5 @@
+using AtomBox.Desktop.ViewModels.Pages;
+using AtomUI.City.Presentation;
 using Avalonia.Controls;
 using Avalonia.Input;
 using Avalonia.Markup.Xaml;
@@ -5,7 +7,8 @@ using Avalonia.Media;
 
 namespace AtomBox.Desktop.Views.Transfers;
 
-public sealed partial class TransferQueueView : UserControl
+[ViewFor(typeof(TransferQueueViewModel))]
+public sealed partial class TransferQueueView : UserControl, IViewDataContextAware
 {
     private static readonly IBrush RowBackground = SolidColorBrush.Parse("#FFFFFF");
     private static readonly IBrush RowPointerOverBackground = SolidColorBrush.Parse("#EAF2FF");

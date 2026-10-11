@@ -1,17 +1,21 @@
 using AtomBox.Application.DependencyInjection;
 using AtomBox.Infrastructure.Configuration;
 using AtomBox.Infrastructure.DependencyInjection;
+using AtomBox.Desktop.Navigation;
 using AtomBox.Providers.DependencyInjection;
 using AtomBox.Transfer.DependencyInjection;
 using AtomBox.Transfer.Scheduling;
+using AtomUI.City.Generated;
 using AtomUI.City.Core.Modularity;
 using AtomUI.City.Presentation;
+using AtomUI.City.Routing;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace AtomBox.Desktop.Composition;
 
 [Module("AtomBox.Desktop", Description = "Composes the AtomBox desktop application.")]
 [DependsOn(typeof(PresentationModule))]
+[DependsOn(typeof(RoutingModule))]
 public sealed class AtomBoxDesktopModule : ModuleBase
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
@@ -22,6 +26,7 @@ public sealed class AtomBoxDesktopModule : ModuleBase
         context.Services.AddAtomBoxProviders();
         context.Services.AddAtomBoxTransfer();
         context.Services.AddAtomBoxApplication();
+        context.Services.AddRouting(AtomBoxRouteCatalog.Descriptors);
         context.Services.AddAtomBoxDesktop();
     }
 
@@ -31,6 +36,9 @@ public sealed class AtomBoxDesktopModule : ModuleBase
     {
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
+
+        GeneratedPresentationViewRegistrar.RegisterViews(
+            context.Services.GetRequiredService<IViewRegistry>());
 
         var infrastructureResult = context.Services
             .GetRequiredService<InfrastructureInitializer>()

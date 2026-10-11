@@ -58,8 +58,7 @@
 
             <Border atom:Splitter.MinSize="640"
                     Background="{StaticResource AtomBoxSurfaceBrush}">
-                <ContentControl Name="MainContent"
-                                Content="{Binding CurrentViewModel}" />
+                <ContentControl Name="MainContent" />
             </Border>
         </atom:Splitter>
 

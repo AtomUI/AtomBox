@@ -7,6 +7,7 @@ using AtomUI;
 using AtomUI.City.Core.Hosting;
 using AtomUI.City.Core.Modularity;
 using AtomUI.City.Presentation;
+using AtomUI.City.Routing;
 using Avalonia;
 using Avalonia.Controls;
 using Microsoft.Extensions.DependencyInjection;
@@ -71,6 +72,7 @@ internal static class Program
         });
         builder
             .UseModule<PresentationModule>()
+            .UseModule<RoutingModule>()
             .UseModule<AtomBoxDesktopModule>();
 
         return builder.Build();

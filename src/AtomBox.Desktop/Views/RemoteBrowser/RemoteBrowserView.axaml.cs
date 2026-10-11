@@ -4,11 +4,13 @@ using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using AtomBox.Desktop.ViewModels.Pages;
+using AtomUI.City.Presentation;
 using AtomUI.Desktop.Controls;
 
 namespace AtomBox.Desktop.Views.RemoteBrowser;
 
-public sealed partial class RemoteBrowserView : UserControl
+[ViewFor(typeof(RemoteBrowserViewModel))]
+public sealed partial class RemoteBrowserView : UserControl, IViewDataContextAware
 {
     private static readonly IBrush RowBackground = SolidColorBrush.Parse("#FFFFFF");
     private static readonly IBrush RowPointerOverBackground = SolidColorBrush.Parse("#EAF2FF");

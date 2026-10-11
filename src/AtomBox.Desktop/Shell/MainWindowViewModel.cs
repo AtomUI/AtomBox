@@ -18,8 +18,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly AccountAppService _accounts;
     private readonly IDesktopPreferencesService _preferences;
     private readonly Dictionary<StorageAccountId, StorageAccountSummary> _navigationAccounts = [];
-    private object? _currentViewModel;
     private string? _currentMenuKey;
+    private int _initialized;
 
     public MainWindowViewModel(
         INavigationService navigationService,
@@ -36,22 +36,10 @@ public sealed class MainWindowViewModel : ViewModelBase
 
         _accountDialogWorkflow.AccountsChanged += (_, _) => RefreshRemoteAccountMenuOnUiThread();
 
-        _navigationService.CurrentViewModelChanged += (_, _) =>
-        {
-            CurrentViewModel = _navigationService.CurrentViewModel;
-        };
         _navigationService.CurrentMenuKeyChanged += (_, _) =>
         {
             CurrentMenuKey = _navigationService.CurrentMenuKey;
         };
-
-        _ = InitializeAsync();
-    }
-
-    public object? CurrentViewModel
-    {
-        get => _currentViewModel;
-        private set => SetProperty(ref _currentViewModel, value);
     }
 
     public string? CurrentMenuKey
@@ -166,8 +154,13 @@ public sealed class MainWindowViewModel : ViewModelBase
         });
     }
 
-    private async Task InitializeAsync()
+    internal async Task InitializeAsync()
     {
+        if (Interlocked.Exchange(ref _initialized, 1) != 0)
+        {
+            return;
+        }
+
         await RefreshRemoteAccountMenuAsync().ConfigureAwait(true);
         var preferences = await _preferences.GetAsync().ConfigureAwait(true);
         await NavigateStartupPageAsync(preferences.StartupPage).ConfigureAwait(true);

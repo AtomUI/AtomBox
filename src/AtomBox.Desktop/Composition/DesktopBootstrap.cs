@@ -1,6 +1,7 @@
 using AtomBox.Desktop.Shell;
 using AtomUI.City.Core.Hosting;
 using AtomUI.City.Presentation;
+using AtomBox.Desktop.Navigation;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Threading;
 using Microsoft.Extensions.DependencyInjection;
@@ -62,6 +63,12 @@ internal static class DesktopBootstrap
 
         var mainWindow = host.Services.GetRequiredService<MainWindow>();
         var session = runtime.RegisterWindow(mainWindow, "main");
+        session.RegisterOutlet(
+            AtomBoxRouteCatalog.PrimaryOutlet,
+            new AvaloniaRouteOutletTarget(mainWindow.GetMainContentControl()));
+        var navigation = host.Services.GetRequiredService<INavigationService>() as NavigationService
+            ?? throw new InvalidOperationException("The AtomBox navigation service does not support City outlets.");
+        navigation.AttachOutlet(session.GetOutlet(AtomBoxRouteCatalog.PrimaryOutlet));
         mainWindow.Closed += (_, _) =>
             _ = ShutdownWhenSessionCompletesAsync(session, lifetime);
         lifetime.MainWindow = mainWindow;

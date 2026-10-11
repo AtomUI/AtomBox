@@ -6,7 +6,6 @@ using AtomUI.Icons.AntDesign;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Services;
-using AtomBox.Desktop.ViewFactory;
 using AtomUI.Desktop.Controls;
 using Avalonia;
 using Avalonia.Controls;
@@ -57,7 +56,6 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
 
     public MainWindow(
         MainWindowViewModel viewModel,
-        IViewFactory viewFactory,
         IDesktopPreferencesService preferences,
         ILocalizationService localization)
     {
@@ -66,10 +64,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
         _localization = localization;
         InitializeComponent();
         DataContext = viewModel;
-
-        var content = this.FindControl<ContentControl>("MainContent")
-            ?? throw new InvalidOperationException("Main content control was not found.");
-        content.ContentTemplate = new ViewFactoryDataTemplate(viewFactory);
+        Opened += HandleOpened;
 
         var navMenu = this.FindControl<NavMenu>("MainNavigationMenu")
             ?? throw new InvalidOperationException("Main navigation menu was not found.");
@@ -86,6 +81,29 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
         EnsureTrayIcon();
         SyncNavigationSelection(viewModel.CurrentMenuKey);
         ScheduleNavigationTooltips();
+    }
+
+    internal ContentControl GetMainContentControl()
+    {
+        return this.FindControl<ContentControl>("MainContent")
+            ?? throw new InvalidOperationException("Main content control was not found.");
+    }
+
+    private async void HandleOpened(object? sender, EventArgs args)
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        try
+        {
+            await _viewModel.InitializeAsync().ConfigureAwait(true);
+        }
+        catch (Exception exception)
+        {
+            System.Diagnostics.Debug.WriteLine(exception);
+        }
     }
 
     private void HandleClosing(object? sender, WindowClosingEventArgs e)

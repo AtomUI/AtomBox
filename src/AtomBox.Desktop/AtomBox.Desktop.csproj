@@ -8,6 +8,7 @@
     <ProjectReference Include="..\AtomBox.Infrastructure\AtomBox.Infrastructure.csproj" />
     <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Core\AtomUI.City.Core.csproj" />
     <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Presentation\AtomUI.City.Presentation.csproj" />
+    <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Routing\AtomUI.City.Routing.csproj" />
     <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Generators\AtomUI.City.Generators.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
