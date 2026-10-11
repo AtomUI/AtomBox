@@ -206,3 +206,19 @@ WebDAV 支持：
 - 跨 Provider 同步。
 - 文件夹递归上传/下载。
 - 文件预览和真实内容缩略图。
+
+## 开发
+
+AtomBox 通过 Git 子模块固定 AtomUI.City 源码版本。克隆仓库时应同时拉取子模块：
+
+```bash
+git clone --recurse-submodules <repository-url>
+```
+
+已有工作目录需要在还原前初始化框架源码：
+
+```bash
+git submodule update --init --recursive
+dotnet build AtomBox.slnx -c Release
+dotnet test AtomBox.slnx -c Release --no-build --no-restore
+```

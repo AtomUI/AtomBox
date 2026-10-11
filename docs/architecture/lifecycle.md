@@ -187,23 +187,26 @@ ViewModel 可以长期存在于 UI 会话中，但只持有展示状态、筛选
 
 ### 4.1 启动顺序
 
-Desktop 是唯一组合根。
+Desktop 是唯一生产组合边界，AtomUI.City `ApplicationHost` 是唯一 Root Provider 所有者。
 
-应用启动顺序必须区分“服务注册”和“运行时初始化”。注册阶段只描述依赖关系，不能执行重 IO、不能连接远程服务、不能启动后台业务流程。初始化阶段在 `IServiceProvider` 构建后，由 Desktop 组合根显式协调。
+应用启动顺序必须区分“服务注册”和“运行时初始化”。`AtomBoxDesktopModule.ConfigureServices` 只描述依赖关系，不能执行重 IO、不能连接远程服务、不能启动后台业务流程。初始化阶段由 City Host 在构建唯一 Provider 后执行模块生命周期。
 
 应用启动顺序如下：
 
 ```text
-Desktop 启动
-  -> 注册 Infrastructure 服务
-  -> 注册 Providers
-  -> 注册 Transfer Runtime
-  -> 注册 Application Services
-  -> BuildServiceProvider
-  -> 初始化 / 校验 Infrastructure
-  -> 初始化 Transfer Runtime
-  -> 创建 Presentation Shell
-  -> 进入 UI 主循环
+Program.Main
+  -> ApplicationHost.CreateBuilder
+  -> UseDefaultServiceProvider(ValidateOnBuild + ValidateScopes)
+  -> UseModule<PresentationModule>
+  -> UseModule<AtomBoxDesktopModule>
+  -> City Build（创建唯一 Root Provider）
+  -> City StartAsync
+     -> 初始化 / 校验 Infrastructure
+     -> 初始化 Transfer Runtime
+  -> Avalonia UI 主循环
+     -> Presentation runtime attach
+     -> 注册主窗口 session
+  -> City StopAsync / Dispose
 ```
 
 Core 没有运行时初始化。Core 只提供类型、端口、模型和领域规则。
@@ -280,8 +283,8 @@ DI 注册必须服从生命周期设计，而不是倒过来决定生命周期�
 
 `IServiceProvider` 是 DI 容器的解析入口，不是普通业务依赖。AtomBox 全局禁止把 `IServiceProvider` 注入普通业务对象、ViewModel、Provider、Transfer worker、Repository、Row ViewModel、参数对象或结果对象。
 
-Application、Transfer、Providers、Infrastructure 可以暴露 `IServiceCollection` 注册扩展，供 Desktop 生产组合根调用。这些注册扩展只描述服务注册关系，不等于模块可以持有或使用 `IServiceProvider`。
+Application、Transfer、Providers、Infrastructure 可以暴露 `IServiceCollection` 注册扩展，供 `AtomBoxDesktopModule` 调用。这些注册扩展只描述服务注册关系，不等于模块可以持有或使用 `IServiceProvider`。
 
-只有生产组合根或测试组合根可以直接创建和持有 `IServiceProvider`。生产组合根属于 Desktop，不属于 Application。测试组合根是组合根的测试形态，不是普通业务对象例外。如果某些运行时对象需要按目标创建其他对象，必须优先使用显式工厂接口、具体工厂类或 `Func<T>` 委托，由组合根完成装配后传入。不要把 `IServiceProvider` 当成万能对象工厂到处传递。
+只有 City Host 可以创建生产 Root Provider；Desktop 的 `Program` / `DesktopBootstrap` 只在组合边界通过 `IApplicationHost.Services` 解析入口对象。测试组合根是组合根的测试形态，不是普通业务对象例外。如果某些运行时对象需要按目标创建其他对象，必须优先使用显式工厂接口、具体工厂类或 `Func<T>` 委托，由组合边界完成装配后传入。不要把 `IServiceProvider` 当成万能对象工厂到处传递。
 
 Core 第一版不提供 DI 注册入口。Core 只提供类型、端口、模型、值对象和领域规则；如果未来 Core 出现确实需要容器管理的纯 Core 无状态服务，再补充 Core 注册设计。

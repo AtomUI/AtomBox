@@ -135,9 +135,9 @@ Infrastructure 不能自己弹 UI。
 
 ```text
 Desktop 启动
-  -> 注册 Infrastructure / Providers / Transfer / Application 服务
-  -> BuildServiceProvider
-  -> 初始化 / 校验 Infrastructure
+  -> AtomBoxDesktopModule 注册 Infrastructure / Providers / Transfer / Application 服务
+  -> City ApplicationHost.Build（唯一 Root Provider）
+  -> AtomBoxDesktopModule 初始化 / 校验 Infrastructure
   -> Infrastructure 返回初始化结果
   -> Desktop 决定进入 Main Shell 或启动错误界面
 ```

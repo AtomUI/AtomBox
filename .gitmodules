@@ -1,0 +1,4 @@
+[submodule "external/AtomUI.City"]
+	path = external/AtomUI.City
+	url = https://github.com/kusarparlly/AtomUI.City.git
+	branch = develop

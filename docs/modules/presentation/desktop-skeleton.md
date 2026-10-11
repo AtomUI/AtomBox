@@ -36,7 +36,8 @@ src/AtomBox.Desktop/
   Assets/
 
   Composition/
-    DesktopCompositionRoot.cs
+    AtomBoxDesktopModule.cs
+    DesktopBootstrap.cs
     ServiceCollectionExtensions.cs
 
   Shell/
@@ -93,7 +94,7 @@ src/AtomBox.Desktop/
 
 | 目录 | 职责 |
 | --- | --- |
-| `Composition/` | Desktop 唯一组合根，负责 DI 容器创建、模块注册、主窗口创建。 |
+| `Composition/` | Desktop 的 City 应用模块与 Avalonia handoff，负责服务注册、初始化和窗口 session 接入；不自行构建 DI 容器。 |
 | `Shell/` | 主窗口、顶部品牌区、左侧菜单、右侧内容承载区、底部状态栏。 |
 | `Navigation/` | 管理应用内当前位置、导航目标、导航参数、菜单项 ViewModel 和页面 ViewModel 显式工厂。 |
 | `ViewFactory/` | 根据 ViewModel 显式创建对应 View。 |
@@ -110,19 +111,24 @@ Desktop 启动流程如下：
 
 ```text
 Program.Main
+  -> ApplicationHost.CreateBuilder(args)
+  -> UseModule<PresentationModule>()
+  -> UseModule<AtomBoxDesktopModule>()
+  -> Build / StartAsync
   -> AppBuilder.Configure<App>()
-  -> UsePlatformDetect()
-  -> WithAtomUIDefaultOptions()
-  -> StartWithClassicDesktopLifetime(args)
+  -> StartWithClassicDesktopLifetime(args, OnExplicitShutdown)
 
 App.Initialize
   -> UseAtomUI(...)
   -> Load XAML
 
 App.OnFrameworkInitializationCompleted
-  -> DesktopCompositionRoot.Build()
-  -> Resolve MainWindow
+  -> Presentation runtime attach
+  -> Resolve / register MainWindow session
   -> Show MainWindow
+
+Application exit
+  -> StopAsync / Dispose City Host
 ```
 
 启动阶段只做本地初始化和依赖装配，不连接远程 provider，不刷新远程目录，不自动恢复执行传输任务。

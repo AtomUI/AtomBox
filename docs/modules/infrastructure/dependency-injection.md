@@ -30,9 +30,12 @@ Desktop 是唯一生产组合根。
 
 ```text
 Desktop 组合根
-  -> services.AddAtomBoxInfrastructure()
-  -> services.BuildServiceProvider()
-  -> 初始化日志、配置、凭据、本地状态
+  -> UseModule<AtomBoxDesktopModule>()
+  -> AtomBoxDesktopModule.ConfigureServices
+     -> services.AddAtomBoxInfrastructure()
+  -> City ApplicationHost.Build()（唯一 Root Provider）
+  -> AtomBoxDesktopModule.OnApplicationInitializationAsync
+     -> 初始化日志、配置、凭据、本地状态
   -> 创建 Presentation Shell
 ```
 
@@ -131,7 +134,7 @@ ITransferStateStore -> FingerprintAwareTransferStateStoreDecorator
 - 日志初始化。
 - 本地状态存储可用性检查。
 
-这些初始化动作由 Desktop 组合根协调。Infrastructure 应优先返回明确初始化结果或 Core 错误语义；不可恢复的底层异常必须在组合根边界被转换为启动错误结果。Infrastructure 不能自己弹 UI。
+这些初始化动作由 `AtomBoxDesktopModule` 的 City 初始化阶段协调。Infrastructure 应优先返回明确初始化结果或 Core 错误语义；不可恢复的底层异常必须在模块边界被转换为启动异常，再由 Desktop 展示启动错误。Infrastructure 不能自己弹 UI。
 
 关闭阶段由 Desktop 协调：
 

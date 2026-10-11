@@ -80,7 +80,8 @@ src/AtomBox.Desktop/
 
 - `App`
 - `Program`
-- `DesktopCompositionRoot`
+- `AtomBoxDesktopModule`
+- `DesktopBootstrap`
 
 主窗口：
 
