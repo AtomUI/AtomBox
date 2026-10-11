@@ -32,7 +32,7 @@ public sealed class TransferQueueViewModel : LocalizedViewModelBase
         IMessageService messages,
         IDialogService dialogs,
         StatusBarViewModel statusBar,
-        ILocalizationService localization)
+        IAtomBoxLocalizedText localization)
         : base(localization)
     {
         _transfers = transfers;
@@ -400,7 +400,7 @@ public sealed record TransferTaskRowViewModel(
         TransferStateSnapshot snapshot,
         ICommand actionCommand,
         ICommand detailsCommand,
-        ILocalizationService localization)
+        IAtomBoxLocalizedText localization)
     {
         var task = snapshot.Task;
         var targetOrSource = task.Direction == TransferDirection.Upload
@@ -425,7 +425,7 @@ public sealed record TransferTaskRowViewModel(
             detailsCommand);
     }
 
-    private static string GetFileName(TransferTask task, ILocalizationService localization)
+    private static string GetFileName(TransferTask task, IAtomBoxLocalizedText localization)
     {
         var name = task.Direction == TransferDirection.Upload
             ? task.LocalPath.GetFileName()
@@ -434,12 +434,12 @@ public sealed record TransferTaskRowViewModel(
         return string.IsNullOrWhiteSpace(name) ? localization.GetString("Transfer", "Unnamed") : name;
     }
 
-    private static string FormatDirection(TransferDirection direction, ILocalizationService localization)
+    private static string FormatDirection(TransferDirection direction, IAtomBoxLocalizedText localization)
     {
         return localization.GetString("Transfer", direction == TransferDirection.Upload ? "Upload" : "Download");
     }
 
-    private static string FormatProgress(TransferStatus status, TransferProgress? progress, ILocalizationService localization)
+    private static string FormatProgress(TransferStatus status, TransferProgress? progress, IAtomBoxLocalizedText localization)
     {
         return status switch
         {
@@ -481,7 +481,7 @@ public sealed record TransferTaskRowViewModel(
         return $"{bytesPerSecond:0} B/s";
     }
 
-    private static string FormatAction(TransferStatus status, ILocalizationService localization)
+    private static string FormatAction(TransferStatus status, IAtomBoxLocalizedText localization)
     {
         return status switch
         {

@@ -14,6 +14,8 @@ Avalonia desktop lifetime
       -> RoutingModule
       -> PresentationModule
       -> AtomBoxDesktopModule
+          -> City language-package registration
+          -> AtomBox localized-text projection
           -> existing AtomBox application services
 
 City Router
@@ -28,7 +30,8 @@ City Router
 
 ```text
 AtomBox.Desktop
-  -> AtomUI.City.Core / Routing / Presentation / Generators
+  -> AtomUI.City.Core / Routing / Presentation / Localization / Generators
+  -> AtomUI.City.Build (RESX -> locpack at build time)
   -> AtomBox.Application / Transfer / Providers / Infrastructure / Core
 
 AtomBox.Application / Transfer / Providers / Infrastructure / Core
@@ -51,6 +54,12 @@ AtomBox.Application / Transfer / Providers / Infrastructure / Core
 - 页面实例、DI scope、View 解绑和旧页面释放由 City Outlet entry 所有；
 - 菜单选中键仍由 AtomBox 维护，因为它是 NavMenu 的应用展示状态，不是第二套路由状态。
 
+## 本地化迁移
+
+本地化运行时已迁移到 City。Desktop 继续把 RESX 作为便于 C# 生态维护的源格式；City Build 在编译期将六个 Catalog、两种语言转换为嵌入式 locpack，并生成资源声明。应用启动阶段把生成的语言包注册到 `LanguagePackageRegistry`，之后语言解析、回退、版本切换和 Presentation culture bridge 均由 City 负责。
+
+AtomBox 保留一个同步只读投影 `IAtomBoxLocalizedText`，用于兼容 Avalonia XAML Binding 和现有同步 ViewModel 调用。投影在初始化时异步创建 City localized-text handles；切换语言时按同一 City revision 收齐所有资源后一次性发布不可变快照，因此 UI 不会观察到中英混杂的中间状态。语言偏好和切换命令由 `IDesktopLanguageService` 适配到 City，AtomBox 不再持有第二套 ResourceManager 或语言解析实现。
+
 ## Window 生命周期修复
 
 AtomBox 支持“关闭时最小化到托盘”。应用的 Avalonia `Closing` 处理器会先取消用户关闭并隐藏窗口。City 原实现仍会接管已取消的关闭，导致 WindowSession 继续结束。
@@ -59,9 +68,9 @@ City `353d3b9` 修复了该契约：非 OS 关闭若已被更早的应用处理�
 
 ## 保留的应用能力
 
-以下实现保留在 AtomBox Desktop，并不构成第二套 Host、Router 或 Presentation 框架：
+以下实现保留在 AtomBox Desktop，并不构成第二套 Host、Router、Localization 或 Presentation 框架：
 
-- RESX、同步 XAML `Loc` 扩展和即时语言切换；City Localization 当前采用 locpack、异步 lookup 和 scope package，直接替换会改变资源格式及 UI 绑定合同；
+- 同步 XAML `Loc` 扩展和 localized-text 快照投影；它们是 City 异步本地化运行时到 Avalonia 同步 Binding 合同的 UI adapter；
 - AtomBox 的轻量 ViewModel 基类和命令；City Command 会把异常、取消和并发映射为 `OperationResult`，替换属于业务行为变更；
 - Dialog、Message、文件选择器和托盘菜单；这些是应用 UI adapter，由 Desktop 组合层拥有。
 
@@ -70,12 +79,15 @@ City Presentation 已经为现有 ViewModel 提供 DI scope lease、Outlet 生�
 ## 自动验证
 
 - AtomBox Release 全解构建：0 warning、0 error；
-- AtomBox 全量测试：671/671；
+- AtomBox 全量测试：666/666；
 - win-x64、linux-x64、osx-arm64 自包含单文件发布全部成功；
-- Desktop 测试：30/30，覆盖 Host 启停、六条 route、六个 View 注册以及导航参数往返；
+- Desktop 测试：25/25，覆盖 Host 启停、六条 route、六个 View 注册、导航参数往返以及 City 本地化集成；
+- 本地化集成测试覆盖 City embedded package 读取、英文到简体中文切换，以及同一 revision 的原子快照发布；
+- City Generator 测试 206/206、Localization 测试 96/96；静态 embedded package 不依赖 `Assembly.Location`，单文件发布可直接加载 source assembly；
 - City Presentation Headless 进程测试：4/4，覆盖真实 Avalonia Window/VisualTree、预取消 Closing 和 10,000 次 Outlet 提交压力；
 - `src` 中不存在 `BuildServiceProvider`；
 - 非 Desktop 业务程序集不存在 `AtomUI.City` 引用；
+- Desktop 运行时代码不存在旧 `ResourceManager` 或自建 `ILocalizationService`；
 - 已删除的自建 ViewFactory、PageViewModelFactory 和 `CurrentViewModel` 在源码与测试中均无残留引用。
 
 ## 人工 UI 烟测

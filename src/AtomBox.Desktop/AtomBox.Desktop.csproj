@@ -1,5 +1,7 @@
 ﻿<Project Sdk="Microsoft.NET.Sdk">
 
+  <Import Project="..\..\external\AtomUI.City\src\AtomUI.City.Build\buildTransitive\AtomUI.City.Build.props" />
+
   <ItemGroup>
     <ProjectReference Include="..\AtomBox.Core\AtomBox.Core.csproj" />
     <ProjectReference Include="..\AtomBox.Application\AtomBox.Application.csproj" />
@@ -9,6 +11,11 @@
     <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Core\AtomUI.City.Core.csproj" />
     <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Presentation\AtomUI.City.Presentation.csproj" />
     <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Routing\AtomUI.City.Routing.csproj" />
+    <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Localization\AtomUI.City.Localization.csproj" />
+    <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Build.Tasks\AtomUI.City.Build.Tasks.csproj"
+                      ReferenceOutputAssembly="false"
+                      SkipGetTargetFrameworkProperties="true"
+                      SetTargetFramework="TargetFramework=net10.0" />
     <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Generators\AtomUI.City.Generators.csproj"
                       OutputItemType="Analyzer"
                       ReferenceOutputAssembly="false" />
@@ -25,9 +32,21 @@
     <AvaloniaResource Include="Assets\**" />
   </ItemGroup>
 
+  <ItemGroup>
+    <AtomUICityResx Update="Localization\Common\**\Resources.resx" KeyPrefix="Common." Scope="Host" />
+    <AtomUICityResx Update="Localization\Shell\**\Resources.resx" KeyPrefix="Shell." Scope="Host" />
+    <AtomUICityResx Update="Localization\Account\**\Resources.resx" KeyPrefix="Account." Scope="Host" />
+    <AtomUICityResx Update="Localization\RemoteBrowser\**\Resources.resx" KeyPrefix="RemoteBrowser." Scope="Host" />
+    <AtomUICityResx Update="Localization\Transfer\**\Resources.resx" KeyPrefix="Transfer." Scope="Host" />
+    <AtomUICityResx Update="Localization\Settings\**\Resources.resx" KeyPrefix="Settings." Scope="Host" />
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <ApplicationIcon>Assets/logo.ico</ApplicationIcon>
+    <AtomUICityBuildTasksAssembly>$(MSBuildProjectDirectory)\..\..\external\AtomUI.City\output\bin\$(Configuration)\AtomUI.City.Build.Tasks\net10.0\AtomUI.City.Build.Tasks.dll</AtomUICityBuildTasksAssembly>
   </PropertyGroup>
+
+  <Import Project="..\..\external\AtomUI.City\src\AtomUI.City.Build\buildTransitive\AtomUI.City.Localization.targets" />
 
 </Project>

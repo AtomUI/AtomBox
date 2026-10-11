@@ -77,7 +77,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         IDesktopPreferencesService preferences,
         IAccountDialogWorkflow accountDialogWorkflow,
         StatusBarViewModel statusBar,
-        ILocalizationService localization)
+        IAtomBoxLocalizedText localization)
         : base(localization)
     {
         _accounts = accounts;

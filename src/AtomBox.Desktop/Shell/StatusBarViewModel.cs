@@ -19,7 +19,7 @@ public sealed class StatusBarViewModel : LocalizedViewModelBase
     private bool _isRefreshing;
     private bool _refreshPending;
 
-    public StatusBarViewModel(TransferAppService transfers, ILocalizationService localization)
+    public StatusBarViewModel(TransferAppService transfers, IAtomBoxLocalizedText localization)
         : base(localization)
     {
         _transfers = transfers;

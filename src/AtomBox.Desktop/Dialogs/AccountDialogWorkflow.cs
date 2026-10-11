@@ -14,7 +14,7 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
     private readonly IStorageProviderRegistry _providers;
     private readonly ICredentialStore _credentials;
     private readonly AccountAppService _accounts;
-    private readonly ILocalizationService _localization;
+    private readonly IAtomBoxLocalizedText _localization;
 
     public event EventHandler? AccountsChanged;
 
@@ -23,7 +23,7 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
         IStorageProviderRegistry providers,
         ICredentialStore credentials,
         AccountAppService accounts,
-        ILocalizationService localization)
+        IAtomBoxLocalizedText localization)
     {
         _dialogs = dialogs;
         _providers = providers;

@@ -22,7 +22,7 @@ public sealed partial class App : Avalonia.Application
         RegisterExceptionHandlers();
 
         var localization = DesktopBootstrap.Host.Services
-            .GetRequiredService<ILocalizationService>();
+            .GetRequiredService<IAtomBoxLocalizedText>();
         LocalizationHost.Initialize(localization);
 
         this.UseAtomUI(builder =>

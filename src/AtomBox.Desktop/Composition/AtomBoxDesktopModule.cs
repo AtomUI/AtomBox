@@ -1,12 +1,14 @@
 using AtomBox.Application.DependencyInjection;
 using AtomBox.Infrastructure.Configuration;
 using AtomBox.Infrastructure.DependencyInjection;
+using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Providers.DependencyInjection;
 using AtomBox.Transfer.DependencyInjection;
 using AtomBox.Transfer.Scheduling;
 using AtomUI.City.Generated;
 using AtomUI.City.Core.Modularity;
+using AtomUI.City.Localization;
 using AtomUI.City.Presentation;
 using AtomUI.City.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -36,6 +38,14 @@ public sealed class AtomBoxDesktopModule : ModuleBase
     {
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();
+
+        GeneratedLocalizationManifest.RegisterPackages(
+            context.Services.GetRequiredService<LanguagePackageRegistry>(),
+            "AtomBox.Desktop");
+        await context.Services
+            .GetRequiredService<AtomBoxLocalizedTextProjection>()
+            .InitializeAsync(GeneratedLocalizationManifest.ResourceKeys, cancellationToken)
+            .ConfigureAwait(false);
 
         GeneratedPresentationViewRegistrar.RegisterViews(
             context.Services.GetRequiredService<IViewRegistry>());

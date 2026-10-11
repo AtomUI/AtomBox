@@ -4,13 +4,13 @@ namespace AtomBox.Desktop.ViewModels;
 
 public abstract class LocalizedViewModelBase : ViewModelBase
 {
-    protected LocalizedViewModelBase(ILocalizationService localization)
+    protected LocalizedViewModelBase(IAtomBoxLocalizedText localization)
     {
         Localization = localization;
         Localization.LanguageChanged += HandleLanguageChanged;
     }
 
-    protected ILocalizationService Localization { get; }
+    protected IAtomBoxLocalizedText Localization { get; }
 
     public override void Dispose()
     {
@@ -22,7 +22,7 @@ public abstract class LocalizedViewModelBase : ViewModelBase
     {
     }
 
-    private void HandleLanguageChanged(object? sender, LanguageChangedEventArgs e)
+    private void HandleLanguageChanged(object? sender, EventArgs e)
     {
         OnLanguageChanged();
     }

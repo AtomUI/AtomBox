@@ -6,6 +6,7 @@ using AtomBox.Infrastructure.Configuration;
 using AtomUI;
 using AtomUI.City.Core.Hosting;
 using AtomUI.City.Core.Modularity;
+using AtomUI.City.Localization;
 using AtomUI.City.Presentation;
 using AtomUI.City.Routing;
 using Avalonia;
@@ -48,10 +49,6 @@ internal static class Program
             preference,
             CultureInfo.InstalledUICulture);
         IDesktopPreferencesService preferences = new DesktopPreferencesService(paths);
-        ILocalizationService localization = new LocalizationService(
-            preferences,
-            preference,
-            culture);
 
         var builder = ApplicationHost.CreateBuilder(args);
         builder.ConfigureHost(options =>
@@ -63,7 +60,20 @@ internal static class Program
         {
             services.AddSingleton(paths);
             services.AddSingleton(preferences);
-            services.AddSingleton(localization);
+            services.AddLocalization(options =>
+            {
+                options.DefaultCulture = culture;
+                options.DefaultUICulture = culture;
+            });
+            services.AddSingleton<IPresentationLocalizationBridge, AvaloniaPresentationLocalizationBridge>();
+            services.AddSingleton<AtomBoxLocalizedTextProjection>();
+            services.AddSingleton<IAtomBoxLocalizedText>(serviceProvider =>
+                serviceProvider.GetRequiredService<AtomBoxLocalizedTextProjection>());
+            services.AddSingleton<IDesktopLanguageService>(serviceProvider =>
+                new DesktopLanguageService(
+                    serviceProvider.GetRequiredService<AtomUI.City.Localization.ILocalizationService>(),
+                    preferences,
+                    preference));
         });
         builder.UseDefaultServiceProvider(options =>
         {

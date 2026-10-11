@@ -28,7 +28,7 @@ public sealed class TransferHistoryViewModel : LocalizedViewModelBase
         IMessageService messages,
         IDialogService dialogs,
         StatusBarViewModel statusBar,
-        ILocalizationService localization)
+        IAtomBoxLocalizedText localization)
         : base(localization)
     {
         _transfers = transfers;
@@ -276,7 +276,7 @@ public sealed record TransferHistoryRowViewModel(
     public static TransferHistoryRowViewModel From(
         TransferStateSnapshot snapshot,
         System.Windows.Input.ICommand detailsCommand,
-        ILocalizationService localization)
+        IAtomBoxLocalizedText localization)
     {
         var task = snapshot.Task;
         var targetOrSource = task.Direction == TransferDirection.Upload
@@ -304,7 +304,7 @@ public sealed record TransferHistoryRowViewModel(
         return string.IsNullOrWhiteSpace(name) ? "-" : name;
     }
 
-    private static string FormatResult(TransferStatus status, ILocalizationService localization)
+    private static string FormatResult(TransferStatus status, IAtomBoxLocalizedText localization)
     {
         return status switch
         {

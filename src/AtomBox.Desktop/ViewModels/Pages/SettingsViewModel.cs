@@ -16,6 +16,7 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
     private readonly IMessageService _messages;
     private readonly IFilePickerService _filePicker;
     private readonly IDesktopPreferencesService _preferences;
+    private readonly IDesktopLanguageService _language;
     private readonly AtomBoxStoragePaths _paths;
     private string _statusMessage = string.Empty;
     private string _settingsSummary = string.Empty;
@@ -39,7 +40,8 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
         IMessageService messages,
         IFilePickerService filePicker,
         IDesktopPreferencesService preferences,
-        ILocalizationService localization,
+        IAtomBoxLocalizedText localization,
+        IDesktopLanguageService language,
         AtomBoxStoragePaths paths)
         : base(localization)
     {
@@ -48,6 +50,7 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
         _messages = messages;
         _filePicker = filePicker;
         _preferences = preferences;
+        _language = language;
         _paths = paths;
         _defaultDownloadDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
@@ -245,7 +248,7 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
 
         var preferences = await _preferences.ResetAsync().ConfigureAwait(true);
         ApplySettings(result.GetValueOrThrow(), preferences);
-        await Localization.SetLanguageAsync(LanguagePreference.System).ConfigureAwait(true);
+        await _language.SetLanguageAsync(LanguagePreference.System).ConfigureAwait(true);
         _messages.Info(Localization.GetString("Settings", "ResetSucceeded"));
         StatusMessage = Localization.GetString("Settings", "ResetSucceeded");
         IsLoading = false;
@@ -329,15 +332,15 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
 
     private async Task ChangeLanguageAsync(int selectedIndex)
     {
-        var previousIndex = ToLanguageIndex(Localization.CurrentPreference);
+        var previousIndex = ToLanguageIndex(_language.CurrentPreference);
         _isLanguageSwitching = true;
         OnPropertyChanged(nameof(IsLanguageSelectionEnabled));
         try
         {
-            await Localization.SetLanguageAsync(ToLanguagePreference(selectedIndex)).ConfigureAwait(true);
+            await _language.SetLanguageAsync(ToLanguagePreference(selectedIndex)).ConfigureAwait(true);
             if (_loadedPreferences is not null)
             {
-                _loadedPreferences = _loadedPreferences with { Language = Localization.CurrentPreference };
+                _loadedPreferences = _loadedPreferences with { Language = _language.CurrentPreference };
             }
         }
         catch

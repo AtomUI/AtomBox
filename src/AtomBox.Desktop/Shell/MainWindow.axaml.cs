@@ -33,7 +33,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
     private static readonly Uri TrayIconUri = new("avares://AtomBox.Desktop/Assets/logo.ico");
     private readonly MainWindowViewModel? _viewModel;
     private readonly IDesktopPreferencesService? _preferences;
-    private readonly ILocalizationService? _localization;
+    private readonly IAtomBoxLocalizedText? _localization;
     private TrayIcon? _trayIcon;
     private TrayIcons? _trayIcons;
     private NativeMenuItem? _showTrayItem;
@@ -57,7 +57,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
     public MainWindow(
         MainWindowViewModel viewModel,
         IDesktopPreferencesService preferences,
-        ILocalizationService localization)
+        IAtomBoxLocalizedText localization)
     {
         _viewModel = viewModel;
         _preferences = preferences;
@@ -719,7 +719,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
         return false;
     }
 
-    private void HandleLanguageChanged(object? sender, LanguageChangedEventArgs e)
+    private void HandleLanguageChanged(object? sender, EventArgs e)
     {
         if (_navMenu is null)
         {

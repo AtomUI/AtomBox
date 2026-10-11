@@ -25,7 +25,7 @@ public sealed class HomeViewModel : LocalizedViewModelBase
         AccountAppService accounts,
         TransferAppService transfers,
         INavigationService navigation,
-        ILocalizationService localization)
+        IAtomBoxLocalizedText localization)
         : base(localization)
     {
         _accounts = accounts;
@@ -173,7 +173,7 @@ public sealed record HomeRecentTransferViewModel(
     string ResultTagColor,
     string CompletedAt)
 {
-    public static HomeRecentTransferViewModel From(TransferStateSnapshot snapshot, ILocalizationService localization)
+    public static HomeRecentTransferViewModel From(TransferStateSnapshot snapshot, IAtomBoxLocalizedText localization)
     {
         var task = snapshot.Task;
         var fileName = task.Direction == TransferDirection.Upload
@@ -188,7 +188,7 @@ public sealed record HomeRecentTransferViewModel(
             task.UpdatedAt.LocalDateTime.ToString("MM-dd HH:mm"));
     }
 
-    private static string FormatStatus(TransferStatus status, ILocalizationService localization)
+    private static string FormatStatus(TransferStatus status, IAtomBoxLocalizedText localization)
     {
         return status switch
         {

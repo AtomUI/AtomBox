@@ -8,6 +8,12 @@
 >
 > 影响模块：Desktop
 
+## City 迁移后的当前实现
+
+本页主体保留 v1.0.0 最初建立本地化功能时的设计背景。`feature/with-city` 完成后，当前实现以 [with-city.md](with-city.md) 为准：RESX 仍是 AtomBox 的翻译源文件，但由 City Build 在编译期转换为 embedded locpack；City Localization 是 culture、fallback、package 与 revision 的唯一运行时权威。旧的 AtomBox `ILocalizationService`/`LocalizationService`（ResourceManager 实现）已经删除。
+
+Desktop 只保留两个适配合同：`IDesktopLanguageService` 负责 `system`/`zh-CN`/`en-US` 偏好与 City culture switch，`IAtomBoxLocalizedText` 把 City 的异步 localized-text handles 投影成 Avalonia XAML 和现有 ViewModel 可同步读取的原子快照。若下文旧接口名或加载流程与本节冲突，以本节及 City 迁移审计为准。
+
 ## 背景
 
 AtomBox 当前界面文案主要直接写在 Desktop 的 XAML、ViewModel、导航树和 DialogService 中，默认使用简体中文。AtomUI 已具备 `LanguageVariant`、语言 Provider 和运行时切换能力，但 AtomBox 自有文案尚未建立统一资源目录、当前语言状态和动态刷新机制。

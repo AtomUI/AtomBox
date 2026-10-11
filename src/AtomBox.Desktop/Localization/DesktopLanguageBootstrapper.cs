@@ -30,10 +30,16 @@ public static class DesktopLanguageBootstrapper
     public static CultureInfo Apply(string preference, CultureInfo systemCulture)
     {
         var culture = LanguagePreference.Resolve(preference, systemCulture);
+        ApplyCulture(culture);
+        return culture;
+    }
+
+    public static void ApplyCulture(CultureInfo culture)
+    {
+        ArgumentNullException.ThrowIfNull(culture);
         CultureInfo.CurrentCulture = culture;
         CultureInfo.CurrentUICulture = culture;
         CultureInfo.DefaultThreadCurrentCulture = culture;
         CultureInfo.DefaultThreadCurrentUICulture = culture;
-        return culture;
     }
 }

@@ -28,7 +28,7 @@ public sealed class LocExtension : MarkupExtension
             throw new InvalidOperationException($"Invalid localization resource: {Resource}");
         }
 
-        return new Binding(nameof(ILocalizationService.Revision))
+        return new Binding(nameof(IAtomBoxLocalizedText.Revision))
         {
             Source = localization,
             Mode = BindingMode.OneWay,
@@ -40,7 +40,7 @@ public sealed class LocExtension : MarkupExtension
     }
 
     private sealed class ResourceConverter(
-        ILocalizationService localization,
+        IAtomBoxLocalizedText localization,
         string catalog,
         string key) : IValueConverter
     {

@@ -22,7 +22,7 @@ public sealed class AccountManagementViewModel : LocalizedViewModelBase
         AccountAppService accounts,
         IAccountDialogWorkflow accountDialogWorkflow,
         IDialogService dialogs,
-        ILocalizationService localization)
+        IAtomBoxLocalizedText localization)
         : base(localization)
     {
         _accounts = accounts;

@@ -1,5 +1,7 @@
+using System.Globalization;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Navigation;
+using AtomBox.Desktop.Services;
 using AtomBox.Desktop.ViewModels.Pages;
 using AtomBox.Desktop.Views.Accounts;
 using AtomBox.Desktop.Views.Home;
@@ -17,6 +19,70 @@ namespace AtomBox.Desktop.Tests;
 public sealed class CityHostIntegrationTests
 {
     [Fact]
+    public async Task CityLocalizationProjectsAndSwitchesOneCompleteSnapshot()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "AtomBox.Desktop.Tests",
+            Guid.NewGuid().ToString("N"));
+        var paths = new AtomBoxStoragePaths(root);
+        var originalCulture = CultureInfo.CurrentCulture;
+        var originalUICulture = CultureInfo.CurrentUICulture;
+        var originalDefaultCulture = CultureInfo.DefaultThreadCurrentCulture;
+        var originalDefaultUICulture = CultureInfo.DefaultThreadCurrentUICulture;
+
+        try
+        {
+            await using var host = Program.CreateHost([], paths);
+            await host.StartAsync();
+
+            var projection = host.Services.GetRequiredService<IAtomBoxLocalizedText>();
+            var language = host.Services.GetRequiredService<IDesktopLanguageService>();
+            await language.SetLanguageAsync(LanguagePreference.English);
+
+            Assert.Equal("Cancel", projection.GetString("Common", "Cancel"));
+            Assert.Equal("Home", projection.GetString("Shell", "Home"));
+            var englishRevision = projection.Revision;
+            (string Cancel, string Home, long Revision)? publishedSnapshot = null;
+            projection.LanguageChanged += (_, _) =>
+            {
+                publishedSnapshot = (
+                    projection.GetString("Common", "Cancel"),
+                    projection.GetString("Shell", "Home"),
+                    projection.Revision);
+            };
+
+            await language.SetLanguageAsync(LanguagePreference.SimplifiedChinese);
+
+            Assert.Equal("zh-CN", projection.CurrentCulture.Name);
+            Assert.Equal("取消", projection.GetString("Common", "Cancel"));
+            Assert.Equal("首页", projection.GetString("Shell", "Home"));
+            Assert.True(projection.Revision > englishRevision);
+            Assert.True(publishedSnapshot.HasValue);
+            Assert.Equal(
+                ("取消", "首页", projection.Revision),
+                publishedSnapshot.Value);
+            Assert.Equal(LanguagePreference.SimplifiedChinese, language.CurrentPreference);
+            Assert.Equal(
+                LanguagePreference.SimplifiedChinese,
+                (await host.Services.GetRequiredService<IDesktopPreferencesService>().GetAsync()).Language);
+
+            await host.StopAsync();
+        }
+        finally
+        {
+            CultureInfo.CurrentCulture = originalCulture;
+            CultureInfo.CurrentUICulture = originalUICulture;
+            CultureInfo.DefaultThreadCurrentCulture = originalDefaultCulture;
+            CultureInfo.DefaultThreadCurrentUICulture = originalDefaultUICulture;
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
     public async Task HostStartsAndStopsWithDesktopModuleServices()
     {
         var root = Path.Combine(
@@ -31,7 +97,9 @@ public sealed class CityHostIntegrationTests
 
             Assert.Same(paths, host.Services.GetRequiredService<AtomBoxStoragePaths>());
             Assert.IsType<NavigationService>(host.Services.GetRequiredService<INavigationService>());
-            Assert.NotNull(host.Services.GetRequiredService<ILocalizationService>());
+            Assert.NotNull(host.Services.GetRequiredService<AtomUI.City.Localization.ILocalizationService>());
+            Assert.NotNull(host.Services.GetRequiredService<IAtomBoxLocalizedText>());
+            Assert.NotNull(host.Services.GetRequiredService<IDesktopLanguageService>());
             Assert.NotNull(host.Services.GetRequiredService<IPresentationRuntime>());
             Assert.NotNull(host.Services.GetRequiredService<TransferRuntimeInitializer>());
             Assert.Null(host.ApplicationScope);
