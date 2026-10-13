@@ -94,7 +94,7 @@ City 维度：
 
 | AtomBox \ City | Core | Mvvm | Routing | Presentation | State | EventBus | Localization |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| Core | 审-M | 审-L | 审-L | 审-L | 审-L | 审-M | 审-L |
+| Core | 否 | 否 | 否 | 否 | 否 | 否 | 否 |
 | Application | 审-M | 审-L | 审-M | 审-L | 已 | 否 | 审-M |
 | Transfer | 审-H | 审-L | 审-L | 审-L | 审-H | 审-H | 审-L |
 | Providers | 审-M | 审-L | 审-L | 审-L | 审-M | 审-M | 审-L |
@@ -106,7 +106,7 @@ City 维度：
 
 | AtomBox \ City | Data | Security | PluginSystem |
 | --- | --- | --- | --- |
-| Core | 审-L | 审-M | 审-M |
+| Core | 否 | 否 | 否 |
 | Application | 审-M | 审-H | 审-M |
 | Transfer | 审-M | 审-L | 审-M |
 | Providers | 审-H | 审-H | 审-H |
@@ -118,7 +118,7 @@ City 维度：
 
 | AtomBox \ City | Build | Generators | Testing | CLI | Templates |
 | --- | --- | --- | --- | --- | --- |
-| Core | 审-L | 审-L | 审-M | 审-L | 审-L |
+| Core | 否 | 否 | 否 | 否 | 否 |
 | Application | 审-L | 审-L | 审-M | 审-L | 审-L |
 | Transfer | 审-L | 审-L | 审-H | 审-L | 审-L |
 | Providers | 审-L | 审-L | 审-H | 审-L | 审-L |
@@ -182,7 +182,14 @@ City 维度：
 | Desktop：Core / Routing / Presentation / Localization / Build / Generators | [AtomBox × AtomUI.City 迁移审计](with-city.md) | 自动化完成，人工 UI 验证待完成。 |
 | Desktop：Mvvm / Presentation 生命周期扩展 | [AtomBox × AtomUI.City MVVM 迁移](with-city-mvvm.md) | 21 项已实施，人工 UI 验证待完成。 |
 | Application：State / EventBus | [AtomBox.Application × AtomUI.City.State 迁移](with-city-application.md) | State 自动化实施完成，真实 UI 验证待完成；EventBus 本轮不采用。 |
+| Core：全部 City 能力与领域纯净边界 | [AtomBox.Core × AtomUI.City 迁移审计](with-city-core.md) | Core 不采用 City；不可变集合缺陷已修复并完成自动化验证。 |
 | 其余矩阵单元 | 后续按审计顺序建立专项记录 | 待审计。 |
+
+## Core 审计结论
+
+- `AB-CORE × CITY-*`：AtomBox.Core 是产品领域模型与稳定端口程序集，全部 City 单元均判定为 `否`。运行时、UI、数据、安全、插件和工程能力必须由真正拥有相关责任的上层模块采用，Core 保持零 City 依赖。
+- 审计发现的四处 Core 自有集合伪只读问题已经修复。该缺陷会破坏快照语义并间接影响 Application 的 City.State 合同，但根因归属 Core；修复仅使用标准 .NET 不可变或只读集合，没有把 City 引入 Core。
+- 凭据明文合同与文档矛盾、JSON 注解耦合、依赖边界门禁缺失已记录为独立技术债，不随本次不可变集合修复扩大施工范围。
 
 ## Application 审计结论
 

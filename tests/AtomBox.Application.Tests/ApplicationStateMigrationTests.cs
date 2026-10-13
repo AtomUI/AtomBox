@@ -68,6 +68,39 @@ public sealed class ApplicationStateMigrationTests
     }
 
     [Fact]
+    public async Task PublishedAccountProviderConfigCannotBeMutatedWithoutAStateCommit()
+    {
+        var providerConfig = new Dictionary<string, string>
+        {
+            ["bucket"] = "assets"
+        };
+        var now = DateTimeOffset.UtcNow;
+        var account = new StorageAccount(
+            StorageAccountId.New(),
+            StorageProviderCategory.ObjectStorage,
+            StorageProviderId.From("s3"),
+            "Account",
+            "https://storage.example",
+            "region-1",
+            CredentialRef.From("credential-initial"),
+            now,
+            now,
+            providerConfig);
+        var (state, projector) = CreateState(
+            new InMemoryAccountRepository([account]),
+            new FixedSettingsRepository(DefaultSettings));
+
+        await new AtomBoxApplicationStateInitializer(projector).InitializeAsync();
+        providerConfig["bucket"] = "changed-at-source";
+
+        var projected = Assert.Single(state.Accounts.Value.Accounts);
+        Assert.Equal("assets", projected.ProviderConfig["bucket"]);
+        var exposed = Assert.IsAssignableFrom<IDictionary<string, string>>(projected.ProviderConfig);
+        Assert.Throws<NotSupportedException>(() => exposed["bucket"] = "changed-without-state-commit");
+        Assert.Equal("assets", state.Accounts.Value.Accounts[0].ProviderConfig["bucket"]);
+    }
+
+    [Fact]
     public async Task AccountCredentialTransactionPublishesStateWithoutSecretMaterial()
     {
         var accounts = new InMemoryAccountRepository([]);

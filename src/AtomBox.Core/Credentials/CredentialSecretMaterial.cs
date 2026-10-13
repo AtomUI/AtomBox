@@ -1,3 +1,5 @@
+using System.Collections.Frozen;
+
 namespace AtomBox.Core.Credentials;
 
 public sealed class CredentialSecretMaterial
@@ -29,7 +31,7 @@ public sealed class CredentialSecretMaterial
             normalized[key.Trim()] = value;
         }
 
-        _values = normalized;
+        _values = normalized.ToFrozenDictionary(StringComparer.Ordinal);
     }
 
     public IReadOnlyDictionary<string, string> Values => _values;
