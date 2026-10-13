@@ -1,6 +1,7 @@
 using System.ComponentModel;
 using System.Globalization;
 using AtomBox.Application.Accounts;
+using AtomBox.Application.State;
 using AtomBox.Application.Transfers;
 using AtomBox.Core.Accounts;
 using AtomBox.Core.Results;
@@ -52,22 +53,28 @@ public sealed class MvvmMigrationTests
     }
 
     [Fact]
-    public void CityDependencyStopsAtDesktopBoundary()
+    public void CityStateDependencyIsOwnedByApplicationAndOtherBusinessModulesStayIndependent()
     {
         var desktopReferences = typeof(MainWindowViewModel).Assembly.GetReferencedAssemblies();
         Assert.Contains(desktopReferences, reference => reference.Name == "AtomUI.City.Mvvm");
 
-        var businessAssemblies = new[]
+        var applicationReferences = typeof(AccountAppService).Assembly.GetReferencedAssemblies();
+        Assert.Contains(applicationReferences, reference => reference.Name == "AtomUI.City.State");
+        Assert.DoesNotContain(
+            applicationReferences,
+            reference => reference.Name?.StartsWith("AtomUI.City", StringComparison.Ordinal) == true &&
+                         reference.Name != "AtomUI.City.State");
+
+        var cityIndependentAssemblies = new[]
         {
-            typeof(AccountAppService).Assembly,
-            typeof(StorageAccountSummary).Assembly,
+            typeof(StorageAccount).Assembly,
             typeof(AtomBoxStoragePaths).Assembly,
             typeof(StorageProviderRegistry).Assembly,
             typeof(TransferRuntimeInitializer).Assembly,
         };
 
         Assert.All(
-            businessAssemblies,
+            cityIndependentAssemblies,
             assembly => Assert.DoesNotContain(
                 assembly.GetReferencedAssemblies(),
                 reference => reference.Name?.StartsWith("AtomUI.City", StringComparison.Ordinal) == true));
@@ -134,7 +141,7 @@ public sealed class MvvmMigrationTests
     }
 
     [Fact]
-    public async Task ShellCompositionOwnsStatusBarChildAndCoalescesAccountSignals()
+    public async Task ShellCompositionOwnsStatusBarChildAndObservesApplicationAccountState()
     {
         await using var context = await DesktopTestContext.CreateAsync();
         var localization = new TestLocalizedText();
@@ -165,16 +172,21 @@ public sealed class MvvmMigrationTests
         Assert.Equal(root.CompositionId, child.ParentId);
         Assert.NotEqual(root.ActivationScope.Id, child.ActivationScope.Id);
         Assert.Single(root.Children);
-        Assert.Equal(1, root.ActivationScope.ActiveTaskCount);
+        Assert.Equal(0, root.ActivationScope.ActiveTaskCount);
         Assert.Equal(1, child.ActivationScope.ActiveTaskCount);
 
-        for (var index = 0; index < 20; index++)
-        {
-            accounts.PublishAccountsChanged();
-        }
-
-        await WaitUntilAsync(() => Volatile.Read(ref refreshCount) >= 2);
-        Assert.InRange(Volatile.Read(ref refreshCount), 2, 4);
+        var accountService = context.Services.GetRequiredService<AccountAppService>();
+        var beforeRefresh = Volatile.Read(ref refreshCount);
+        var addResult = await accountService.AddAsync(new AddStorageAccountRequest(
+            StorageProviderCategory.ObjectStorage,
+            StorageProviderId.From("test-state-provider"),
+            "State observation account",
+            null,
+            null,
+            CredentialRef.From("test-state-credential")));
+        Assert.True(addResult.IsSuccess);
+        await WaitUntilAsync(() => Volatile.Read(ref refreshCount) > beforeRefresh);
+        Assert.Equal(beforeRefresh + 1, Volatile.Read(ref refreshCount));
 
         await owner.DisposeAsync();
         Assert.True(root.IsDisposed);
@@ -337,8 +349,6 @@ public sealed class MvvmMigrationTests
 
     private sealed class TestAccountDialogWorkflow : IAccountDialogWorkflow
     {
-        public event EventHandler? AccountsChanged;
-
         public Task<OperationResult<StorageAccountSummary?>> AddAccountAsync(
             StorageProviderCategory? preferredCategory = null,
             StorageProviderId? preferredProviderId = null,
@@ -354,10 +364,5 @@ public sealed class MvvmMigrationTests
             StorageAccountSummary account,
             CancellationToken cancellationToken = default) =>
             Task.FromResult(OperationResult.Success());
-
-        public void PublishAccountsChanged()
-        {
-            AccountsChanged?.Invoke(this, EventArgs.Empty);
-        }
     }
 }

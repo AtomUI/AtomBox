@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Input;
 using AtomBox.Application.Accounts;
+using AtomBox.Application.State;
 using AtomBox.Application.Browsing;
 using AtomBox.Application.Transfers;
 using AtomBox.Core.Accounts;
@@ -21,6 +22,7 @@ using AtomUI.Desktop.Controls;
 using AtomUI.Icons.AntDesign;
 using Avalonia.Controls;
 using AtomUI.City.Mvvm;
+using AtomUI.City.State;
 using CommunityToolkit.Mvvm.Input;
 using System.Threading.Channels;
 using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
@@ -29,7 +31,7 @@ namespace AtomBox.Desktop.ViewModels.Pages;
 
 public sealed class RemoteBrowserViewModel : ViewModelBase
 {
-    private readonly AccountAppService _accounts;
+    private readonly IAtomBoxApplicationState _applicationState;
     private readonly RemoteBrowserAppService _browser;
     private readonly TransferAppService _transfers;
     private readonly IMessageService _messages;
@@ -74,7 +76,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
     private bool _isUploadPreparing;
 
     public RemoteBrowserViewModel(
-        AccountAppService accounts,
+        IAtomBoxApplicationState applicationState,
         RemoteBrowserAppService browser,
         TransferAppService transfers,
         IMessageService messages,
@@ -88,7 +90,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         DesktopCommandFactory commands,
         CityUiDispatcher dispatcher)
     {
-        _accounts = accounts;
+        _applicationState = applicationState;
         _browser = browser;
         _transfers = transfers;
         _messages = messages;
@@ -623,9 +625,9 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         _refreshRequests = requests;
         context.Scope.Add(EventSubscription.Create(
             () => ReleaseRefreshRequests(requests)));
-        _accountDialogWorkflow.AccountsChanged += HandleAccountsChanged;
-        context.Scope.Add(EventSubscription.Create(
-            () => _accountDialogWorkflow.AccountsChanged -= HandleAccountsChanged));
+        context.Scope.Add(_applicationState.Accounts.Observe(
+            HandleAccountCatalogChanged,
+            StateSubscriptionOptions.Dispatcher(_dispatcher)));
 
         return _dispatcher.PostAsync(
             async token =>
@@ -658,7 +660,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         _loadGate.Dispose();
     }
 
-    private void HandleAccountsChanged(object? sender, EventArgs args)
+    private void HandleAccountCatalogChanged(StateChangedEventArgs<AccountCatalogState> args)
     {
         RequestRefresh();
     }
@@ -759,19 +761,20 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         CurrentPath = "/";
         ClearErrorDetails();
 
-        var category = ToProviderCategory(_resourceGroup);
-        var accountsResult = await _accounts.ListAsync(
-            new ListStorageAccountsRequest(category),
-            cancellationToken).ConfigureAwait(true);
-        if (accountsResult.IsFailure)
+        cancellationToken.ThrowIfCancellationRequested();
+        var catalog = _applicationState.Accounts.Value;
+        if (catalog.Status != ApplicationProjectionStatus.Ready)
         {
             StatusMessage = Localization.GetString("RemoteBrowser", "AccountEntryLoadFailed");
-            SetErrorDetails(StatusMessage, StatusMessage, accountsResult.Error);
+            SetErrorDetails(
+                StatusMessage,
+                StatusMessage,
+                StorageError.Unknown("Account catalog state is unavailable."));
             RaiseCollectionStateChanged();
             return;
         }
 
-        var accounts = accountsResult.GetValueOrThrow()
+        var accounts = catalog.Accounts
             .Where(IsAccountVisibleInResourceGroup)
             .ToArray();
         if (accounts.Length == 0)
@@ -1176,29 +1179,28 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         OnPropertyChanged(nameof(SearchText));
     }
 
-    private async Task LoadCurrentAccountAsync(CancellationToken cancellationToken)
+    private Task LoadCurrentAccountAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (_storageAccountId is null)
         {
             _currentAccount = null;
-            return;
+            return Task.CompletedTask;
         }
 
         if (_currentAccount?.Id == _storageAccountId.Value)
         {
-            return;
+            return Task.CompletedTask;
         }
 
-        var result = await _accounts.ListAsync(
-            new ListStorageAccountsRequest(),
-            cancellationToken).ConfigureAwait(true);
-        if (result.IsFailure)
+        var catalog = _applicationState.Accounts.Value;
+        if (catalog.Status != ApplicationProjectionStatus.Ready)
         {
             _currentAccount = null;
-            return;
+            return Task.CompletedTask;
         }
 
-        _currentAccount = result.GetValueOrThrow().FirstOrDefault(account => account.Id == _storageAccountId.Value);
+        _currentAccount = catalog.Accounts.FirstOrDefault(account => account.Id == _storageAccountId.Value);
         UpdateTitleFromCurrentAccount();
         OnPropertyChanged(nameof(IsBucketSelectorVisible));
         OnPropertyChanged(nameof(IsBreadcrumbVisible));
@@ -1209,6 +1211,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         OnPropertyChanged(nameof(IsPlainBreadcrumbNavigationVisible));
         OnPropertyChanged(nameof(IsRemoteNavigationVisible));
         OnPropertyChanged(nameof(IsPaginationVisible));
+        return Task.CompletedTask;
     }
 
     private void UpdateTitleFromCurrentAccount()

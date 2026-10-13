@@ -13,6 +13,7 @@
     <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Presentation\AtomUI.City.Presentation.csproj" />
     <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Routing\AtomUI.City.Routing.csproj" />
     <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Localization\AtomUI.City.Localization.csproj" />
+    <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.State\AtomUI.City.State.csproj" />
     <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Build.Tasks\AtomUI.City.Build.Tasks.csproj"
                       ReferenceOutputAssembly="false"
                       SkipGetTargetFrameworkProperties="true"

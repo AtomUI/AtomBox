@@ -1,11 +1,13 @@
 using System.Collections.ObjectModel;
 using AtomBox.Application.Accounts;
+using AtomBox.Application.State;
 using AtomBox.Core.Accounts;
 using AtomBox.Core.ValueObjects;
 using AtomBox.Desktop.Dialogs;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Navigation;
 using AtomUI.City.Mvvm;
+using AtomUI.City.State;
 using CommunityToolkit.Mvvm.Input;
 using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
@@ -14,6 +16,7 @@ namespace AtomBox.Desktop.ViewModels.Pages;
 public sealed class AccountManagementViewModel : ViewModelBase
 {
     private readonly AccountAppService _accounts;
+    private readonly IAtomBoxApplicationState _applicationState;
     private readonly IAccountDialogWorkflow _accountDialogWorkflow;
     private readonly IDialogService _dialogs;
     private readonly IAtomBoxLocalizedText _localization;
@@ -25,6 +28,7 @@ public sealed class AccountManagementViewModel : ViewModelBase
 
     public AccountManagementViewModel(
         AccountAppService accounts,
+        IAtomBoxApplicationState applicationState,
         IAccountDialogWorkflow accountDialogWorkflow,
         IDialogService dialogs,
         IAtomBoxLocalizedText localization,
@@ -32,6 +36,7 @@ public sealed class AccountManagementViewModel : ViewModelBase
         CityUiDispatcher dispatcher)
     {
         _accounts = accounts;
+        _applicationState = applicationState;
         _accountDialogWorkflow = accountDialogWorkflow;
         _dialogs = dialogs;
         _localization = localization;
@@ -126,9 +131,10 @@ public sealed class AccountManagementViewModel : ViewModelBase
         _localization.LanguageChanged += HandleLanguageChanged;
         context.Scope.Add(EventSubscription.Create(
             () => _localization.LanguageChanged -= HandleLanguageChanged));
-        return _dispatcher.PostAsync(
-            async token => await RefreshAsync(token).ConfigureAwait(true),
-            cancellationToken);
+        context.Scope.Add(_applicationState.Accounts.Observe(
+            args => ApplyAccountCatalog(args.NewValue),
+            StateSubscriptionOptions.Dispatcher(_dispatcher)));
+        return ValueTask.CompletedTask;
     }
 
     private async Task RefreshAsync(CancellationToken cancellationToken)
@@ -137,25 +143,10 @@ public sealed class AccountManagementViewModel : ViewModelBase
         SetStatus(null);
 
         var result = await _accounts.ListAsync(new ListStorageAccountsRequest(), cancellationToken).ConfigureAwait(true);
-        Accounts.Clear();
-
         if (result.IsFailure)
         {
-            SetStatus(new("Account", "AccountListLoadFailed"));
-            IsLoading = false;
-            OnPropertyChanged(nameof(HasAccounts));
             return;
         }
-
-        foreach (var account in result.GetValueOrThrow())
-        {
-            Accounts.Add(AccountRowViewModel.From(account));
-        }
-
-        SelectRequestedAccount();
-        SetStatus(null);
-        IsLoading = false;
-        OnPropertyChanged(nameof(HasAccounts));
     }
 
     private async Task AddAccountAsync(CancellationToken cancellationToken)
@@ -174,7 +165,7 @@ public sealed class AccountManagementViewModel : ViewModelBase
         }
 
         SelectedAccountId = account.Id;
-        await RefreshAsync(cancellationToken).ConfigureAwait(true);
+        SelectRequestedAccount();
         SetStatus(new("Account", "AccountAdded", account.DisplayName));
     }
 
@@ -208,7 +199,7 @@ public sealed class AccountManagementViewModel : ViewModelBase
         }
 
         SelectedAccountId = account.Id;
-        await RefreshAsync(cancellationToken).ConfigureAwait(true);
+        SelectRequestedAccount();
         SetStatus(new("Account", "AccountUpdated", account.DisplayName));
     }
 
@@ -246,8 +237,37 @@ public sealed class AccountManagementViewModel : ViewModelBase
 
         SelectedAccountId = null;
         SelectedAccount = null;
-        await RefreshAsync(cancellationToken).ConfigureAwait(true);
         SetStatus(new("Account", "AccountDeleted", account.DisplayName));
+    }
+
+    private void ApplyAccountCatalog(AccountCatalogState state)
+    {
+        Accounts.Clear();
+
+        if (state.Status == ApplicationProjectionStatus.Faulted)
+        {
+            SetStatus(new("Account", "AccountListLoadFailed"));
+            IsLoading = false;
+            OnPropertyChanged(nameof(HasAccounts));
+            return;
+        }
+
+        if (state.Status == ApplicationProjectionStatus.Uninitialized)
+        {
+            IsLoading = true;
+            OnPropertyChanged(nameof(HasAccounts));
+            return;
+        }
+
+        foreach (var account in state.Accounts)
+        {
+            Accounts.Add(AccountRowViewModel.From(account));
+        }
+
+        SelectRequestedAccount();
+        SetStatus(null);
+        IsLoading = false;
+        OnPropertyChanged(nameof(HasAccounts));
     }
 
     private void SelectRequestedAccount()

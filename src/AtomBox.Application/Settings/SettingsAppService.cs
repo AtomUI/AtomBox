@@ -2,6 +2,7 @@ using AtomBox.Core.Results;
 using AtomBox.Core.Settings;
 using AtomBox.Core.Fingerprints;
 using AtomBox.Core.Errors;
+using AtomBox.Application.State;
 
 namespace AtomBox.Application.Settings;
 
@@ -15,20 +16,26 @@ public sealed class SettingsAppService
 
     private readonly IApplicationSettingsRepository _settings;
     private readonly IFileFingerprintIndexStore? _fingerprints;
+    private readonly ApplicationStateProjector? _stateProjector;
+    private readonly SemaphoreSlim _mutationGate = new(1, 1);
 
     public SettingsAppService(
         IApplicationSettingsRepository settings,
-        IFileFingerprintIndexStore? fingerprints = null)
+        IFileFingerprintIndexStore? fingerprints = null,
+        ApplicationStateProjector? stateProjector = null)
     {
         _settings = settings;
         _fingerprints = fingerprints;
+        _stateProjector = stateProjector;
     }
 
     public async Task<OperationResult<ApplicationSettingsResult>> GetAsync(
         GetApplicationSettingsRequest request,
         CancellationToken cancellationToken = default)
     {
-        var settingsResult = await _settings.GetAsync(cancellationToken).ConfigureAwait(false);
+        var settingsResult = _stateProjector is null
+            ? await _settings.GetAsync(cancellationToken).ConfigureAwait(false)
+            : await _stateProjector.RefreshSettingsAsync(cancellationToken).ConfigureAwait(false);
         return settingsResult.IsFailure
             ? OperationResult<ApplicationSettingsResult>.Failure(settingsResult.Error!)
             : OperationResult<ApplicationSettingsResult>.Success(new ApplicationSettingsResult(settingsResult.GetValueOrThrow()));
@@ -38,20 +45,44 @@ public sealed class SettingsAppService
         UpdateApplicationSettingsRequest request,
         CancellationToken cancellationToken = default)
     {
-        var saveResult = await _settings.SaveAsync(request.Settings, cancellationToken).ConfigureAwait(false);
-        return saveResult.IsFailure
-            ? OperationResult<ApplicationSettingsResult>.Failure(saveResult.Error!)
-            : OperationResult<ApplicationSettingsResult>.Success(new ApplicationSettingsResult(request.Settings));
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var saveResult = await _settings.SaveAsync(request.Settings, cancellationToken).ConfigureAwait(false);
+            if (saveResult.IsFailure)
+            {
+                return OperationResult<ApplicationSettingsResult>.Failure(saveResult.Error!);
+            }
+
+            await RefreshSettingsProjectionAsync().ConfigureAwait(false);
+            return OperationResult<ApplicationSettingsResult>.Success(new ApplicationSettingsResult(request.Settings));
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
     }
 
     public async Task<OperationResult<ApplicationSettingsResult>> ResetAsync(
         ResetApplicationSettingsRequest request,
         CancellationToken cancellationToken = default)
     {
-        var saveResult = await _settings.SaveAsync(DefaultSettings, cancellationToken).ConfigureAwait(false);
-        return saveResult.IsFailure
-            ? OperationResult<ApplicationSettingsResult>.Failure(saveResult.Error!)
-            : OperationResult<ApplicationSettingsResult>.Success(new ApplicationSettingsResult(DefaultSettings));
+        await _mutationGate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var saveResult = await _settings.SaveAsync(DefaultSettings, cancellationToken).ConfigureAwait(false);
+            if (saveResult.IsFailure)
+            {
+                return OperationResult<ApplicationSettingsResult>.Failure(saveResult.Error!);
+            }
+
+            await RefreshSettingsProjectionAsync().ConfigureAwait(false);
+            return OperationResult<ApplicationSettingsResult>.Success(new ApplicationSettingsResult(DefaultSettings));
+        }
+        finally
+        {
+            _mutationGate.Release();
+        }
     }
 
     public async Task<OperationResult<UploadFingerprintIndexStatisticsResult>> GetUploadFingerprintIndexStatisticsAsync(
@@ -71,6 +102,14 @@ public sealed class SettingsAppService
             ? OperationResult<UploadFingerprintIndexStatisticsResult>.Failure(statisticsResult.Error!)
             : OperationResult<UploadFingerprintIndexStatisticsResult>.Success(
                 new UploadFingerprintIndexStatisticsResult(statisticsResult.GetValueOrThrow()));
+    }
+
+    private async Task RefreshSettingsProjectionAsync()
+    {
+        if (_stateProjector is not null)
+        {
+            await _stateProjector.RefreshSettingsAsync(CancellationToken.None).ConfigureAwait(false);
+        }
     }
 
     public Task<OperationResult> ClearUploadFingerprintIndexAsync(

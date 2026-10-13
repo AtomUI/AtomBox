@@ -12,22 +12,17 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
 {
     private readonly IDialogService _dialogs;
     private readonly IStorageProviderRegistry _providers;
-    private readonly ICredentialStore _credentials;
     private readonly AccountAppService _accounts;
     private readonly IAtomBoxLocalizedText _localization;
-
-    public event EventHandler? AccountsChanged;
 
     public AccountDialogWorkflow(
         IDialogService dialogs,
         IStorageProviderRegistry providers,
-        ICredentialStore credentials,
         AccountAppService accounts,
         IAtomBoxLocalizedText localization)
     {
         _dialogs = dialogs;
         _providers = providers;
-        _credentials = credentials;
         _accounts = accounts;
         _localization = localization;
     }
@@ -49,32 +44,21 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
             return OperationResult<StorageAccountSummary?>.Success(null);
         }
 
-        var credentialResult = await _credentials.SaveAsync(
-            new CredentialSecretMaterial(dialogResult.CredentialValues),
-            cancellationToken).ConfigureAwait(false);
-        if (credentialResult.IsFailure)
-        {
-            return OperationResult<StorageAccountSummary?>.Failure(credentialResult.Error!);
-        }
-
-        var credentialRef = credentialResult.GetValueOrThrow();
         var addResult = await _accounts.AddAsync(new AddStorageAccountRequest(
             dialogResult.ProviderCategory,
             dialogResult.ProviderId,
             dialogResult.DisplayName,
             dialogResult.Endpoint,
             dialogResult.Region,
-            credentialRef,
+            new CredentialSecretMaterial(dialogResult.CredentialValues),
             dialogResult.ProviderConfig), cancellationToken).ConfigureAwait(false);
 
         if (addResult.IsFailure)
         {
-            await _credentials.MarkPendingDeleteAsync(credentialRef, cancellationToken).ConfigureAwait(false);
             return OperationResult<StorageAccountSummary?>.Failure(addResult.Error!);
         }
 
         var account = addResult.GetValueOrThrow();
-        AccountsChanged?.Invoke(this, EventArgs.Empty);
         return OperationResult<StorageAccountSummary?>.Success(account);
     }
 
@@ -97,46 +81,24 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
             return OperationResult<StorageAccountSummary?>.Success(null);
         }
 
-        var credentialRef = account.CredentialRef;
-        var hasNewCredential = dialogResult.CredentialValues.Count > 0;
-        if (hasNewCredential)
-        {
-            var credentialResult = await _credentials.SaveAsync(
-                new CredentialSecretMaterial(dialogResult.CredentialValues),
-                cancellationToken).ConfigureAwait(false);
-            if (credentialResult.IsFailure)
-            {
-                return OperationResult<StorageAccountSummary?>.Failure(credentialResult.Error!);
-            }
-
-            credentialRef = credentialResult.GetValueOrThrow();
-        }
+        var credentialMaterial = dialogResult.CredentialValues.Count > 0
+            ? new CredentialSecretMaterial(dialogResult.CredentialValues)
+            : null;
 
         var updateResult = await _accounts.UpdateAsync(new UpdateStorageAccountRequest(
             account.Id,
             dialogResult.DisplayName,
             dialogResult.Endpoint,
             dialogResult.Region,
-            credentialRef,
+            credentialMaterial,
             dialogResult.ProviderConfig), cancellationToken).ConfigureAwait(false);
 
         if (updateResult.IsFailure)
         {
-            if (hasNewCredential)
-            {
-                await _credentials.MarkPendingDeleteAsync(credentialRef, cancellationToken).ConfigureAwait(false);
-            }
-
             return OperationResult<StorageAccountSummary?>.Failure(updateResult.Error!);
         }
 
-        if (hasNewCredential)
-        {
-            await _credentials.MarkPendingDeleteAsync(account.CredentialRef, cancellationToken).ConfigureAwait(false);
-        }
-
         var updatedAccount = updateResult.GetValueOrThrow();
-        AccountsChanged?.Invoke(this, EventArgs.Empty);
         return OperationResult<StorageAccountSummary?>.Success(updatedAccount);
     }
 
@@ -154,8 +116,6 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
             return deleteResult;
         }
 
-        await _credentials.MarkPendingDeleteAsync(account.CredentialRef, cancellationToken).ConfigureAwait(false);
-        AccountsChanged?.Invoke(this, EventArgs.Empty);
         return OperationResult.Success();
     }
 
@@ -163,32 +123,14 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
         AccountDialogResult dialogResult,
         CancellationToken cancellationToken)
     {
-        var credentialResult = await _credentials.SaveAsync(
+        return await _accounts.TestConnectionDraftAsync(new TestConnectionDraftRequest(
+            dialogResult.ProviderCategory,
+            dialogResult.ProviderId,
+            dialogResult.DisplayName,
+            dialogResult.Endpoint,
+            dialogResult.Region,
             new CredentialSecretMaterial(dialogResult.CredentialValues),
-            cancellationToken).ConfigureAwait(false);
-        if (credentialResult.IsFailure)
-        {
-            return OperationResult<TestConnectionResult>.Failure(credentialResult.Error!);
-        }
-
-        var credentialRef = credentialResult.GetValueOrThrow();
-        try
-        {
-            var testResult = await _accounts.TestConnectionDraftAsync(new TestConnectionDraftRequest(
-                dialogResult.ProviderCategory,
-                dialogResult.ProviderId,
-                dialogResult.DisplayName,
-                dialogResult.Endpoint,
-                dialogResult.Region,
-                credentialRef,
-                dialogResult.ProviderConfig), cancellationToken).ConfigureAwait(false);
-
-            return testResult;
-        }
-        finally
-        {
-            await _credentials.MarkPendingDeleteAsync(credentialRef, cancellationToken).ConfigureAwait(false);
-        }
+            dialogResult.ProviderConfig), cancellationToken).ConfigureAwait(false);
     }
 
     private async Task<OperationResult<TestConnectionResult>> TestConnectionAsync(

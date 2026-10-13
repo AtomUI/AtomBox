@@ -78,28 +78,28 @@ City 维度：
 
 ## 当前事实基线
 
-截至本文建立时，生产程序集里只有 `AtomBox.Desktop` 直接使用 City；测试程序集里 `AtomBox.Desktop.Tests` 直接引用 City.Localization。其余业务模块没有 City 项目引用；这是当前事实，不是永久禁止未来合理使用 City 的结论。
+截至 2026-10-13 本轮实施完成时，`AtomBox.Application` 已直接采用 City.State，`AtomBox.Desktop` 负责只读观察并形成 UI 投影；其他业务模块仍没有 City 项目引用。这是当前事实，不是永久禁止未来合理使用 City 的结论。
 
 | AtomBox 模块 | 当前直接采用的 City 能力 | 当前说明 |
 | --- | --- | --- |
 | Core | 无 | 保持领域内核纯净；是否存在可复用能力仍须正式审计。 |
-| Application | 无 | 当前只依赖 AtomBox.Core。 |
+| Application | State | 拥有账号目录和应用设置的运行时投影；Repository 仍为持久化事实源。 |
 | Transfer | 无 | 当前只依赖 AtomBox.Core，拥有应用级持久传输调度。 |
 | Providers | 无 | 当前只依赖 AtomBox.Core 和具体 SDK/协议库。 |
 | Infrastructure | 无 | 当前只依赖 AtomBox.Core 和技术实现库。 |
-| Desktop | Core、Mvvm、Routing、Presentation、Localization、Build、Generators | Host、生命周期、路由、视图组织、本地化和 MVVM 迁移已完成自动门禁；真实 UI 验证仍由人工完成。 |
-| Engineering | Localization（仅 Desktop.Tests） | Desktop 本地化集成测试直接引用 City.Localization；尚未正式评估 City.Testing、CLI 和 Templates。 |
+| Desktop | Core、Mvvm、Routing、Presentation、State、Localization、Build、Generators | Host、生命周期、路由、视图组织、本地化、MVVM 以及 Application State 的 UI 消费已完成自动门禁；真实 UI 验证仍由人工完成。 |
+| Engineering | Core、State、Localization（测试引用） | Application/State 与 Desktop 集成测试直接验证 City 合同；尚未正式评估 City.Testing、CLI 和 Templates。 |
 
 ## 主矩阵：运行时基础与交互能力
 
 | AtomBox \ City | Core | Mvvm | Routing | Presentation | State | EventBus | Localization |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Core | 审-M | 审-L | 审-L | 审-L | 审-L | 审-M | 审-L |
-| Application | 审-M | 审-L | 审-M | 审-L | 阻 | 否 | 审-M |
+| Application | 审-M | 审-L | 审-M | 审-L | 已 | 否 | 审-M |
 | Transfer | 审-H | 审-L | 审-L | 审-L | 审-H | 审-H | 审-L |
 | Providers | 审-M | 审-L | 审-L | 审-L | 审-M | 审-M | 审-L |
 | Infrastructure | 审-H | 审-L | 审-L | 审-L | 审-H | 审-M | 审-L |
-| Desktop | 已 | 已 | 已 | 已 | 审-H | 审-H | 已 |
+| Desktop | 已 | 已 | 已 | 已 | 已 | 审-H | 已 |
 | Engineering | 审-M | 审-M | 审-M | 审-M | 审-M | 审-M | 已 |
 
 ## 主矩阵：数据、安全与扩展能力
@@ -181,12 +181,12 @@ City 维度：
 | --- | --- | --- |
 | Desktop：Core / Routing / Presentation / Localization / Build / Generators | [AtomBox × AtomUI.City 迁移审计](with-city.md) | 自动化完成，人工 UI 验证待完成。 |
 | Desktop：Mvvm / Presentation 生命周期扩展 | [AtomBox × AtomUI.City MVVM 迁移](with-city-mvvm.md) | 21 项已实施，人工 UI 验证待完成。 |
-| Application：State / EventBus | [AtomBox.Application × AtomUI.City.State 迁移](with-city-application.md) | State 已决定直接采用，等待 City AUC-STATE-009；EventBus 本轮不采用。 |
+| Application：State / EventBus | [AtomBox.Application × AtomUI.City.State 迁移](with-city-application.md) | State 自动化实施完成，真实 UI 验证待完成；EventBus 本轮不采用。 |
 | 其余矩阵单元 | 后续按审计顺序建立专项记录 | 待审计。 |
 
 ## Application 审计结论
 
-- `AB-APPLICATION × CITY-STATE`：账号目录与应用设置是跨调用方共享的运行时事实投影，业务所有者是 Application。决定由 `AtomBox.Application` 直接引用 City.State，Repository 仍为持久化事实源，Desktop 只读消费。当前标记为 `阻`，前置条件是 City `AUC-STATE-009` 原子 Observe 和 DI Writer factory。
+- `AB-APPLICATION × CITY-STATE`：账号目录与应用设置是跨调用方共享的运行时事实投影，业务所有者是 Application。`AtomBox.Application` 直接引用 City.State，Repository 仍为持久化事实源，Desktop 只读消费。City `AUC-STATE-009` 原子 Observe 和 DI Writer factory 已由 City 提交 `c2843b9`、`ac70dad` 完成；AtomBox 自动化迁移已完成。
 - `AB-APPLICATION × CITY-EVENTBUS`：当前账号/设置需求都是“当前事实 + 后续变化”，State 已完整覆盖；为同一事实再发业务事件会形成双通道一致性问题，因此标记为 `否`。
 - Desktop State 候选已完成归属回退：账号和设置不在 Desktop 自建 State；Desktop 只负责 Dispatcher、ActivationScope 和 UI 投影。
 

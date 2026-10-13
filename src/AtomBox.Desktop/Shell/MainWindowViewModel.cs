@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using AtomBox.Application.Accounts;
+using AtomBox.Application.State;
 using AtomBox.Core.Accounts;
 using AtomBox.Core.RemoteItems;
 using AtomBox.Core.ValueObjects;
@@ -8,7 +9,7 @@ using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Services;
 using AtomBox.Desktop.ViewModels;
 using AtomUI.City.Mvvm;
-using System.Threading.Channels;
+using AtomUI.City.State;
 using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.Shell;
@@ -17,25 +18,23 @@ public sealed class MainWindowViewModel : ViewModelBase
 {
     private readonly INavigationService _navigationService;
     private readonly IAccountDialogWorkflow _accountDialogWorkflow;
-    private readonly AccountAppService _accounts;
+    private readonly IAtomBoxApplicationState _applicationState;
     private readonly IDesktopPreferencesService _preferences;
     private readonly CityUiDispatcher _dispatcher;
     private readonly Dictionary<StorageAccountId, StorageAccountSummary> _navigationAccounts = [];
-    private Channel<byte>? _accountRefreshes;
-    private Task? _accountRefreshWorker;
     private string? _currentMenuKey;
 
     public MainWindowViewModel(
         INavigationService navigationService,
         IAccountDialogWorkflow accountDialogWorkflow,
-        AccountAppService accounts,
+        IAtomBoxApplicationState applicationState,
         IDesktopPreferencesService preferences,
         StatusBarViewModel statusBar,
         CityUiDispatcher dispatcher)
     {
         _navigationService = navigationService;
         _accountDialogWorkflow = accountDialogWorkflow;
-        _accounts = accounts;
+        _applicationState = applicationState;
         _preferences = preferences;
         _dispatcher = dispatcher;
         StatusBar = statusBar;
@@ -113,23 +112,21 @@ public sealed class MainWindowViewModel : ViewModelBase
         };
     }
 
-    public async Task RefreshRemoteAccountMenuAsync(CancellationToken cancellationToken = default)
+    public Task RefreshRemoteAccountMenuAsync(CancellationToken cancellationToken = default)
     {
-        var result = await _accounts.ListAsync(new ListStorageAccountsRequest(), cancellationToken).ConfigureAwait(true);
-        if (result.IsFailure)
-        {
-            ObjectStorageAccounts.Clear();
-            FileTransferAccounts.Clear();
-            WebDavAccounts.Clear();
-            _navigationAccounts.Clear();
-            RemoteAccountMenuRefreshed?.Invoke(this, EventArgs.Empty);
-            return;
-        }
+        cancellationToken.ThrowIfCancellationRequested();
+        ApplyAccountCatalog(_applicationState.Accounts.Value);
+        return Task.CompletedTask;
+    }
 
-        var accounts = result.GetValueOrThrow()
+    private void ApplyAccountCatalog(AccountCatalogState state)
+    {
+        var accounts = state.Status == ApplicationProjectionStatus.Ready
+            ? state.Accounts
             .OrderBy(account => account.ProviderCategory)
             .ThenBy(account => account.DisplayName, StringComparer.CurrentCultureIgnoreCase)
-            .ToArray();
+            .ToArray()
+            : [];
 
         _navigationAccounts.Clear();
         foreach (var account in accounts)
@@ -153,19 +150,9 @@ public sealed class MainWindowViewModel : ViewModelBase
         ActivationContext context,
         CancellationToken cancellationToken)
     {
-        var refreshes = Channel.CreateBounded<byte>(new BoundedChannelOptions(1)
-        {
-            FullMode = BoundedChannelFullMode.DropOldest,
-            SingleReader = true,
-            SingleWriter = false,
-        });
-        _accountRefreshes = refreshes;
-        context.Scope.Add(EventSubscription.Create(
-            () => ReleaseAccountRefreshes(refreshes)));
-
-        _accountDialogWorkflow.AccountsChanged += HandleAccountsChanged;
-        context.Scope.Add(EventSubscription.Create(
-            () => _accountDialogWorkflow.AccountsChanged -= HandleAccountsChanged));
+        context.Scope.Add(_applicationState.Accounts.Observe(
+            args => ApplyAccountCatalog(args.NewValue),
+            StateSubscriptionOptions.Dispatcher(_dispatcher)));
         _navigationService.CurrentMenuKeyChanged += HandleCurrentMenuKeyChanged;
         context.Scope.Add(EventSubscription.Create(
             () => _navigationService.CurrentMenuKeyChanged -= HandleCurrentMenuKeyChanged));
@@ -173,54 +160,15 @@ public sealed class MainWindowViewModel : ViewModelBase
         return _dispatcher.PostAsync(
             async token =>
             {
-                await RefreshRemoteAccountMenuAsync(token).ConfigureAwait(true);
-                _accountRefreshWorker = context.Scope.StartUniqueAsync(
-                    "shell-account-menu-refresh",
-                    workerToken => RunAccountRefreshWorkerAsync(refreshes.Reader, workerToken),
-                    token);
-
                 var preferences = await _preferences.GetAsync(token).ConfigureAwait(true);
                 await NavigateStartupPageAsync(preferences.StartupPage, token).ConfigureAwait(true);
             },
             cancellationToken);
     }
 
-    protected override ValueTask OnDeactivatedAsync(CancellationToken cancellationToken)
-    {
-        Interlocked.Exchange(ref _accountRefreshes, null)?.Writer.TryComplete();
-        _accountRefreshWorker = null;
-        return ValueTask.CompletedTask;
-    }
-
-    private void ReleaseAccountRefreshes(Channel<byte> refreshes)
-    {
-        Interlocked.CompareExchange(ref _accountRefreshes, null, refreshes);
-        refreshes.Writer.TryComplete();
-        _accountRefreshWorker = null;
-    }
-
-    private void HandleAccountsChanged(object? sender, EventArgs args)
-    {
-        _accountRefreshes?.Writer.TryWrite(0);
-    }
-
     private void HandleCurrentMenuKeyChanged(object? sender, EventArgs args)
     {
         CurrentMenuKey = _navigationService.CurrentMenuKey;
-    }
-
-    private async Task RunAccountRefreshWorkerAsync(
-        ChannelReader<byte> refreshes,
-        CancellationToken cancellationToken)
-    {
-        while (await refreshes.WaitToReadAsync(cancellationToken).ConfigureAwait(true))
-        {
-            while (refreshes.TryRead(out _))
-            {
-            }
-
-            await RefreshRemoteAccountMenuAsync(cancellationToken).ConfigureAwait(true);
-        }
     }
 
     private Task NavigateStartupPageAsync(
@@ -258,7 +206,6 @@ public sealed class MainWindowViewModel : ViewModelBase
                 account.Id,
                 GetInitialPath(account)),
             cancellationToken).ConfigureAwait(true);
-        await RefreshRemoteAccountMenuAsync(cancellationToken).ConfigureAwait(true);
     }
 
     private Task NavigateAsync(

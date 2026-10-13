@@ -1,4 +1,5 @@
 using AtomBox.Application.DependencyInjection;
+using AtomBox.Application.State;
 using AtomBox.Infrastructure.Configuration;
 using AtomBox.Infrastructure.DependencyInjection;
 using AtomBox.Desktop.Localization;
@@ -58,6 +59,11 @@ public sealed class AtomBoxDesktopModule : ModuleBase
             throw new InvalidOperationException(
                 infrastructureResult.Error?.Message ?? "Infrastructure initialization failed.");
         }
+
+        await context.Services
+            .GetRequiredService<AtomBoxApplicationStateInitializer>()
+            .InitializeAsync(cancellationToken)
+            .ConfigureAwait(false);
 
         var transferResult = await context.Services
             .GetRequiredService<TransferRuntimeInitializer>()

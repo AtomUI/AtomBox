@@ -1,4 +1,5 @@
 using AtomBox.Application.Settings;
+using AtomBox.Application.State;
 using AtomBox.Core.Settings;
 using AtomBox.Core.Errors;
 using AtomBox.Desktop.Dialogs;
@@ -8,6 +9,7 @@ using AtomBox.Infrastructure.Configuration;
 using System.Diagnostics;
 using System.Threading.Channels;
 using AtomUI.City.Mvvm;
+using AtomUI.City.State;
 using CommunityToolkit.Mvvm.Input;
 using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
@@ -16,6 +18,7 @@ namespace AtomBox.Desktop.ViewModels.Pages;
 public sealed class SettingsViewModel : ViewModelBase
 {
     private readonly SettingsAppService _settings;
+    private readonly IAtomBoxApplicationState _applicationState;
     private readonly IDialogService _dialogs;
     private readonly IMessageService _messages;
     private readonly IFilePickerService _filePicker;
@@ -44,6 +47,7 @@ public sealed class SettingsViewModel : ViewModelBase
 
     public SettingsViewModel(
         SettingsAppService settings,
+        IAtomBoxApplicationState applicationState,
         IDialogService dialogs,
         IMessageService messages,
         IFilePickerService filePicker,
@@ -55,6 +59,7 @@ public sealed class SettingsViewModel : ViewModelBase
         CityUiDispatcher dispatcher)
     {
         _settings = settings;
+        _applicationState = applicationState;
         _dialogs = dialogs;
         _messages = messages;
         _filePicker = filePicker;
@@ -233,6 +238,9 @@ public sealed class SettingsViewModel : ViewModelBase
         _localization.LanguageChanged += HandleLanguageChanged;
         context.Scope.Add(EventSubscription.Create(
             () => _localization.LanguageChanged -= HandleLanguageChanged));
+        context.Scope.Add(_applicationState.Settings.Observe(
+            args => ApplySettingsState(args.NewValue),
+            StateSubscriptionOptions.Dispatcher(_dispatcher)));
 
         return _dispatcher.PostAsync(
             async token =>
@@ -276,20 +284,48 @@ public sealed class SettingsViewModel : ViewModelBase
         StatusMessage = string.Empty;
         ClearErrorDetails();
 
-        var result = await _settings.GetAsync(new GetApplicationSettingsRequest(), cancellationToken).ConfigureAwait(true);
-        if (result.IsFailure)
+        var preferences = await _preferences.GetAsync(cancellationToken).ConfigureAwait(true);
+        _loadedPreferences = preferences;
+        var state = _applicationState.Settings.Value;
+        if (state.Status != ApplicationProjectionStatus.Ready || state.Settings is null)
         {
             StatusMessage = _localization.GetString("Settings", "SettingsLoadFailed");
             SettingsSummary = _localization.GetString("Settings", "SettingsUnavailable");
-            SetErrorDetails(StatusMessage, StatusMessage, result.Error);
+            SetErrorDetails(
+                StatusMessage,
+                StatusMessage,
+                StorageError.Unknown("Application settings state is unavailable."));
             IsLoading = false;
             return;
         }
 
-        var preferences = await _preferences.GetAsync(cancellationToken).ConfigureAwait(true);
-        ApplySettings(result.GetValueOrThrow(), preferences);
+        ApplySettings(new ApplicationSettingsResult(state.Settings), preferences);
         StatusMessage = string.Empty;
         IsLoading = false;
+    }
+
+    private void ApplySettingsState(ApplicationSettingsState state)
+    {
+        if (state.Status == ApplicationProjectionStatus.Uninitialized)
+        {
+            IsLoading = true;
+            return;
+        }
+
+        if (state.Status == ApplicationProjectionStatus.Faulted || state.Settings is null)
+        {
+            StatusMessage = _localization.GetString("Settings", "SettingsLoadFailed");
+            SettingsSummary = _localization.GetString("Settings", "SettingsUnavailable");
+            IsLoading = false;
+            return;
+        }
+
+        if (_loadedPreferences is not null)
+        {
+            ApplySettings(new ApplicationSettingsResult(state.Settings), _loadedPreferences);
+            StatusMessage = string.Empty;
+            IsLoading = false;
+        }
     }
 
     private async Task ResetAsync(CancellationToken cancellationToken)

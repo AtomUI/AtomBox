@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using AtomBox.Application.Accounts;
+using AtomBox.Application.State;
 using AtomBox.Application.Transfers;
 using AtomBox.Core.Accounts;
 using AtomBox.Core.Transfers;
@@ -7,6 +8,7 @@ using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.ViewModels;
 using AtomUI.City.Mvvm;
+using AtomUI.City.State;
 using CommunityToolkit.Mvvm.Input;
 using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
@@ -14,7 +16,7 @@ namespace AtomBox.Desktop.ViewModels.Pages;
 
 public sealed class HomeViewModel : ViewModelBase
 {
-    private readonly AccountAppService _accounts;
+    private readonly IAtomBoxApplicationState _applicationState;
     private readonly TransferAppService _transfers;
     private readonly INavigationService _navigation;
     private readonly IAtomBoxLocalizedText _localization;
@@ -27,14 +29,14 @@ public sealed class HomeViewModel : ViewModelBase
     private bool _isRecentHistoryEmpty = true;
 
     public HomeViewModel(
-        AccountAppService accounts,
+        IAtomBoxApplicationState applicationState,
         TransferAppService transfers,
         INavigationService navigation,
         IAtomBoxLocalizedText localization,
         DesktopCommandFactory commands,
         CityUiDispatcher dispatcher)
     {
-        _accounts = accounts;
+        _applicationState = applicationState;
         _transfers = transfers;
         _navigation = navigation;
         _localization = localization;
@@ -99,27 +101,23 @@ public sealed class HomeViewModel : ViewModelBase
         _localization.LanguageChanged += HandleLanguageChanged;
         context.Scope.Add(EventSubscription.Create(
             () => _localization.LanguageChanged -= HandleLanguageChanged));
+        context.Scope.Add(_applicationState.Accounts.Observe(
+            args => ApplyAccountCatalog(args.NewValue),
+            StateSubscriptionOptions.Dispatcher(_dispatcher)));
         return _dispatcher.PostAsync(
-            async token => await RefreshAsync(token).ConfigureAwait(true),
+            async token => await LoadTransferSummaryAsync(token).ConfigureAwait(true),
             cancellationToken);
     }
 
-    private async Task RefreshAsync(CancellationToken cancellationToken)
+    private void ApplyAccountCatalog(AccountCatalogState state)
     {
-        await LoadAccountSummaryAsync(cancellationToken).ConfigureAwait(true);
-        await LoadTransferSummaryAsync(cancellationToken).ConfigureAwait(true);
-    }
-
-    private async Task LoadAccountSummaryAsync(CancellationToken cancellationToken)
-    {
-        var result = await _accounts.ListAsync(new ListStorageAccountsRequest(), cancellationToken).ConfigureAwait(true);
-        if (result.IsFailure)
+        if (state.Status != ApplicationProjectionStatus.Ready)
         {
             SetAccountSummary(new("Shell", "AccountsUnavailable"));
             return;
         }
 
-        var accounts = result.GetValueOrThrow();
+        var accounts = state.Accounts;
         var objectStorageCount = accounts.Count(account => account.ProviderCategory == StorageProviderCategory.ObjectStorage);
         var webDavCount = accounts.Count(account => account.ProviderCategory == StorageProviderCategory.FileTransfer &&
             account.ProviderId.Value.Equals("webdav", StringComparison.OrdinalIgnoreCase));

@@ -1,6 +1,6 @@
 # AtomBox.Application × AtomUI.City.State 迁移
 
-> 状态：In Progress
+> 状态：Automated / Manual UI Pending
 >
 > Matrix ID：`AB-APPLICATION × CITY-STATE`、`AB-APPLICATION × CITY-EVENTBUS`
 >
@@ -14,14 +14,14 @@
 
 `AtomBox.Application` 当前没有独立的业务事件流需求。账号和设置的“当前事实 + 后续变化”统一由 State 表达，不引入 EventBus，不为同一事实建立双通道。
 
-## City 前置能力
+## City 前置能力（已完成）
 
-当前 City 的 `Value/Version` 读取和 `OnChange` 注册是两个独立动作，调用间存在漏失更新窗口；`ApplicationStateRegistry.CreateWriter(...)` 也没有抽象工厂进入 DI。因此本迁移先在 City 正式仓库完成：
+原 City 的 `Value/Version` 读取和 `OnChange` 注册是两个独立动作，调用间存在漏失更新窗口；`ApplicationStateRegistry.CreateWriter(...)` 也没有抽象工厂进入 DI。因此本迁移先在 City 正式仓库完成：
 
 - `AUC-STATE-009` 原子 `Observe(...)`：同一同步边界捕获当前快照并注册订阅，锁外先投递初始值，再按版本顺序投递更新。
 - `IApplicationStateWriterFactory`：模块通过 `StateWriteAuthority.Module("AtomBox.Application")` 获取受 OwnerWrite 约束的 writer。
 
-City 完成、测试并同步远端前，本单元状态为 `City Blocked`；AtomBox 更新外部 City 引用后进入 `Implementing`。
+City 文档提交 `c2843b9`、实现提交 `ac70dad` 已同步 `develop`；AtomBox 的 `external/AtomUI.City` 已更新至 `ac70dad`。
 
 ## 状态模型与所有权
 
@@ -74,3 +74,11 @@ Desktop activation
 - State、返回 DTO 和诊断文本中均无凭据明文。
 - AtomBox 全量测试和 Release 构建通过；真实 UI 烟测由用户最终执行。
 
+## 自动化实施证据
+
+- City.State：154/154 测试通过；Public API governance：4/4；Release 全解构建 0 warning / 0 error。
+- AtomBox.Application：162/162 测试通过，覆盖初始化成功/失败、原子首值观察、并发投影顺序、账号与设置状态发布以及凭据写入/替换/清理。
+- AtomBox.Desktop：31/31 测试通过，覆盖 Shell 对 Application State 的激活期观察和依赖边界。
+- 生产代码中已删除 `IAccountDialogWorkflow.AccountsChanged` 和 Desktop 对 `ICredentialStore` 的直接依赖。
+- AtomBox 全仓 Release：677/677 测试通过；全解构建 0 warning / 0 error。
+- 真实 UI 验收按用户决定由人工执行。

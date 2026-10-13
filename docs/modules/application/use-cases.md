@@ -161,7 +161,7 @@ Phase 9 允许 Application 结果对象补充 UI 可稳定展示的只读信息�
 
 ## 8. 禁止事项
 
-- Application 不引用 Avalonia、AtomUI、ViewModel、View。
+- Application 不引用 Avalonia、AtomUI 控件、ViewModel、View；`AtomUI.City.State` 是经迁移矩阵批准、仅用于运行时状态合同的例外。
 - Application 不引用具体 SDK、FTP/SFTP 客户端、网盘 HTTP API 客户端。
 - Application 不直接读取配置文件、不访问数据库、不加密凭据。
 - Application 不持有 provider、SDK client、secret material。
