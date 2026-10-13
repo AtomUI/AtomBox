@@ -30,6 +30,9 @@ services.AddAtomBoxApplication()
 - `RemoteBrowserAppService`
 - `TransferAppService`
 - `SettingsAppService`
+- `IAtomBoxApplicationState` 与 Application State 初始化器
+
+`AddAtomBoxApplication()` 通过 City `AddState()` 注册所需基础服务，并用 `IApplicationStateWriterFactory` 为 `AtomBox.Application` 创建 OwnerWrite writer。它不创建 ServiceProvider，也不把 writer 暴露给 Desktop。
 
 该方法不能：
 
@@ -63,6 +66,8 @@ Application Service 只依赖 Core 中定义的端口：
 - `ITransferTaskScheduler`
 - `ITransferTaskStore`
 - `ITransferStateStore`
+
+Application 还可以直接依赖 `AtomUI.City.State` 的框架合同，仅限运行时状态注册、只读观察和受权写入；City 类型不得进入 Core 或持久化实现。
 
 Application 不能依赖：
 

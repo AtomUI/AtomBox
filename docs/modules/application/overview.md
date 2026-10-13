@@ -156,3 +156,14 @@ Application Service 是应用级无状态服务，可以作为长期服务实例
 - 设置保存必须通过 Application 用例显式触发，不能由 ViewModel 或 Infrastructure 私自决定业务流程。
 
 Application 的服务生命周期只表达用例编排能力，不代表它拥有底层资源。资源生命周期归 Provider、Transfer 或 Infrastructure 管。
+
+## City.State 运行时投影
+
+Application 直接使用 `AtomUI.City.State` 发布账号目录和应用设置的运行时只读投影。Repository 仍是持久化事实源；State 只用于让多个前端消费者安全获得同一份当前快照和后续变化。
+
+- `IAtomBoxApplicationState` 暴露账号和设置的 `IReadOnlyState<T>`。
+- 状态由 Application 初始化器加载，并在相关用例成功提交后刷新。
+- 状态具有 `Uninitialized / Ready / Faulted` 三种显式加载状态；读取失败不能伪装成空数据。
+- 写权限属于 `AtomBox.Application`，通过 City OwnerWrite authority 获取；Desktop 及其他消费者没有 writer。
+- State 为 Transient snapshot，不承担磁盘持久化和进程恢复。
+- State 值、错误摘要和诊断不得包含 secret material。

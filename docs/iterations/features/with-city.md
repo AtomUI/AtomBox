@@ -1,5 +1,9 @@
 # AtomBox × AtomUI.City 迁移审计
 
+> 统领文档：[AtomBox × AtomUI.City 迁移主矩阵](with-city-migration-matrix.md)
+>
+> 本文是 Desktop 已实施能力的专项记录；后续范围、顺序和状态以迁移主矩阵为首要依据。
+
 ## 迁移结论
 
 AtomBox Desktop 的框架职责已迁移到 AtomUI.City：City Host 是唯一组合根，City Module 管理应用初始化和关闭，City Routing 保存导航真相，City Presentation 管理 WindowSession、View 注册、ViewModel lease、绑定、Outlet 提交和旧页面释放。

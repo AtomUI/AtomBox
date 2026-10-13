@@ -1,5 +1,9 @@
 # AtomBox × AtomUI.City MVVM 迁移
 
+> 统领文档：[AtomBox × AtomUI.City 迁移主矩阵](with-city-migration-matrix.md)
+>
+> 本文是 Desktop MVVM 21 项问题的专项历史记录；后续范围、顺序和状态以迁移主矩阵为首要依据。
+>
 > 状态：Implemented / Manual UI Validation Pending
 >
 > 实施分支：`feature/with-city`

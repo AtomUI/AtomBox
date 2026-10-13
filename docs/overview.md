@@ -18,6 +18,8 @@ AtomBox 软件采用文档先行研发规则。
 
 该规则是项目级工程治理要求，不是建议。当前 v0.1 发布前文档同步以已冻结代码为事实源，只允许修正文档落后内容，不修改代码。
 
+任何 AtomUI.City 相关审计、迁移或能力补齐，必须先读取并更新 [`iterations/features/with-city-migration-matrix.md`](iterations/features/with-city-migration-matrix.md)。该矩阵是 City 迁移范围、审计顺序、决策状态和验收证据的首要依据；专项 feature 文档和代码实施必须回链到具体矩阵单元。
+
 ## 文档说明
 
 | 目录 | 职责 |

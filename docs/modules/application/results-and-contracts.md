@@ -77,7 +77,7 @@ SDK Exception
 - SDK client。
 - SDK DTO。
 - `IServiceProvider`。
-- secret material。
+- secret material；唯一例外是账号写入或草稿连接测试请求可携带 `CredentialSecretMaterial`，它只能作为一次调用的瞬时输入。
 - Infrastructure repository 实现。
 
 ## 5. 结果对象规则
@@ -121,3 +121,10 @@ SDK Exception
 - 不在 Application 结果对象中携带弹窗指令。
 - 不在 Application 结果对象中携带 secret material。
 - 不让 Application 捕获并判断具体 SDK 异常类型。
+
+## City.State 合同
+
+- State DTO 是运行时不可变快照，不是 Application 用例返回值，也不是持久化模型。
+- 账号和设置 State 必须携带 `Uninitialized / Ready / Faulted` 状态；错误可以携带脱敏后的 Core `StorageError`，不得携带异常对象或 secret material。
+- `IAtomBoxApplicationState` 只暴露只读 State。任何公开 writer、可变集合或 Repository 实现泄漏都视为边界破坏。
+- `CredentialSecretMaterial` 不得被 State、结果对象、字段、闭包、日志或诊断上下文长期持有。
