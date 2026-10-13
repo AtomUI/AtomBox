@@ -1,5 +1,7 @@
 # AtomBox Desktop Navigation 设计
 
+> 当前实现说明（2026-10-13）：本文记录的 `CurrentViewModel` 和 `IPageViewModelFactory` 已被 City Router、最终参数快照和 RouteOutlet entry 取代。AtomBox `INavigationService` 现在只是业务 `NavigationTarget`/参数到 City route 的适配器；现行合同以 [City 迁移审计](../../iterations/features/with-city.md) 与 [MVVM 迁移记录](../../iterations/features/with-city-mvvm.md) 为准。
+
 > 文档状态：第一版发布基线冻结
 >
 > 冻结时间：2026-06-22

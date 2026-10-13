@@ -5,14 +5,19 @@ using AtomBox.Core.ValueObjects;
 using AtomBox.Desktop.Dialogs;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Navigation;
+using AtomUI.City.Mvvm;
+using CommunityToolkit.Mvvm.Input;
+using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class AccountManagementViewModel : LocalizedViewModelBase
+public sealed class AccountManagementViewModel : ViewModelBase
 {
     private readonly AccountAppService _accounts;
     private readonly IAccountDialogWorkflow _accountDialogWorkflow;
     private readonly IDialogService _dialogs;
+    private readonly IAtomBoxLocalizedText _localization;
+    private readonly CityUiDispatcher _dispatcher;
     private StorageAccountId? _selectedAccountId;
     private AccountRowViewModel? _selectedAccount;
     private LocalizedText? _statusMessage;
@@ -22,45 +27,62 @@ public sealed class AccountManagementViewModel : LocalizedViewModelBase
         AccountAppService accounts,
         IAccountDialogWorkflow accountDialogWorkflow,
         IDialogService dialogs,
-        IAtomBoxLocalizedText localization)
-        : base(localization)
+        IAtomBoxLocalizedText localization,
+        DesktopCommandFactory commands,
+        CityUiDispatcher dispatcher)
     {
         _accounts = accounts;
         _accountDialogWorkflow = accountDialogWorkflow;
         _dialogs = dialogs;
-        RefreshCommand = new AsyncRelayCommand(_ => RefreshAsync());
-        AddAccountCommand = new AsyncRelayCommand(_ => AddAccountAsync());
-        SelectAccountCommand = new AsyncRelayCommand(parameter =>
+        _localization = localization;
+        _dispatcher = dispatcher;
+        RefreshCommand = commands.CreateAsync(
+            this,
+            nameof(RefreshCommand),
+            RefreshAsync);
+        AddAccountCommand = commands.CreateAsync(
+            this,
+            nameof(AddAccountCommand),
+            AddAccountAsync);
+        SelectAccountCommand = commands.Create<AccountRowViewModel>(
+            this,
+            nameof(SelectAccountCommand),
+            account =>
         {
-            if (parameter is AccountRowViewModel account)
+            if (account is not null)
             {
                 SelectedAccount = account;
             }
-
-            return Task.CompletedTask;
         });
-        EditAccountCommand = new AsyncRelayCommand(EditSelectedAccountAsync, parameter => parameter is AccountRowViewModel || SelectedAccount is not null);
-        DeleteAccountCommand = new AsyncRelayCommand(DeleteSelectedAccountAsync, parameter => parameter is AccountRowViewModel || SelectedAccount is not null);
-        _ = RefreshAsync();
+        EditAccountCommand = commands.CreateAsync<AccountRowViewModel>(
+            this,
+            nameof(EditAccountCommand),
+            EditSelectedAccountAsync,
+            account => account is not null || SelectedAccount is not null);
+        DeleteAccountCommand = commands.CreateAsync<AccountRowViewModel>(
+            this,
+            nameof(DeleteAccountCommand),
+            DeleteSelectedAccountAsync,
+            account => account is not null || SelectedAccount is not null);
     }
 
-    public string Title => Localization.GetString("Account", "Title");
+    public string Title => _localization.GetString("Account", "Title");
 
     public ObservableCollection<AccountRowViewModel> Accounts { get; } = [];
 
-    public AsyncRelayCommand RefreshCommand { get; }
+    public IAsyncRelayCommand RefreshCommand { get; }
 
-    public AsyncRelayCommand AddAccountCommand { get; }
+    public IAsyncRelayCommand AddAccountCommand { get; }
 
-    public AsyncRelayCommand SelectAccountCommand { get; }
+    public IRelayCommand<AccountRowViewModel> SelectAccountCommand { get; }
 
-    public AsyncRelayCommand EditAccountCommand { get; }
+    public IAsyncRelayCommand<AccountRowViewModel> EditAccountCommand { get; }
 
-    public AsyncRelayCommand DeleteAccountCommand { get; }
+    public IAsyncRelayCommand<AccountRowViewModel> DeleteAccountCommand { get; }
 
     public string StatusMessage
     {
-        get => _statusMessage?.Resolve(Localization) ?? string.Empty;
+        get => _statusMessage?.Resolve(_localization) ?? string.Empty;
     }
 
     public bool IsLoading
@@ -85,8 +107,8 @@ public sealed class AccountManagementViewModel : LocalizedViewModelBase
             if (SetProperty(ref _selectedAccount, value))
             {
                 SelectedAccountId = value?.Id;
-                EditAccountCommand.RaiseCanExecuteChanged();
-                DeleteAccountCommand.RaiseCanExecuteChanged();
+                EditAccountCommand.NotifyCanExecuteChanged();
+                DeleteAccountCommand.NotifyCanExecuteChanged();
             }
         }
     }
@@ -97,12 +119,24 @@ public sealed class AccountManagementViewModel : LocalizedViewModelBase
         SelectRequestedAccount();
     }
 
-    private async Task RefreshAsync()
+    protected override ValueTask OnActivatedAsync(
+        ActivationContext context,
+        CancellationToken cancellationToken)
+    {
+        _localization.LanguageChanged += HandleLanguageChanged;
+        context.Scope.Add(EventSubscription.Create(
+            () => _localization.LanguageChanged -= HandleLanguageChanged));
+        return _dispatcher.PostAsync(
+            async token => await RefreshAsync(token).ConfigureAwait(true),
+            cancellationToken);
+    }
+
+    private async Task RefreshAsync(CancellationToken cancellationToken)
     {
         IsLoading = true;
         SetStatus(null);
 
-        var result = await _accounts.ListAsync(new ListStorageAccountsRequest()).ConfigureAwait(true);
+        var result = await _accounts.ListAsync(new ListStorageAccountsRequest(), cancellationToken).ConfigureAwait(true);
         Accounts.Clear();
 
         if (result.IsFailure)
@@ -124,9 +158,9 @@ public sealed class AccountManagementViewModel : LocalizedViewModelBase
         OnPropertyChanged(nameof(HasAccounts));
     }
 
-    private async Task AddAccountAsync()
+    private async Task AddAccountAsync(CancellationToken cancellationToken)
     {
-        var result = await _accountDialogWorkflow.AddAccountAsync().ConfigureAwait(true);
+        var result = await _accountDialogWorkflow.AddAccountAsync(cancellationToken: cancellationToken).ConfigureAwait(true);
         if (result.IsFailure)
         {
             SetStatus(new("Account", "AccountSaveFailed"));
@@ -140,11 +174,13 @@ public sealed class AccountManagementViewModel : LocalizedViewModelBase
         }
 
         SelectedAccountId = account.Id;
-        await RefreshAsync().ConfigureAwait(true);
+        await RefreshAsync(cancellationToken).ConfigureAwait(true);
         SetStatus(new("Account", "AccountAdded", account.DisplayName));
     }
 
-    private async Task EditSelectedAccountAsync(object? parameter)
+    private async Task EditSelectedAccountAsync(
+        AccountRowViewModel? parameter,
+        CancellationToken cancellationToken)
     {
         if (parameter is AccountRowViewModel accountToEdit)
         {
@@ -156,7 +192,9 @@ public sealed class AccountManagementViewModel : LocalizedViewModelBase
             return;
         }
 
-        var result = await _accountDialogWorkflow.EditAccountAsync(SelectedAccount.Account).ConfigureAwait(true);
+        var result = await _accountDialogWorkflow
+            .EditAccountAsync(SelectedAccount.Account, cancellationToken)
+            .ConfigureAwait(true);
         if (result.IsFailure)
         {
             SetStatus(new("Account", "AccountSaveFailed"));
@@ -170,11 +208,13 @@ public sealed class AccountManagementViewModel : LocalizedViewModelBase
         }
 
         SelectedAccountId = account.Id;
-        await RefreshAsync().ConfigureAwait(true);
+        await RefreshAsync(cancellationToken).ConfigureAwait(true);
         SetStatus(new("Account", "AccountUpdated", account.DisplayName));
     }
 
-    private async Task DeleteSelectedAccountAsync(object? parameter)
+    private async Task DeleteSelectedAccountAsync(
+        AccountRowViewModel? parameter,
+        CancellationToken cancellationToken)
     {
         if (parameter is AccountRowViewModel accountToDelete)
         {
@@ -188,16 +228,16 @@ public sealed class AccountManagementViewModel : LocalizedViewModelBase
 
         var account = SelectedAccount.Account;
         var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogRequest(
-            Localization.GetString("Account", "DeleteConnectionTitle"),
-            Localization.Format("Account", "DeleteConnectionMessage", account.DisplayName, account.ProviderId),
-            Localization.GetString("Common", "Delete"),
-            Localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
+            _localization.GetString("Account", "DeleteConnectionTitle"),
+            _localization.Format("Account", "DeleteConnectionMessage", account.DisplayName, account.ProviderId),
+            _localization.GetString("Common", "Delete"),
+            _localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
         if (!confirmed)
         {
             return;
         }
 
-        var result = await _accountDialogWorkflow.DeleteAccountAsync(account).ConfigureAwait(true);
+        var result = await _accountDialogWorkflow.DeleteAccountAsync(account, cancellationToken).ConfigureAwait(true);
         if (result.IsFailure)
         {
             SetStatus(new("Account", "AccountDeleteFailed"));
@@ -206,7 +246,7 @@ public sealed class AccountManagementViewModel : LocalizedViewModelBase
 
         SelectedAccountId = null;
         SelectedAccount = null;
-        await RefreshAsync().ConfigureAwait(true);
+        await RefreshAsync(cancellationToken).ConfigureAwait(true);
         SetStatus(new("Account", "AccountDeleted", account.DisplayName));
     }
 
@@ -226,7 +266,7 @@ public sealed class AccountManagementViewModel : LocalizedViewModelBase
         OnPropertyChanged(nameof(StatusMessage));
     }
 
-    protected override void OnLanguageChanged()
+    private void HandleLanguageChanged(object? sender, EventArgs args)
     {
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(StatusMessage));

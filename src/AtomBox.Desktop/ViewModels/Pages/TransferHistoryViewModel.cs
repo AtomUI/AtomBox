@@ -7,15 +7,20 @@ using AtomBox.Core.Transfers;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Services;
 using AtomBox.Desktop.Shell;
+using AtomUI.City.Mvvm;
+using CommunityToolkit.Mvvm.Input;
+using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class TransferHistoryViewModel : LocalizedViewModelBase
+public sealed class TransferHistoryViewModel : ViewModelBase
 {
     private readonly TransferAppService _transfers;
     private readonly IMessageService _messages;
     private readonly IDialogService _dialogs;
     private readonly StatusBarViewModel _statusBar;
+    private readonly IAtomBoxLocalizedText _localization;
+    private readonly CityUiDispatcher _dispatcher;
     private ErrorDialogRequest? _lastErrorDetails;
     private int _pageIndex = 1;
     private LocalizedText _statusMessage = new("Transfer", "LoadingHistory");
@@ -28,43 +33,59 @@ public sealed class TransferHistoryViewModel : LocalizedViewModelBase
         IMessageService messages,
         IDialogService dialogs,
         StatusBarViewModel statusBar,
-        IAtomBoxLocalizedText localization)
-        : base(localization)
+        IAtomBoxLocalizedText localization,
+        DesktopCommandFactory commands,
+        CityUiDispatcher dispatcher)
     {
         _transfers = transfers;
         _messages = messages;
         _dialogs = dialogs;
         _statusBar = statusBar;
-        RefreshCommand = new AsyncRelayCommand(_ => RefreshAsync());
-        ClearHistoryCommand = new AsyncRelayCommand(_ => ClearHistoryAsync(), _ => HasTasks);
-        ShowErrorDetailsCommand = new AsyncRelayCommand(_ => ShowErrorDetailsAsync(), _ => HasErrorDetails);
-        ShowTaskDetailsCommand = new AsyncRelayCommand(
+        _localization = localization;
+        _dispatcher = dispatcher;
+        RefreshCommand = commands.CreateAsync(this, nameof(RefreshCommand), RefreshAsync);
+        ClearHistoryCommand = commands.CreateAsync(
+            this,
+            nameof(ClearHistoryCommand),
+            ClearHistoryAsync,
+            () => HasTasks);
+        ShowErrorDetailsCommand = commands.CreateAsync(
+            this,
+            nameof(ShowErrorDetailsCommand),
+            ShowErrorDetailsAsync,
+            () => HasErrorDetails);
+        ShowTaskDetailsCommand = commands.CreateAsync<TransferHistoryRowViewModel>(
+            this,
+            nameof(ShowTaskDetailsCommand),
             ShowTaskDetailsAsync,
-            parameter => parameter is TransferHistoryRowViewModel { HasDetails: true });
-        PreviousPageCommand = new AsyncRelayCommand(_ => GoToPreviousPageAsync(), _ => PageIndex > 1);
-        NextPageCommand = new AsyncRelayCommand(_ => GoToNextPageAsync());
-        _ = RefreshAsync();
+            row => row is { HasDetails: true });
+        PreviousPageCommand = commands.CreateAsync(
+            this,
+            nameof(PreviousPageCommand),
+            GoToPreviousPageAsync,
+            () => PageIndex > 1);
+        NextPageCommand = commands.CreateAsync(this, nameof(NextPageCommand), GoToNextPageAsync);
     }
 
-    public string Title => Localization.GetString("Transfer", "Title");
+    public string Title => _localization.GetString("Transfer", "Title");
 
     public ObservableCollection<TransferHistoryRowViewModel> Tasks { get; } = [];
 
-    public AsyncRelayCommand RefreshCommand { get; }
+    public IAsyncRelayCommand RefreshCommand { get; }
 
-    public AsyncRelayCommand ClearHistoryCommand { get; }
+    public IAsyncRelayCommand ClearHistoryCommand { get; }
 
-    public AsyncRelayCommand PreviousPageCommand { get; }
+    public IAsyncRelayCommand PreviousPageCommand { get; }
 
-    public AsyncRelayCommand NextPageCommand { get; }
+    public IAsyncRelayCommand NextPageCommand { get; }
 
-    public AsyncRelayCommand ShowErrorDetailsCommand { get; }
+    public IAsyncRelayCommand ShowErrorDetailsCommand { get; }
 
-    public AsyncRelayCommand ShowTaskDetailsCommand { get; }
+    public IAsyncRelayCommand<TransferHistoryRowViewModel> ShowTaskDetailsCommand { get; }
 
     public string StatusMessage
     {
-        get => _statusMessage.Resolve(Localization);
+        get => _statusMessage.Resolve(_localization);
     }
 
     public bool IsLoading
@@ -94,15 +115,15 @@ public sealed class TransferHistoryViewModel : LocalizedViewModelBase
         {
             if (SetProperty(ref _pageIndex, value))
             {
-                PreviousPageCommand.RaiseCanExecuteChanged();
+                PreviousPageCommand.NotifyCanExecuteChanged();
                 OnPropertyChanged(nameof(PageText));
             }
         }
     }
 
-    public string PageText => Localization.Format("Transfer", "CurrentPage", PageIndex);
+    public string PageText => _localization.Format("Transfer", "CurrentPage", PageIndex);
 
-    protected override void OnLanguageChanged()
+    private void HandleLanguageChanged(object? sender, EventArgs args)
     {
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(PageText));
@@ -113,10 +134,21 @@ public sealed class TransferHistoryViewModel : LocalizedViewModelBase
     public void ApplyNavigationParameter(TransferHistoryNavigationParameter parameter)
     {
         PageIndex = Math.Max(parameter.PageIndex ?? 1, 1);
-        _ = RefreshAsync();
     }
 
-    private async Task GoToPreviousPageAsync()
+    protected override ValueTask OnActivatedAsync(
+        ActivationContext context,
+        CancellationToken cancellationToken)
+    {
+        _localization.LanguageChanged += HandleLanguageChanged;
+        context.Scope.Add(EventSubscription.Create(
+            () => _localization.LanguageChanged -= HandleLanguageChanged));
+        return _dispatcher.PostAsync(
+            async token => await RefreshAsync(token).ConfigureAwait(true),
+            cancellationToken);
+    }
+
+    private async Task GoToPreviousPageAsync(CancellationToken cancellationToken)
     {
         if (PageIndex <= 1)
         {
@@ -124,28 +156,30 @@ public sealed class TransferHistoryViewModel : LocalizedViewModelBase
         }
 
         PageIndex--;
-        await RefreshAsync().ConfigureAwait(true);
+        await RefreshAsync(cancellationToken).ConfigureAwait(true);
     }
 
-    private async Task GoToNextPageAsync()
+    private async Task GoToNextPageAsync(CancellationToken cancellationToken)
     {
         PageIndex++;
-        await RefreshAsync().ConfigureAwait(true);
+        await RefreshAsync(cancellationToken).ConfigureAwait(true);
     }
 
-    private async Task RefreshAsync()
+    private async Task RefreshAsync(CancellationToken cancellationToken)
     {
         IsLoading = true;
         SetStatus(new("Transfer", "LoadingHistory"));
         ClearErrorDetails();
 
-        var result = await _transfers.GetHistoryAsync(new GetTransferHistoryRequest(PageIndex)).ConfigureAwait(true);
+        var result = await _transfers.GetHistoryAsync(
+            new GetTransferHistoryRequest(PageIndex),
+            cancellationToken).ConfigureAwait(true);
         Tasks.Clear();
 
         if (result.IsFailure)
         {
             SetStatus(new("Transfer", "HistoryLoadFailed"));
-            SetErrorDetails(Localization.GetString("Transfer", "HistoryLoadFailed"), Localization.GetString("Transfer", "HistoryLoadFailed"), result.Error);
+            SetErrorDetails(_localization.GetString("Transfer", "HistoryLoadFailed"), _localization.GetString("Transfer", "HistoryLoadFailed"), result.Error);
             IsLoading = false;
             RaiseTaskCollectionStateChanged();
             return;
@@ -162,7 +196,7 @@ public sealed class TransferHistoryViewModel : LocalizedViewModelBase
             : new("Transfer", "HistoryPageCount", Tasks.Count));
         IsLoading = false;
         RaiseTaskCollectionStateChanged();
-        ClearHistoryCommand.RaiseCanExecuteChanged();
+        ClearHistoryCommand.NotifyCanExecuteChanged();
     }
 
     private void RaiseTaskCollectionStateChanged()
@@ -172,58 +206,64 @@ public sealed class TransferHistoryViewModel : LocalizedViewModelBase
         OnPropertyChanged(nameof(IsTaskListVisible));
     }
 
-    private async Task ClearHistoryAsync()
+    private async Task ClearHistoryAsync(CancellationToken cancellationToken)
     {
         var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogRequest(
-            Localization.GetString("Transfer", "ClearHistoryTitle"),
-            Localization.GetString("Transfer", "ClearHistoryMessage"),
-            Localization.GetString("Transfer", "Clear"),
-            Localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
+            _localization.GetString("Transfer", "ClearHistoryTitle"),
+            _localization.GetString("Transfer", "ClearHistoryMessage"),
+            _localization.GetString("Transfer", "Clear"),
+            _localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
         if (!confirmed)
         {
             return;
         }
 
-        var result = await _transfers.ClearHistoryAsync(new ClearTransferHistoryRequest()).ConfigureAwait(true);
+        var result = await _transfers.ClearHistoryAsync(
+            new ClearTransferHistoryRequest(),
+            cancellationToken).ConfigureAwait(true);
         if (result.IsFailure)
         {
             SetStatus(new("Transfer", "ClearHistoryFailed"));
-            SetErrorDetails(Localization.GetString("Transfer", "ClearHistoryFailed"), Localization.GetString("Transfer", "ClearHistoryFailed"), result.Error);
+            SetErrorDetails(_localization.GetString("Transfer", "ClearHistoryFailed"), _localization.GetString("Transfer", "ClearHistoryFailed"), result.Error);
             await _dialogs.ShowErrorDetailsAsync(_lastErrorDetails!).ConfigureAwait(true);
             return;
         }
 
-        _messages.Info(Localization.GetString("Transfer", "HistoryCleared"));
+        _messages.Info(_localization.GetString("Transfer", "HistoryCleared"));
         _statusBar.RequestQueueRefresh();
         PageIndex = 1;
-        await RefreshAsync().ConfigureAwait(true);
+        await RefreshAsync(cancellationToken).ConfigureAwait(true);
     }
 
-    private Task ShowErrorDetailsAsync()
+    private Task ShowErrorDetailsAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return _lastErrorDetails is null
             ? Task.CompletedTask
             : _dialogs.ShowErrorDetailsAsync(_lastErrorDetails);
     }
 
-    private Task ShowTaskDetailsAsync(object? parameter)
+    private Task ShowTaskDetailsAsync(
+        TransferHistoryRowViewModel? parameter,
+        CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (parameter is not TransferHistoryRowViewModel row)
         {
             return Task.CompletedTask;
         }
 
         return _dialogs.ShowErrorDetailsAsync(new ErrorDialogRequest(
-            Localization.GetString("Transfer", "HistoryDetails"),
+            _localization.GetString("Transfer", "HistoryDetails"),
             row.Reason ?? row.Result,
             Details: new Dictionary<string, string>
             {
-                [Localization.GetString("Common", "Task")] = row.FileName,
-                [Localization.GetString("Common", "Direction")] = row.Direction,
-                [Localization.GetString("Common", "TargetSource")] = row.TargetOrSource,
-                [Localization.GetString("Common", "Result")] = row.Result,
-                [Localization.GetString("Common", "Reason")] = row.Reason ?? "-",
-                [Localization.GetString("Common", "CompletedAt")] = row.CompletedAt
+                [_localization.GetString("Common", "Task")] = row.FileName,
+                [_localization.GetString("Common", "Direction")] = row.Direction,
+                [_localization.GetString("Common", "TargetSource")] = row.TargetOrSource,
+                [_localization.GetString("Common", "Result")] = row.Result,
+                [_localization.GetString("Common", "Reason")] = row.Reason ?? "-",
+                [_localization.GetString("Common", "CompletedAt")] = row.CompletedAt
             }));
     }
 
@@ -231,7 +271,7 @@ public sealed class TransferHistoryViewModel : LocalizedViewModelBase
     {
         _lastErrorDetails = ErrorDialogRequest.FromError(title, fallbackSummary, error);
         OnPropertyChanged(nameof(HasErrorDetails));
-        ShowErrorDetailsCommand.RaiseCanExecuteChanged();
+        ShowErrorDetailsCommand.NotifyCanExecuteChanged();
     }
 
     private void ClearErrorDetails()
@@ -243,7 +283,7 @@ public sealed class TransferHistoryViewModel : LocalizedViewModelBase
 
         _lastErrorDetails = null;
         OnPropertyChanged(nameof(HasErrorDetails));
-        ShowErrorDetailsCommand.RaiseCanExecuteChanged();
+        ShowErrorDetailsCommand.NotifyCanExecuteChanged();
     }
 
     private void SetStatus(LocalizedText value)
@@ -257,7 +297,7 @@ public sealed class TransferHistoryViewModel : LocalizedViewModelBase
         Tasks.Clear();
         foreach (var task in _currentSnapshots)
         {
-            Tasks.Add(TransferHistoryRowViewModel.From(task, ShowTaskDetailsCommand, Localization));
+            Tasks.Add(TransferHistoryRowViewModel.From(task, ShowTaskDetailsCommand, _localization));
         }
     }
 }

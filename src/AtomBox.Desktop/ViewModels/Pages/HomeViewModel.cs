@@ -6,14 +6,19 @@ using AtomBox.Core.Transfers;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.ViewModels;
+using AtomUI.City.Mvvm;
+using CommunityToolkit.Mvvm.Input;
+using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class HomeViewModel : LocalizedViewModelBase
+public sealed class HomeViewModel : ViewModelBase
 {
     private readonly AccountAppService _accounts;
     private readonly TransferAppService _transfers;
     private readonly INavigationService _navigation;
+    private readonly IAtomBoxLocalizedText _localization;
+    private readonly CityUiDispatcher _dispatcher;
     private LocalizedText _accountSummary = new("Shell", "AccountCount", 0);
     private LocalizedText _queueSummary = new("Transfer", "RunningPendingSummary", 0, 0);
     private LocalizedText _historySummary = new("Transfer", "RecentlyCompleted", 0);
@@ -25,35 +30,46 @@ public sealed class HomeViewModel : LocalizedViewModelBase
         AccountAppService accounts,
         TransferAppService transfers,
         INavigationService navigation,
-        IAtomBoxLocalizedText localization)
-        : base(localization)
+        IAtomBoxLocalizedText localization,
+        DesktopCommandFactory commands,
+        CityUiDispatcher dispatcher)
     {
         _accounts = accounts;
         _transfers = transfers;
         _navigation = navigation;
-        OpenRemoteStorageCommand = new AsyncRelayCommand(_ => NavigateAsync(NavigationTarget.RemoteBrowser));
-        OpenTransferQueueCommand = new AsyncRelayCommand(_ => NavigateAsync(NavigationTarget.TransferQueue));
-        OpenAccountManagementCommand = new AsyncRelayCommand(_ => NavigateAsync(NavigationTarget.AccountManagement));
-        _ = RefreshAsync();
+        _localization = localization;
+        _dispatcher = dispatcher;
+        OpenRemoteStorageCommand = commands.CreateAsync(
+            this,
+            nameof(OpenRemoteStorageCommand),
+            cancellationToken => NavigateAsync(NavigationTarget.RemoteBrowser, cancellationToken));
+        OpenTransferQueueCommand = commands.CreateAsync(
+            this,
+            nameof(OpenTransferQueueCommand),
+            cancellationToken => NavigateAsync(NavigationTarget.TransferQueue, cancellationToken));
+        OpenAccountManagementCommand = commands.CreateAsync(
+            this,
+            nameof(OpenAccountManagementCommand),
+            cancellationToken => NavigateAsync(NavigationTarget.AccountManagement, cancellationToken));
     }
 
     public string Title => "AtomBox";
 
-    public string Subtitle => Localization.GetString("Shell", "HomeSubtitle");
+    public string Subtitle => _localization.GetString("Shell", "HomeSubtitle");
 
     public string AccountSummary
     {
-        get => _accountSummary.Resolve(Localization);
+        get => _accountSummary.Resolve(_localization);
     }
 
     public string QueueSummary
     {
-        get => _queueSummary.Resolve(Localization);
+        get => _queueSummary.Resolve(_localization);
     }
 
     public string HistorySummary
     {
-        get => _historySummary.Resolve(Localization);
+        get => _historySummary.Resolve(_localization);
     }
 
     public bool IsRecentHistoryVisible
@@ -70,21 +86,33 @@ public sealed class HomeViewModel : LocalizedViewModelBase
 
     public ObservableCollection<HomeRecentTransferViewModel> RecentTransfers { get; } = [];
 
-    public AsyncRelayCommand OpenRemoteStorageCommand { get; }
+    public IAsyncRelayCommand OpenRemoteStorageCommand { get; }
 
-    public AsyncRelayCommand OpenTransferQueueCommand { get; }
+    public IAsyncRelayCommand OpenTransferQueueCommand { get; }
 
-    public AsyncRelayCommand OpenAccountManagementCommand { get; }
+    public IAsyncRelayCommand OpenAccountManagementCommand { get; }
 
-    private async Task RefreshAsync()
+    protected override ValueTask OnActivatedAsync(
+        ActivationContext context,
+        CancellationToken cancellationToken)
     {
-        await LoadAccountSummaryAsync().ConfigureAwait(true);
-        await LoadTransferSummaryAsync().ConfigureAwait(true);
+        _localization.LanguageChanged += HandleLanguageChanged;
+        context.Scope.Add(EventSubscription.Create(
+            () => _localization.LanguageChanged -= HandleLanguageChanged));
+        return _dispatcher.PostAsync(
+            async token => await RefreshAsync(token).ConfigureAwait(true),
+            cancellationToken);
     }
 
-    private async Task LoadAccountSummaryAsync()
+    private async Task RefreshAsync(CancellationToken cancellationToken)
     {
-        var result = await _accounts.ListAsync(new ListStorageAccountsRequest()).ConfigureAwait(true);
+        await LoadAccountSummaryAsync(cancellationToken).ConfigureAwait(true);
+        await LoadTransferSummaryAsync(cancellationToken).ConfigureAwait(true);
+    }
+
+    private async Task LoadAccountSummaryAsync(CancellationToken cancellationToken)
+    {
+        var result = await _accounts.ListAsync(new ListStorageAccountsRequest(), cancellationToken).ConfigureAwait(true);
         if (result.IsFailure)
         {
             SetAccountSummary(new("Shell", "AccountsUnavailable"));
@@ -100,9 +128,9 @@ public sealed class HomeViewModel : LocalizedViewModelBase
         SetAccountSummary(new("Shell", "AccountSummary", accounts.Count, objectStorageCount, fileTransferCount, webDavCount));
     }
 
-    private async Task LoadTransferSummaryAsync()
+    private async Task LoadTransferSummaryAsync(CancellationToken cancellationToken)
     {
-        var queueResult = await _transfers.GetQueueAsync(new GetTransferQueueRequest()).ConfigureAwait(true);
+        var queueResult = await _transfers.GetQueueAsync(new GetTransferQueueRequest(), cancellationToken).ConfigureAwait(true);
         if (queueResult.IsFailure)
         {
             SetQueueSummary(new("Transfer", "QueueUnavailable"));
@@ -115,7 +143,7 @@ public sealed class HomeViewModel : LocalizedViewModelBase
             SetQueueSummary(new("Transfer", "RunningPendingSummary", runningCount, pendingCount));
         }
 
-        var historyResult = await _transfers.GetHistoryAsync(new GetTransferHistoryRequest()).ConfigureAwait(true);
+        var historyResult = await _transfers.GetHistoryAsync(new GetTransferHistoryRequest(), cancellationToken).ConfigureAwait(true);
         RecentTransfers.Clear();
         if (historyResult.IsFailure)
         {
@@ -132,27 +160,28 @@ public sealed class HomeViewModel : LocalizedViewModelBase
 
         foreach (var snapshot in _recentSnapshots)
         {
-            RecentTransfers.Add(HomeRecentTransferViewModel.From(snapshot, Localization));
+            RecentTransfers.Add(HomeRecentTransferViewModel.From(snapshot, _localization));
         }
 
         IsRecentHistoryVisible = RecentTransfers.Count > 0;
         IsRecentHistoryEmpty = RecentTransfers.Count == 0;
     }
 
-    private Task NavigateAsync(NavigationTarget target)
+    private Task NavigateAsync(NavigationTarget target, CancellationToken cancellationToken)
     {
         return target == NavigationTarget.RemoteBrowser
             ? _navigation.NavigateAsync(
                 NavigationTarget.RemoteBrowser,
-                new RemoteBrowserNavigationParameter(NavigationResourceGroup.All))
-            : _navigation.NavigateAsync(target);
+                new RemoteBrowserNavigationParameter(NavigationResourceGroup.All),
+                cancellationToken)
+            : _navigation.NavigateAsync(target, cancellationToken: cancellationToken);
     }
 
     private void SetAccountSummary(LocalizedText value) { _accountSummary = value; OnPropertyChanged(nameof(AccountSummary)); }
     private void SetQueueSummary(LocalizedText value) { _queueSummary = value; OnPropertyChanged(nameof(QueueSummary)); }
     private void SetHistorySummary(LocalizedText value) { _historySummary = value; OnPropertyChanged(nameof(HistorySummary)); }
 
-    protected override void OnLanguageChanged()
+    private void HandleLanguageChanged(object? sender, EventArgs args)
     {
         OnPropertyChanged(nameof(Subtitle));
         OnPropertyChanged(nameof(AccountSummary));
@@ -161,7 +190,7 @@ public sealed class HomeViewModel : LocalizedViewModelBase
         RecentTransfers.Clear();
         foreach (var snapshot in _recentSnapshots)
         {
-            RecentTransfers.Add(HomeRecentTransferViewModel.From(snapshot, Localization));
+            RecentTransfers.Add(HomeRecentTransferViewModel.From(snapshot, _localization));
         }
     }
 }

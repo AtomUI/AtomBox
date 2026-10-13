@@ -187,7 +187,6 @@ AtomBox/
       Composition/
       Shell/
       Navigation/
-      ViewFactory/
       Dialogs/
       Services/
       Views/

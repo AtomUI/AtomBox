@@ -69,6 +69,7 @@ internal static class DesktopBootstrap
         var navigation = host.Services.GetRequiredService<INavigationService>() as NavigationService
             ?? throw new InvalidOperationException("The AtomBox navigation service does not support City outlets.");
         navigation.AttachOutlet(session.GetOutlet(AtomBoxRouteCatalog.PrimaryOutlet));
+        mainWindow.AttachInitialization(() => ComposeShellAsync(session, host.Services));
         mainWindow.Closed += (_, _) =>
             _ = ShutdownWhenSessionCompletesAsync(session, lifetime);
         lifetime.MainWindow = mainWindow;
@@ -131,5 +132,23 @@ internal static class DesktopBootstrap
         {
             Dispatcher.UIThread.Post(() => lifetime.Shutdown(1));
         }
+    }
+
+    private static async Task ComposeShellAsync(
+        WindowSession session,
+        IServiceProvider services)
+    {
+        var mainViewModel = services.GetRequiredService<MainWindowViewModel>();
+        var statusBar = services.GetRequiredService<StatusBarViewModel>();
+        var cancellationToken = session.Scope.CancellationToken;
+
+        var root = await session.ViewModels.AttachRootAsync(
+            "shell",
+            ViewModelLease.Borrowed(mainViewModel),
+            cancellationToken).ConfigureAwait(true);
+        await root.AttachChildAsync(
+            "shell.status-bar",
+            ViewModelLease.Borrowed(statusBar),
+            cancellationToken).ConfigureAwait(true);
     }
 }

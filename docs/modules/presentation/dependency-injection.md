@@ -1,5 +1,7 @@
 # AtomBox Desktop DI 设计
 
+> 当前实现说明（2026-10-13）：本文的第一版 `IPageViewModelFactory`、手写 `IViewFactory` 和页面创建流程已被 City Routing/Presentation 的 `IViewModelFactory`、generated ViewRegistry、ViewFactory/ViewBinder 与 RouteOutlet entry 取代。现行组合根和生命周期以 [City 迁移审计](../../iterations/features/with-city.md) 与 [MVVM 迁移记录](../../iterations/features/with-city-mvvm.md) 为准；本文其余内容仅保留第一版设计历史。
+
 > 文档状态：阶段性冻结
 >
 > 冻结时间：2026-06-14

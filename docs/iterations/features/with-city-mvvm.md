@@ -1,8 +1,8 @@
 # AtomBox × AtomUI.City MVVM 迁移
 
-> 状态：Planned
+> 状态：Implemented / Manual UI Validation Pending
 >
-> 目标版本：TBD
+> 实施分支：`feature/with-city`
 >
 > 创建时间：2026-10-13
 >
@@ -24,6 +24,15 @@ AtomBox Desktop 已完成 Host、Module、Routing、Presentation 和 Localizatio
 - Shell 根对象、StatusBar 子对象和路由页面分别具有明确且可测试的所有权。
 - 21 项问题均能追溯到决定、实施仓库和自动化验收证据。
 
+## 实施记录
+
+- City 设计先行提交：`38aff27 docs:define-mvvm-migration-contracts`。
+- City 通用能力实现：`41e75dd feat:activation-scoped-mvvm-orchestration`。
+- City owner-bound Command 生命周期通知补充：`c333994 fix:notify-owner-bound-command-lifecycle`。
+- AtomBox Desktop 已迁移 City `ViewModelBase`、ActivationScope、CommandFactory 和 Presentation Root/Child composition；本文件 21 项决定未发生方案漂移。
+- City 子模块当前固定到 `c333994`。上述 City 提交仍位于本地 `develop`，相对 `origin/develop` ahead 3；未获得 City 精确远端目标授权前不把“本地已提交”误记为“远端已同步”。
+- 自动门禁已通过；真实 UI 点击烟测按约定由用户人工完成，因此文档保持 `Manual UI Validation Pending`。
+
 ## 非目标
 
 - 不把 City 引用加入 AtomBox 的 Core、Application、Transfer、Providers 或 Infrastructure。
@@ -39,6 +48,7 @@ AtomBox Desktop 已完成 Host、Module、Routing、Presentation 和 Localizatio
 - Root 和 Child 是 Presentation 中的组织角色，不是 MVVM 基类层级；父对象持有 child activation lease，子对象拥有独立且链接父取消的 ActivationScope。
 - Command 的 `CanExecute` 是 UI 提示和前置判断，真正的并发准入必须由原子状态保证。
 - 持久传输在成功提交后由应用级 `TransferTaskScheduler` 所有，不能继续挂在页面 ActivationScope 下。
+- City Presentation 按正式线程合同在非 UI 线程调用 ViewModel activation；AtomBox 的激活入口和激活域 worker 必须通过 City Presentation dispatcher 进入 UI 上下文后再提交 Avalonia 集合或可绑定属性，不能依赖调用线程偶然是 UI 线程。
 
 ## 21 项审计结论
 
@@ -83,6 +93,8 @@ AtomBox Desktop 已完成 Host、Module、Routing、Presentation 和 Localizatio
 **实施归属：** AtomBox。
 
 **验收：** 激活、停用、再激活测试验证状态机、资源重建和无迟到 UI 更新。
+
+**线程落实：** 页面首次加载可以在 dispatcher 内异步等待 I/O，但不得同步阻塞 UI；所有 `ObservableCollection` 与可绑定属性的最终提交均处于 City Presentation dispatcher 上下文。
 
 ### 04. 构造函数中的首次刷新
 
@@ -340,26 +352,26 @@ AtomBox Desktop 已完成 Host、Module、Routing、Presentation 和 Localizatio
 
 | AtomBox 审计项 | City 正式能力 | 状态 |
 | --- | --- | --- |
-| 04、07、17 | `AUC-MVVM-007` Activation-scoped Structured Tasks | Planned |
-| 10、11、12、19 | `AUC-MVVM-008` Typed Commands and CanExecute | Planned |
-| 13、14、15 | `AUC-MVVM-009` Command Concurrency and Activation Ownership | Planned |
-| 16 | `AUC-MVVM-010` Command Exception Delivery | Planned |
-| 09 | `AUC-PRESENTATION-017` Logical Root and Owned Child ViewModels | Planned |
+| 04、07、17 | `AUC-MVVM-007` Activation-scoped Structured Tasks | Implemented (`41e75dd`) |
+| 10、11、12、19 | `AUC-MVVM-008` Typed Commands and CanExecute | Implemented (`41e75dd`, `c333994`) |
+| 13、14、15 | `AUC-MVVM-009` Command Concurrency and Activation Ownership | Implemented (`41e75dd`, `c333994`) |
+| 16 | `AUC-MVVM-010` Command Exception Delivery | Implemented (`41e75dd`) |
+| 09 | `AUC-PRESENTATION-017` Logical Root and Owned Child ViewModels | Implemented (`41e75dd`) |
 
 City 架构决策：
 
 - [ADR 0010：ActivationScope 采用结构化并发并约束 Command 执行所有权](../../../external/AtomUI.City/docs/decisions/0010-activation-scoped-structured-concurrency.md)
 - [ADR 0011：Presentation 提供逻辑 Root/Child，MVVM 保持角色无关](../../../external/AtomUI.City/docs/decisions/0011-presentation-root-child-ownership.md)
 
-## 实施顺序
+## 实际实施顺序
 
-1. 先在 City 完成 `AUC-MVVM-007` 至 `010` 和 `AUC-PRESENTATION-017` 的文档、实现、测试与 public API review。
-2. City 全量测试通过后提交并同步 `develop`，AtomBox 子模块固定到该提交。
-3. AtomBox Desktop 增加 City.Mvvm 直接引用，先迁移基类和生命周期，再迁移 Command。
-4. 按页面迁移首次加载、导航参数、订阅、定时器、账号变化队列和取消传播。
-5. 迁移 MainWindow Root 和 StatusBar child lease，删除自建命令与游离任务。
-6. 执行 AtomBox 全量测试、Release build 和三平台单文件 publish。
-7. 用户按现有真实 UI 烟测清单完成最终人工验收。
+1. 已在 City 完成 `AUC-MVVM-007` 至 `010` 和 `AUC-PRESENTATION-017` 的文档、实现、测试与 public API review。
+2. 已提交 City 代码并把 AtomBox 子模块固定到 `c333994`；City 远端同步仍等待精确仓库授权。
+3. 已为 AtomBox Desktop 增加 City.Mvvm 直接引用，并迁移基类、生命周期和 Command。
+4. 已按页面迁移首次加载、导航参数、订阅、定时器、账号变化队列和取消传播。
+5. 已把 MainWindow 组合为 Root、StatusBar 组合为 owned child，并删除 AtomBox 自建基类和 Command。
+6. 已完成 AtomBox 全量测试、Release build 和三平台单文件 publish。
+7. 待用户按真实 UI 烟测清单完成人工验收。
 
 ## 测试与验收
 
@@ -378,6 +390,15 @@ City 架构决策：
 - 非 Desktop 业务程序集没有 `AtomUI.City` 引用。
 - 全量测试、Release 构建以及 win-x64、linux-x64、osx-arm64 自包含单文件发布通过。
 - 自动化完成不替代真实 UI 人工烟测。
+
+### 本次验证证据
+
+- City MVVM：89/89；Public API governance：4/4；Mvvm net8.0/net10.0：0 warning、0 error。
+- AtomBox Desktop：31/31，其中 6 项为本轮新增的生命周期、依赖边界、单一 worker、Shell composition、Channel 合并和导航顺序验证。
+- AtomBox 全量：672/672。
+- AtomBox Release 全解构建：0 warning、0 error。
+- win-x64、linux-x64、osx-arm64 自包含单文件发布成功；主程序分别约 59.6 MB、59.1 MB、59.3 MB。
+- 静态审计确认：业务 ViewModel 中无 `Task.Run`、无 `Dispatcher.UIThread.Post(async ...)`，非 Desktop 业务程序集不引用 City；同步 UI adapter 中保留的普通 Dispatcher post 不属于游离异步业务回调。
 
 ## 文档同步
 

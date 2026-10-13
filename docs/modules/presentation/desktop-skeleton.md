@@ -1,5 +1,7 @@
 # AtomBox Desktop 技术骨架
 
+> 当前实现说明（2026-10-13）：本页主体保留第一版技术骨架历史。手写 ViewFactory、PageViewModelFactory、自建 ViewModelBase/Command 已被 City Host、Routing、Presentation、Localization 和 Mvvm 取代；现行基线见 [City 迁移审计](../../iterations/features/with-city.md) 与 [MVVM 迁移记录](../../iterations/features/with-city-mvvm.md)。
+
 > 文档状态：阶段性冻结
 >
 > 冻结时间：2026-06-14

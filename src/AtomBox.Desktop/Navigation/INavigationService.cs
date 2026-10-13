@@ -6,5 +6,8 @@ public interface INavigationService
 
     string? CurrentMenuKey { get; }
 
-    Task NavigateAsync(NavigationTarget target, object? parameter = null);
+    Task NavigateAsync(
+        NavigationTarget target,
+        object? parameter = null,
+        CancellationToken cancellationToken = default);
 }

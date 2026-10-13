@@ -90,9 +90,12 @@ public sealed class NavigationService : INavigationService, IAsyncDisposable
         }
     }
 
-    public async Task NavigateAsync(NavigationTarget target, object? parameter = null)
+    public async Task NavigateAsync(
+        NavigationTarget target,
+        object? parameter = null,
+        CancellationToken cancellationToken = default)
     {
-        await _navigationGate.WaitAsync().ConfigureAwait(true);
+        await _navigationGate.WaitAsync(cancellationToken).ConfigureAwait(true);
         try
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
@@ -101,7 +104,8 @@ public sealed class NavigationService : INavigationService, IAsyncDisposable
             var routeResult = await _router.NavigateAsync(
                 AtomBoxRouteCatalog.GetReference(target),
                 parameters,
-                new NavigationOptions { OutletName = AtomBoxRouteCatalog.PrimaryOutlet })
+                new NavigationOptions { OutletName = AtomBoxRouteCatalog.PrimaryOutlet },
+                cancellationToken)
                 .ConfigureAwait(true);
 
             if (routeResult.Status != NavigationResultStatus.Success || routeResult.ActiveRoute is null)
@@ -114,9 +118,10 @@ public sealed class NavigationService : INavigationService, IAsyncDisposable
             }
 
             var navigationParameter = DecodeParameter(target, routeResult.Parameters);
-            await CommitRouteAsync(outlet, routeResult.Route, navigationParameter).ConfigureAwait(true);
+            await CommitRouteAsync(outlet, routeResult.Route, navigationParameter, cancellationToken).ConfigureAwait(true);
             await _dispatcher.InvokeAsync(
-                () => CurrentMenuKey = ResolveMenuKey(target, navigationParameter))
+                () => CurrentMenuKey = ResolveMenuKey(target, navigationParameter),
+                cancellationToken)
                 .ConfigureAwait(true);
         }
         finally
@@ -162,7 +167,8 @@ public sealed class NavigationService : INavigationService, IAsyncDisposable
     private async Task CommitRouteAsync(
         IRouteOutlet outlet,
         RouteDescriptor route,
-        object? navigationParameter)
+        object? navigationParameter,
+        CancellationToken cancellationToken)
     {
         var viewModelType = route.ViewModelTarget?.ViewModelType ?? throw new InvalidOperationException(
             $"Route '{route.RouteId}' does not declare a ViewModel target.");
@@ -173,15 +179,18 @@ public sealed class NavigationService : INavigationService, IAsyncDisposable
         try
         {
             viewModelLease = await _viewModelFactory.AcquireAsync(
-                new ViewModelAcquisitionRequest(viewModelType, _services)).ConfigureAwait(true);
+                new ViewModelAcquisitionRequest(viewModelType, _services),
+                cancellationToken).ConfigureAwait(true);
             await _dispatcher.InvokeAsync(
-                () => ApplyNavigationParameter(viewModelLease.Instance, navigationParameter))
+                () => ApplyNavigationParameter(viewModelLease.Instance, navigationParameter),
+                cancellationToken)
                 .ConfigureAwait(true);
 
             var descriptor = _viewLocator.Locate(viewModelType);
-            var view = await _viewFactory.CreateAsync(descriptor).ConfigureAwait(true);
+            var view = await _viewFactory.CreateAsync(descriptor, cancellationToken).ConfigureAwait(true);
             handle = await _dispatcher.InvokeAsync(
-                () => _viewBinder.Bind(descriptor, view, viewModelLease.Instance))
+                () => _viewBinder.Bind(descriptor, view, viewModelLease.Instance),
+                cancellationToken)
                 .ConfigureAwait(true);
 
             var plan = RouteOutletCommitPlan.Replace(
@@ -191,7 +200,7 @@ public sealed class NavigationService : INavigationService, IAsyncDisposable
                 routeId: route.RouteId,
                 reuseKey: route.ViewModelTarget.ReuseKey);
             ownershipTransferred = true;
-            var commitResult = await outlet.CommitAsync(plan).ConfigureAwait(true);
+            var commitResult = await outlet.CommitAsync(plan, cancellationToken).ConfigureAwait(true);
             if (!commitResult.Succeeded)
             {
                 throw new InvalidOperationException(

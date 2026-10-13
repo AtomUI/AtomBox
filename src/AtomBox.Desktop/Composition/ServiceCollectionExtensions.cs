@@ -4,6 +4,8 @@ using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Services;
 using AtomBox.Desktop.Shell;
 using AtomBox.Desktop.ViewModels.Pages;
+using AtomBox.Desktop.ViewModels;
+using AtomUI.City.Mvvm;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace AtomBox.Desktop.Composition;
@@ -21,6 +23,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IDialogService, DialogService>();
         services.AddSingleton<IAccountDialogWorkflow, AccountDialogWorkflow>();
         services.AddSingleton<IMessageService, MessageService>();
+        services.AddSingleton<ICommandExceptionHandler, DesktopCommandExceptionHandler>();
+        services.AddSingleton<DesktopCommandFactory>();
         services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
         services.AddSingleton<IFilePickerService, AvaloniaFilePickerService>();
 

@@ -6,10 +6,14 @@ using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Services;
 using AtomBox.Infrastructure.Configuration;
 using System.Diagnostics;
+using System.Threading.Channels;
+using AtomUI.City.Mvvm;
+using CommunityToolkit.Mvvm.Input;
+using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class SettingsViewModel : LocalizedViewModelBase
+public sealed class SettingsViewModel : ViewModelBase
 {
     private readonly SettingsAppService _settings;
     private readonly IDialogService _dialogs;
@@ -18,6 +22,10 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
     private readonly IDesktopPreferencesService _preferences;
     private readonly IDesktopLanguageService _language;
     private readonly AtomBoxStoragePaths _paths;
+    private readonly IAtomBoxLocalizedText _localization;
+    private readonly CityUiDispatcher _dispatcher;
+    private Channel<int>? _languageChanges;
+    private Task? _languageWorker;
     private string _statusMessage = string.Empty;
     private string _settingsSummary = string.Empty;
     private string _defaultDownloadDirectory;
@@ -42,8 +50,9 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
         IDesktopPreferencesService preferences,
         IAtomBoxLocalizedText localization,
         IDesktopLanguageService language,
-        AtomBoxStoragePaths paths)
-        : base(localization)
+        AtomBoxStoragePaths paths,
+        DesktopCommandFactory commands,
+        CityUiDispatcher dispatcher)
     {
         _settings = settings;
         _dialogs = dialogs;
@@ -52,22 +61,39 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
         _preferences = preferences;
         _language = language;
         _paths = paths;
+        _localization = localization;
+        _dispatcher = dispatcher;
         _defaultDownloadDirectory = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
             "Downloads",
             "AtomBox");
-        RefreshCommand = new AsyncRelayCommand(_ => RefreshAsync());
-        ResetCommand = new AsyncRelayCommand(_ => ResetAsync(), _ => !IsLoading);
-        SaveCommand = new AsyncRelayCommand(_ => SaveAsync(), _ => !IsLoading && IsDirty);
-        ChooseDownloadDirectoryCommand = new AsyncRelayCommand(_ => ChooseDownloadDirectoryAsync());
-        OpenConfigurationDirectoryCommand = new AsyncRelayCommand(_ => OpenDirectoryAsync(_paths.ConfigurationDirectory));
-        OpenStateDirectoryCommand = new AsyncRelayCommand(_ => OpenDirectoryAsync(_paths.StateDirectory));
-        OpenLogDirectoryCommand = new AsyncRelayCommand(_ => OpenDirectoryAsync(_paths.LogDirectory));
-        ShowErrorDetailsCommand = new AsyncRelayCommand(_ => ShowErrorDetailsAsync(), _ => HasErrorDetails);
-        _ = RefreshAsync();
+        RefreshCommand = commands.CreateAsync(this, nameof(RefreshCommand), RefreshAsync);
+        ResetCommand = commands.CreateAsync(this, nameof(ResetCommand), ResetAsync, () => !IsLoading);
+        SaveCommand = commands.CreateAsync(this, nameof(SaveCommand), SaveAsync, () => !IsLoading && IsDirty);
+        ChooseDownloadDirectoryCommand = commands.CreateAsync(
+            this,
+            nameof(ChooseDownloadDirectoryCommand),
+            ChooseDownloadDirectoryAsync);
+        OpenConfigurationDirectoryCommand = commands.CreateAsync(
+            this,
+            nameof(OpenConfigurationDirectoryCommand),
+            cancellationToken => OpenDirectoryAsync(_paths.ConfigurationDirectory, cancellationToken));
+        OpenStateDirectoryCommand = commands.CreateAsync(
+            this,
+            nameof(OpenStateDirectoryCommand),
+            cancellationToken => OpenDirectoryAsync(_paths.StateDirectory, cancellationToken));
+        OpenLogDirectoryCommand = commands.CreateAsync(
+            this,
+            nameof(OpenLogDirectoryCommand),
+            cancellationToken => OpenDirectoryAsync(_paths.LogDirectory, cancellationToken));
+        ShowErrorDetailsCommand = commands.CreateAsync(
+            this,
+            nameof(ShowErrorDetailsCommand),
+            ShowErrorDetailsAsync,
+            () => HasErrorDetails);
     }
 
-    public string Title => Localization.GetString("Settings", "Title");
+    public string Title => _localization.GetString("Settings", "Title");
 
     public int LanguageSelectedIndex
     {
@@ -77,7 +103,7 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
             var normalized = Math.Clamp(value, 0, 2);
             if (SetProperty(ref _languageSelectedIndex, normalized) && !_isApplyingSettings)
             {
-                _ = ChangeLanguageAsync(normalized);
+                _languageChanges?.Writer.TryWrite(normalized);
             }
         }
     }
@@ -164,7 +190,7 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
         {
             if (SetProperty(ref _isDirty, value))
             {
-                SaveCommand.RaiseCanExecuteChanged();
+                SaveCommand.NotifyCanExecuteChanged();
             }
         }
     }
@@ -176,85 +202,129 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
         {
             if (SetProperty(ref _isLoading, value))
             {
-                ResetCommand.RaiseCanExecuteChanged();
-                SaveCommand.RaiseCanExecuteChanged();
+                ResetCommand.NotifyCanExecuteChanged();
+                SaveCommand.NotifyCanExecuteChanged();
             }
         }
     }
 
     public bool HasErrorDetails => _lastErrorDetails is not null;
 
-    public AsyncRelayCommand RefreshCommand { get; }
+    public IAsyncRelayCommand RefreshCommand { get; }
 
-    public AsyncRelayCommand ResetCommand { get; }
+    public IAsyncRelayCommand ResetCommand { get; }
 
-    public AsyncRelayCommand SaveCommand { get; }
+    public IAsyncRelayCommand SaveCommand { get; }
 
-    public AsyncRelayCommand ChooseDownloadDirectoryCommand { get; }
+    public IAsyncRelayCommand ChooseDownloadDirectoryCommand { get; }
 
-    public AsyncRelayCommand OpenConfigurationDirectoryCommand { get; }
+    public IAsyncRelayCommand OpenConfigurationDirectoryCommand { get; }
 
-    public AsyncRelayCommand OpenStateDirectoryCommand { get; }
+    public IAsyncRelayCommand OpenStateDirectoryCommand { get; }
 
-    public AsyncRelayCommand OpenLogDirectoryCommand { get; }
+    public IAsyncRelayCommand OpenLogDirectoryCommand { get; }
 
-    public AsyncRelayCommand ShowErrorDetailsCommand { get; }
+    public IAsyncRelayCommand ShowErrorDetailsCommand { get; }
 
-    private async Task RefreshAsync()
+    protected override ValueTask OnActivatedAsync(
+        ActivationContext context,
+        CancellationToken cancellationToken)
+    {
+        _localization.LanguageChanged += HandleLanguageChanged;
+        context.Scope.Add(EventSubscription.Create(
+            () => _localization.LanguageChanged -= HandleLanguageChanged));
+
+        return _dispatcher.PostAsync(
+            async token =>
+            {
+                var changes = Channel.CreateBounded<int>(new BoundedChannelOptions(1)
+                {
+                    FullMode = BoundedChannelFullMode.DropOldest,
+                    SingleReader = true,
+                    SingleWriter = false,
+                });
+                _languageChanges = changes;
+                context.Scope.Add(EventSubscription.Create(
+                    () => ReleaseLanguageChanges(changes)));
+                _languageWorker = context.Scope.StartUniqueAsync(
+                    "settings-language-change",
+                    workerToken => RunLanguageChangeWorkerAsync(changes.Reader, workerToken),
+                    token);
+
+                await RefreshAsync(token).ConfigureAwait(true);
+            },
+            cancellationToken);
+    }
+
+    protected override ValueTask OnDeactivatedAsync(CancellationToken cancellationToken)
+    {
+        Interlocked.Exchange(ref _languageChanges, null)?.Writer.TryComplete();
+        _languageWorker = null;
+        return ValueTask.CompletedTask;
+    }
+
+    private void ReleaseLanguageChanges(Channel<int> changes)
+    {
+        Interlocked.CompareExchange(ref _languageChanges, null, changes);
+        changes.Writer.TryComplete();
+        _languageWorker = null;
+    }
+
+    private async Task RefreshAsync(CancellationToken cancellationToken)
     {
         IsLoading = true;
         StatusMessage = string.Empty;
         ClearErrorDetails();
 
-        var result = await _settings.GetAsync(new GetApplicationSettingsRequest()).ConfigureAwait(true);
+        var result = await _settings.GetAsync(new GetApplicationSettingsRequest(), cancellationToken).ConfigureAwait(true);
         if (result.IsFailure)
         {
-            StatusMessage = Localization.GetString("Settings", "SettingsLoadFailed");
-            SettingsSummary = Localization.GetString("Settings", "SettingsUnavailable");
+            StatusMessage = _localization.GetString("Settings", "SettingsLoadFailed");
+            SettingsSummary = _localization.GetString("Settings", "SettingsUnavailable");
             SetErrorDetails(StatusMessage, StatusMessage, result.Error);
             IsLoading = false;
             return;
         }
 
-        var preferences = await _preferences.GetAsync().ConfigureAwait(true);
+        var preferences = await _preferences.GetAsync(cancellationToken).ConfigureAwait(true);
         ApplySettings(result.GetValueOrThrow(), preferences);
         StatusMessage = string.Empty;
         IsLoading = false;
     }
 
-    private async Task ResetAsync()
+    private async Task ResetAsync(CancellationToken cancellationToken)
     {
         var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogRequest(
-            Localization.GetString("Settings", "ResetTitle"),
-            Localization.GetString("Settings", "ResetMessage"),
-            Localization.GetString("Common", "Reset"),
-            Localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
+            _localization.GetString("Settings", "ResetTitle"),
+            _localization.GetString("Settings", "ResetMessage"),
+            _localization.GetString("Common", "Reset"),
+            _localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
         if (!confirmed)
         {
             return;
         }
 
         IsLoading = true;
-        StatusMessage = Localization.GetString("Settings", "Resetting");
-        var result = await _settings.ResetAsync(new ResetApplicationSettingsRequest()).ConfigureAwait(true);
+        StatusMessage = _localization.GetString("Settings", "Resetting");
+        var result = await _settings.ResetAsync(new ResetApplicationSettingsRequest(), cancellationToken).ConfigureAwait(true);
         if (result.IsFailure)
         {
-            StatusMessage = Localization.GetString("Settings", "ResetFailed");
+            StatusMessage = _localization.GetString("Settings", "ResetFailed");
             SetErrorDetails(StatusMessage, StatusMessage, result.Error);
             await _dialogs.ShowErrorDetailsAsync(_lastErrorDetails!).ConfigureAwait(true);
             IsLoading = false;
             return;
         }
 
-        var preferences = await _preferences.ResetAsync().ConfigureAwait(true);
+        var preferences = await _preferences.ResetAsync(cancellationToken).ConfigureAwait(true);
         ApplySettings(result.GetValueOrThrow(), preferences);
-        await _language.SetLanguageAsync(LanguagePreference.System).ConfigureAwait(true);
-        _messages.Info(Localization.GetString("Settings", "ResetSucceeded"));
-        StatusMessage = Localization.GetString("Settings", "ResetSucceeded");
+        await _language.SetLanguageAsync(LanguagePreference.System, cancellationToken).ConfigureAwait(true);
+        _messages.Info(_localization.GetString("Settings", "ResetSucceeded"));
+        StatusMessage = _localization.GetString("Settings", "ResetSucceeded");
         IsLoading = false;
     }
 
-    private async Task SaveAsync()
+    private async Task SaveAsync(CancellationToken cancellationToken)
     {
         if (_loadedSettings is null || _loadedPreferences is null)
         {
@@ -262,7 +332,7 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
         }
 
         IsLoading = true;
-        StatusMessage = Localization.GetString("Settings", "Saving");
+        StatusMessage = _localization.GetString("Settings", "Saving");
 
         var settings = new ApplicationSettings(
             (int)DefaultConcurrency,
@@ -275,19 +345,19 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
             DefaultDownloadDirectory,
             _loadedPreferences.Language);
 
-        var result = await _settings.UpdateAsync(new UpdateApplicationSettingsRequest(settings)).ConfigureAwait(true);
+        var result = await _settings.UpdateAsync(new UpdateApplicationSettingsRequest(settings), cancellationToken).ConfigureAwait(true);
         if (result.IsFailure)
         {
-            StatusMessage = Localization.GetString("Settings", "SaveFailed");
+            StatusMessage = _localization.GetString("Settings", "SaveFailed");
             SetErrorDetails(StatusMessage, StatusMessage, result.Error);
             await _dialogs.ShowErrorDetailsAsync(_lastErrorDetails!).ConfigureAwait(true);
             IsLoading = false;
             return;
         }
 
-        await _preferences.SaveAsync(preferences).ConfigureAwait(true);
+        await _preferences.SaveAsync(preferences, cancellationToken).ConfigureAwait(true);
         ApplySettings(result.GetValueOrThrow(), preferences);
-        _messages.Info(Localization.GetString("Settings", "SaveSucceeded"));
+        _messages.Info(_localization.GetString("Settings", "SaveSucceeded"));
         StatusMessage = string.Empty;
         IsLoading = false;
     }
@@ -308,10 +378,11 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
         _isApplyingSettings = false;
     }
 
-    private async Task ChooseDownloadDirectoryAsync()
+    private async Task ChooseDownloadDirectoryAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var selectedPath = await _filePicker
-            .PickFolderAsync(Localization.GetString("Settings", "ChooseDownloadDirectory"), DefaultDownloadDirectory)
+            .PickFolderAsync(_localization.GetString("Settings", "ChooseDownloadDirectory"), DefaultDownloadDirectory)
             .ConfigureAwait(true);
         if (string.IsNullOrWhiteSpace(selectedPath))
         {
@@ -319,7 +390,7 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
         }
 
         DefaultDownloadDirectory = selectedPath;
-        StatusMessage = Localization.GetString("Settings", "DownloadDirectorySelected");
+        StatusMessage = _localization.GetString("Settings", "DownloadDirectorySelected");
     }
 
     private void MarkDirty()
@@ -330,25 +401,45 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
         }
     }
 
-    private async Task ChangeLanguageAsync(int selectedIndex)
+    private async Task RunLanguageChangeWorkerAsync(
+        ChannelReader<int> changes,
+        CancellationToken cancellationToken)
+    {
+        await foreach (var selectedIndex in changes.ReadAllAsync(cancellationToken).ConfigureAwait(true))
+        {
+            var latest = selectedIndex;
+            while (changes.TryRead(out var next))
+            {
+                latest = next;
+            }
+
+            await ChangeLanguageAsync(latest, cancellationToken).ConfigureAwait(true);
+        }
+    }
+
+    private async Task ChangeLanguageAsync(int selectedIndex, CancellationToken cancellationToken)
     {
         var previousIndex = ToLanguageIndex(_language.CurrentPreference);
         _isLanguageSwitching = true;
         OnPropertyChanged(nameof(IsLanguageSelectionEnabled));
         try
         {
-            await _language.SetLanguageAsync(ToLanguagePreference(selectedIndex)).ConfigureAwait(true);
+            await _language.SetLanguageAsync(ToLanguagePreference(selectedIndex), cancellationToken).ConfigureAwait(true);
             if (_loadedPreferences is not null)
             {
                 _loadedPreferences = _loadedPreferences with { Language = _language.CurrentPreference };
             }
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch
         {
             _isApplyingSettings = true;
             LanguageSelectedIndex = previousIndex;
             _isApplyingSettings = false;
-            _messages.Error(Localization.GetString("Settings", "LanguageChangeFailed"));
+            _messages.Error(_localization.GetString("Settings", "LanguageChangeFailed"));
         }
         finally
         {
@@ -377,7 +468,7 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
         };
     }
 
-    protected override void OnLanguageChanged()
+    private void HandleLanguageChanged(object? sender, EventArgs args)
     {
         OnPropertyChanged(nameof(Title));
     }
@@ -415,8 +506,9 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
         return selectedIndex == 1 ? CloseWindowBehavior.MinimizeApplication : CloseWindowBehavior.CloseApplication;
     }
 
-    private Task ShowErrorDetailsAsync()
+    private Task ShowErrorDetailsAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return _lastErrorDetails is null
             ? Task.CompletedTask
             : _dialogs.ShowErrorDetailsAsync(_lastErrorDetails);
@@ -426,7 +518,7 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
     {
         _lastErrorDetails = ErrorDialogRequest.FromError(title, fallbackSummary, error);
         OnPropertyChanged(nameof(HasErrorDetails));
-        ShowErrorDetailsCommand.RaiseCanExecuteChanged();
+        ShowErrorDetailsCommand.NotifyCanExecuteChanged();
     }
 
     private void ClearErrorDetails()
@@ -438,11 +530,12 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
 
         _lastErrorDetails = null;
         OnPropertyChanged(nameof(HasErrorDetails));
-        ShowErrorDetailsCommand.RaiseCanExecuteChanged();
+        ShowErrorDetailsCommand.NotifyCanExecuteChanged();
     }
 
-    private async Task OpenDirectoryAsync(string path)
+    private async Task OpenDirectoryAsync(string path, CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         try
         {
             Directory.CreateDirectory(path);
@@ -451,11 +544,11 @@ public sealed class SettingsViewModel : LocalizedViewModelBase
                 FileName = path,
                 UseShellExecute = true
             });
-            StatusMessage = Localization.Format("Settings", "DirectoryOpened", path);
+            StatusMessage = _localization.Format("Settings", "DirectoryOpened", path);
         }
         catch
         {
-            StatusMessage = Localization.GetString("Settings", "OpenDirectoryFailed");
+            StatusMessage = _localization.GetString("Settings", "OpenDirectoryFailed");
             SetErrorDetails(
                 StatusMessage,
                 StatusMessage,

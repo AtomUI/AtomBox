@@ -34,6 +34,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
     private readonly MainWindowViewModel? _viewModel;
     private readonly IDesktopPreferencesService? _preferences;
     private readonly IAtomBoxLocalizedText? _localization;
+    private Func<Task>? _initializeAsync;
     private TrayIcon? _trayIcon;
     private TrayIcons? _trayIcons;
     private NativeMenuItem? _showTrayItem;
@@ -89,16 +90,26 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
             ?? throw new InvalidOperationException("Main content control was not found.");
     }
 
+    internal void AttachInitialization(Func<Task> initializeAsync)
+    {
+        ArgumentNullException.ThrowIfNull(initializeAsync);
+        if (Interlocked.CompareExchange(ref _initializeAsync, initializeAsync, null) is not null)
+        {
+            throw new InvalidOperationException("Main window initialization is already attached.");
+        }
+    }
+
     private async void HandleOpened(object? sender, EventArgs args)
     {
-        if (_viewModel is null)
+        var initializeAsync = Interlocked.Exchange(ref _initializeAsync, null);
+        if (initializeAsync is null)
         {
             return;
         }
 
         try
         {
-            await _viewModel.InitializeAsync().ConfigureAwait(true);
+            await initializeAsync().ConfigureAwait(true);
         }
         catch (Exception exception)
         {

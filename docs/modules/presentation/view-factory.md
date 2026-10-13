@@ -1,5 +1,7 @@
 # AtomBox Desktop ViewFactory 设计
 
+> 历史基线（2026-10-13）：本页描述的 AtomBox 手写 ViewFactory 已删除。当前由 City generated ViewRegistry、`IViewLocator`、`IViewFactory`、`IViewBinder` 和 RouteOutlet entry 完成 View 创建、绑定与所有权管理；参见 [City 迁移审计](../../iterations/features/with-city.md)。
+
 > 文档状态：阶段性冻结
 >
 > 冻结时间：2026-06-14

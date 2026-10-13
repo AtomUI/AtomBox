@@ -30,7 +30,7 @@ City Router
 
 ```text
 AtomBox.Desktop
-  -> AtomUI.City.Core / Routing / Presentation / Localization / Generators
+  -> AtomUI.City.Core / Mvvm / Routing / Presentation / Localization / Generators
   -> AtomUI.City.Build (RESX -> locpack at build time)
   -> AtomBox.Application / Transfer / Providers / Infrastructure / Core
 
@@ -52,6 +52,10 @@ AtomBox.Application / Transfer / Providers / Infrastructure / Core
 - 账号、远端路径和历史页码参数先编码进 City 路由快照，再重建为 AtomBox 参数；
 - 原有 `IPageViewModelFactory` 和 `CurrentViewModel` 双重页面状态已删除；
 - 页面实例、DI scope、View 解绑和旧页面释放由 City Outlet entry 所有；
+- Desktop ViewModel 统一继承 City `ViewModelBase`，页面初始化、订阅、循环和取消进入 ActivationScope；
+- Desktop Command 统一使用 City CommandFactory 和 CommunityToolkit 公共接口，AtomBox 自建 Command 已删除；
+- MainWindow 是 WindowSession 的逻辑 Root，StatusBar 是显式 owned child；路由页面仍由 RouteOutlet 独立拥有；
+- 定时刷新和账号变化刷新分别使用 `StartUniqueAsync`、`PeriodicTimer` 和容量 1 的 Channel，停用时取消并 drain；
 - 菜单选中键仍由 AtomBox 维护，因为它是 NavMenu 的应用展示状态，不是第二套路由状态。
 
 ## 本地化迁移
@@ -71,17 +75,17 @@ City `353d3b9` 修复了该契约：非 OS 关闭若已被更早的应用处理�
 以下实现保留在 AtomBox Desktop，并不构成第二套 Host、Router、Localization 或 Presentation 框架：
 
 - 同步 XAML `Loc` 扩展和 localized-text 快照投影；它们是 City 异步本地化运行时到 Avalonia 同步 Binding 合同的 UI adapter；
-- AtomBox 的轻量 ViewModel 基类和命令在第一阶段迁移中暂时保留；第二阶段已完成 21 项专项审计，将按 [AtomBox × AtomUI.City MVVM 迁移](with-city-mvvm.md) 迁入 City 的生命周期和 Command 合同；
 - Dialog、Message、文件选择器和托盘菜单；这些是应用 UI adapter，由 Desktop 组合层拥有。
 
-第一阶段中，City Presentation 已经为路由页面提供 DI scope lease、Outlet 生命周期和确定性释放；第二阶段将进一步统一 ViewModel 激活资源、异步任务、Command，以及非路由 Shell Root/Child 的所有权。第一阶段的“保留”不再表示永久架构结论。
+第二阶段的 21 项专项审计和实施证据见 [AtomBox × AtomUI.City MVVM 迁移](with-city-mvvm.md)。
 
 ## 自动验证
 
 - AtomBox Release 全解构建：0 warning、0 error；
-- AtomBox 全量测试：666/666；
+- AtomBox 全量测试：672/672；
 - win-x64、linux-x64、osx-arm64 自包含单文件发布全部成功；
-- Desktop 测试：25/25，覆盖 Host 启停、六条 route、六个 View 注册、导航参数往返以及 City 本地化集成；
+- Desktop 测试：31/31，覆盖 Host 启停、六条 route、六个 View 注册、导航参数往返、City 本地化、MVVM 生命周期、Shell composition、唯一 worker 和依赖边界；
+- City MVVM 测试 89/89、Public API governance 4/4，Mvvm net8.0/net10.0 构建通过；
 - 本地化集成测试覆盖 City embedded package 读取、英文到简体中文切换，以及同一 revision 的原子快照发布；
 - City Generator 测试 206/206、Localization 测试 96/96；静态 embedded package 不依赖 `Assembly.Location`，单文件发布可直接加载 source assembly；
 - City Presentation Headless 进程测试：4/4，覆盖真实 Avalonia Window/VisualTree、预取消 Closing 和 10,000 次 Outlet 提交压力；
@@ -89,6 +93,7 @@ City `353d3b9` 修复了该契约：非 OS 关闭若已被更早的应用处理�
 - 非 Desktop 业务程序集不存在 `AtomUI.City` 引用；
 - Desktop 运行时代码不存在旧 `ResourceManager` 或自建 `ILocalizationService`；
 - 已删除的自建 ViewFactory、PageViewModelFactory 和 `CurrentViewModel` 在源码与测试中均无残留引用。
+- 已删除的自建 `ViewModelBase`、`LocalizedViewModelBase`、`RelayCommand` 和 `AsyncRelayCommand` 在源码与测试中均无残留定义。
 
 ## 人工 UI 烟测
 
