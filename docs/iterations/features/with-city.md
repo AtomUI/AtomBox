@@ -71,10 +71,10 @@ City `353d3b9` 修复了该契约：非 OS 关闭若已被更早的应用处理�
 以下实现保留在 AtomBox Desktop，并不构成第二套 Host、Router、Localization 或 Presentation 框架：
 
 - 同步 XAML `Loc` 扩展和 localized-text 快照投影；它们是 City 异步本地化运行时到 Avalonia 同步 Binding 合同的 UI adapter；
-- AtomBox 的轻量 ViewModel 基类和命令；City Command 会把异常、取消和并发映射为 `OperationResult`，替换属于业务行为变更；
+- AtomBox 的轻量 ViewModel 基类和命令在第一阶段迁移中暂时保留；第二阶段已完成 21 项专项审计，将按 [AtomBox × AtomUI.City MVVM 迁移](with-city-mvvm.md) 迁入 City 的生命周期和 Command 合同；
 - Dialog、Message、文件选择器和托盘菜单；这些是应用 UI adapter，由 Desktop 组合层拥有。
 
-City Presentation 已经为现有 ViewModel 提供 DI scope lease、Outlet 生命周期和确定性释放，因此保留 ViewModel 基类不会绕开 City 页面生命周期。
+第一阶段中，City Presentation 已经为路由页面提供 DI scope lease、Outlet 生命周期和确定性释放；第二阶段将进一步统一 ViewModel 激活资源、异步任务、Command，以及非路由 Shell Root/Child 的所有权。第一阶段的“保留”不再表示永久架构结论。
 
 ## 自动验证
 
