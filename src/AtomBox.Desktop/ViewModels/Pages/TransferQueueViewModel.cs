@@ -6,8 +6,9 @@ using AtomBox.Core.ValueObjects;
 using AtomBox.Desktop.Dialogs;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Services;
-using AtomBox.Desktop.Shell;
+using AtomBox.Transfer.State;
 using AtomUI.City.Mvvm;
+using AtomUI.City.State;
 using CommunityToolkit.Mvvm.Input;
 using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
@@ -16,34 +17,34 @@ namespace AtomBox.Desktop.ViewModels.Pages;
 public sealed class TransferQueueViewModel : ViewModelBase
 {
     private readonly TransferAppService _transfers;
+    private readonly IAtomBoxTransferState _transferState;
+    private readonly ITransferStateSynchronizer _stateSynchronizer;
     private readonly IMessageService _messages;
     private readonly IDialogService _dialogs;
-    private readonly StatusBarViewModel _statusBar;
     private readonly IAtomBoxLocalizedText _localization;
-    private readonly SemaphoreSlim _refreshGate = new(1, 1);
     private readonly CityUiDispatcher _dispatcher;
     private static readonly Lock CompletionNotificationLock = new();
     private static readonly HashSet<TransferTaskId> CompletionNotificationsShown = [];
-    private readonly Dictionary<TransferTaskId, TransferTaskRowViewModel> _lastObservedTasks = [];
     private LocalizedText _statusMessage = new("Transfer", "LoadingQueue");
     private IReadOnlyList<TransferStateSnapshot> _currentSnapshots = [];
     private bool _isLoading;
-    private Task? _refreshLoop;
     private TransferTaskRowViewModel? _selectedTask;
 
     public TransferQueueViewModel(
         TransferAppService transfers,
+        IAtomBoxTransferState transferState,
+        ITransferStateSynchronizer stateSynchronizer,
         IMessageService messages,
         IDialogService dialogs,
-        StatusBarViewModel statusBar,
         IAtomBoxLocalizedText localization,
         DesktopCommandFactory commands,
         CityUiDispatcher dispatcher)
     {
         _transfers = transfers;
+        _transferState = transferState;
+        _stateSynchronizer = stateSynchronizer;
         _messages = messages;
         _dialogs = dialogs;
-        _statusBar = statusBar;
         _localization = localization;
         _dispatcher = dispatcher;
         RefreshCommand = commands.CreateAsync(this, nameof(RefreshCommand), RefreshAsync);
@@ -119,98 +120,70 @@ public sealed class TransferQueueViewModel : ViewModelBase
         _localization.LanguageChanged += HandleLanguageChanged;
         context.Scope.Add(EventSubscription.Create(
             () => _localization.LanguageChanged -= HandleLanguageChanged));
-        context.Scope.Add(EventSubscription.Create(
-            () => _refreshLoop = null));
-
-        return _dispatcher.PostAsync(
-            async token =>
+        context.Scope.Add(_transferState.Queue.Observe(
+            args =>
             {
-                await RefreshAsync(showLoading: true, token).ConfigureAwait(true);
-                _refreshLoop = context.Scope.StartUniqueAsync(
-                    "transfer-queue-periodic-refresh",
-                    RunRefreshLoopAsync,
-                    token);
+                ApplyQueue(args.NewValue);
+                if (!args.IsInitial)
+                {
+                    _ = context.Scope.StartAsync(
+                        $"transfer-completion-notification-{args.Version}",
+                        token => NotifyCompletedTasksAsync(
+                            args.OldValue.Tasks,
+                            args.NewValue.Tasks,
+                            token),
+                        cancellationToken);
+                }
             },
-            cancellationToken);
-    }
-
-    protected override ValueTask OnDeactivatedAsync(CancellationToken cancellationToken)
-    {
-        _refreshLoop = null;
+            StateSubscriptionOptions.Dispatcher(_dispatcher)));
         return ValueTask.CompletedTask;
     }
 
-    protected override void OnDisposed()
+    private async Task RefreshAsync(CancellationToken cancellationToken)
     {
-        _refreshGate.Dispose();
+        IsLoading = true;
+        SetStatus(new("Transfer", "LoadingQueue"));
+        RaiseTaskCollectionStateChanged();
+        await _stateSynchronizer.RefreshAsync(cancellationToken).ConfigureAwait(true);
     }
 
-    private Task RefreshAsync(CancellationToken cancellationToken)
+    private void ApplyQueue(TransferQueueState state)
     {
-        return RefreshAsync(showLoading: true, cancellationToken);
-    }
-
-    private async Task RunRefreshLoopAsync(CancellationToken cancellationToken)
-    {
-        using var timer = new PeriodicTimer(TimeSpan.FromSeconds(1));
-        while (await timer.WaitForNextTickAsync(cancellationToken).ConfigureAwait(true))
+        Tasks.Clear();
+        if (state.Status != TransferProjectionStatus.Ready)
         {
-            await RefreshAsync(showLoading: false, cancellationToken).ConfigureAwait(true);
-        }
-    }
-
-    private async Task RefreshAsync(bool showLoading, CancellationToken cancellationToken)
-    {
-        await _refreshGate.WaitAsync(cancellationToken).ConfigureAwait(true);
-
-        try
-        {
-            if (showLoading)
-            {
-                IsLoading = true;
-                SetStatus(new("Transfer", "LoadingQueue"));
-            }
-
-            var result = await _transfers.GetQueueAsync(
-                new GetTransferQueueRequest(),
-                cancellationToken).ConfigureAwait(true);
-            Tasks.Clear();
-
-            if (result.IsFailure)
-            {
-                SetStatus(new("Transfer", "QueueLoadFailed"));
-                IsLoading = false;
-                RaiseTaskCollectionStateChanged();
-                return;
-            }
-
-            var snapshots = result.GetValueOrThrow().Tasks;
-            _currentSnapshots = snapshots;
-            await NotifyCompletedTasksAsync(snapshots, cancellationToken).ConfigureAwait(true);
-
-            foreach (var task in snapshots)
-            {
-                Tasks.Add(TransferTaskRowViewModel.From(task, ExecuteTaskActionCommand, ShowTaskDetailsCommand, _localization));
-            }
-
-            SetStatus(Tasks.Count == 0
-                ? new("Transfer", "NoQueueTasksLong")
-                : new("Transfer", "QueueCount", Tasks.Count));
+            _currentSnapshots = [];
             IsLoading = false;
-            RememberObservedTasks();
+            SetStatus(state.Status == TransferProjectionStatus.Faulted
+                ? new("Transfer", "QueueLoadFailed")
+                : new("Transfer", "LoadingQueue"));
             RaiseTaskCollectionStateChanged();
+            return;
         }
-        finally
+
+        _currentSnapshots = state.Tasks;
+        foreach (var task in state.Tasks)
         {
-            _refreshGate.Release();
+            Tasks.Add(TransferTaskRowViewModel.From(
+                task,
+                ExecuteTaskActionCommand,
+                ShowTaskDetailsCommand,
+                _localization));
         }
+
+        SetStatus(Tasks.Count == 0
+            ? new("Transfer", "NoQueueTasksLong")
+            : new("Transfer", "QueueCount", Tasks.Count));
+        IsLoading = false;
+        RaiseTaskCollectionStateChanged();
     }
 
     private async Task NotifyCompletedTasksAsync(
+        IReadOnlyList<TransferStateSnapshot> previousSnapshots,
         IReadOnlyList<TransferStateSnapshot> currentSnapshots,
         CancellationToken cancellationToken)
     {
-        if (_lastObservedTasks.Count == 0)
+        if (previousSnapshots.Count == 0)
         {
             return;
         }
@@ -218,10 +191,11 @@ public sealed class TransferQueueViewModel : ViewModelBase
         var currentTaskIds = currentSnapshots
             .Select(snapshot => snapshot.Task.Id)
             .ToHashSet();
-        var completedCandidates = _lastObservedTasks.Values
+        var completedCandidates = previousSnapshots
+            .Select(snapshot => snapshot.Task)
             .Where(task => task.Status is TransferStatus.Pending or TransferStatus.Running &&
-                           !currentTaskIds.Contains(task.TaskId) &&
-                           !IsCompletionNotificationShown(task.TaskId))
+                           !currentTaskIds.Contains(task.Id) &&
+                           !IsCompletionNotificationShown(task.Id))
             .ToArray();
         if (completedCandidates.Length == 0)
         {
@@ -242,12 +216,12 @@ public sealed class TransferQueueViewModel : ViewModelBase
         var completedTasks = new List<TransferTaskRowViewModel>();
         foreach (var candidate in completedCandidates)
         {
-            if (!succeededTasks.TryGetValue(candidate.TaskId, out var snapshot))
+            if (!succeededTasks.TryGetValue(candidate.Id, out var snapshot))
             {
                 continue;
             }
 
-            if (!TryMarkCompletionNotificationShown(candidate.TaskId))
+            if (!TryMarkCompletionNotificationShown(candidate.Id))
             {
                 continue;
             }
@@ -264,15 +238,6 @@ public sealed class TransferQueueViewModel : ViewModelBase
                 ? _localization.Format("Transfer", "TaskCompletedSingle", tasks[0].FileName, direction)
                 : _localization.Format("Transfer", "TaskCompletedMultiple", tasks.Length, direction);
             _messages.Success(message);
-        }
-    }
-
-    private void RememberObservedTasks()
-    {
-        _lastObservedTasks.Clear();
-        foreach (var task in Tasks)
-        {
-            _lastObservedTasks[task.TaskId] = task;
         }
     }
 
@@ -332,8 +297,6 @@ public sealed class TransferQueueViewModel : ViewModelBase
             return;
         }
 
-        _statusBar.RequestQueueRefresh();
-        await RefreshAsync(cancellationToken).ConfigureAwait(true);
     }
 
     private async Task CancelPendingTasksAsync(CancellationToken cancellationToken)
@@ -361,8 +324,6 @@ public sealed class TransferQueueViewModel : ViewModelBase
             }
         }
 
-        _statusBar.RequestQueueRefresh();
-        await RefreshAsync(cancellationToken).ConfigureAwait(true);
     }
 
     private async Task RetryFailedTasksAsync(CancellationToken cancellationToken)
@@ -390,8 +351,6 @@ public sealed class TransferQueueViewModel : ViewModelBase
             }
         }
 
-        _statusBar.RequestQueueRefresh();
-        await RefreshAsync(cancellationToken).ConfigureAwait(true);
     }
 
     private Task ShowTaskDetailsAsync(

@@ -2,6 +2,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\AtomBox.Core\AtomBox.Core.csproj" />
+    <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.State\AtomUI.City.State.csproj" />
   </ItemGroup>
 
   <ItemGroup>

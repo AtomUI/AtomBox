@@ -14,7 +14,9 @@ public sealed class TransferRuntimeInitializerTests
         var store = new MemoryTransferStore();
         await store.SaveAsync(TransferTaskFactory.Create(TransferStatus.Pending));
         await store.SaveAsync(TransferTaskFactory.Create(TransferStatus.Succeeded));
-        var initializer = new TransferRuntimeInitializer(store);
+        var initializer = new TransferRuntimeInitializer(
+            store,
+            TransferStateTestFactory.CreateProjector(store));
 
         var result = await initializer.InitializeAsync();
 
@@ -28,7 +30,9 @@ public sealed class TransferRuntimeInitializerTests
         var store = new MemoryTransferStore();
         var running = TransferTaskFactory.Create(TransferStatus.Running);
         await store.SaveAsync(running);
-        var initializer = new TransferRuntimeInitializer(store);
+        var initializer = new TransferRuntimeInitializer(
+            store,
+            TransferStateTestFactory.CreateProjector(store));
 
         var result = await initializer.InitializeAsync();
 
@@ -48,7 +52,9 @@ public sealed class TransferRuntimeInitializerTests
         var pending = TransferTaskFactory.Create(TransferStatus.Pending);
         await store.SaveAsync(running);
         await store.SaveAsync(pending);
-        var initializer = new TransferRuntimeInitializer(store);
+        var initializer = new TransferRuntimeInitializer(
+            store,
+            TransferStateTestFactory.CreateProjector(store));
 
         var result = await initializer.InitializeAsync();
 
@@ -61,7 +67,9 @@ public sealed class TransferRuntimeInitializerTests
     public async Task InitializeAsync_StoreUnavailable_ReturnsError()
     {
         var store = new FailingTaskStore();
-        var initializer = new TransferRuntimeInitializer(store);
+        var initializer = new TransferRuntimeInitializer(
+            store,
+            TransferStateTestFactory.CreateProjector());
 
         var result = await initializer.InitializeAsync();
 
@@ -74,7 +82,9 @@ public sealed class TransferRuntimeInitializerTests
         var store = new MemoryTransferStore();
         await store.SaveAsync(TransferTaskFactory.Create(TransferStatus.Pending));
         await store.SaveAsync(TransferTaskFactory.Create(TransferStatus.Succeeded));
-        var initializer = new TransferRuntimeInitializer(store);
+        var initializer = new TransferRuntimeInitializer(
+            store,
+            TransferStateTestFactory.CreateProjector(store));
 
         var first = await initializer.InitializeAsync();
         var second = await initializer.InitializeAsync();
@@ -90,7 +100,9 @@ public sealed class TransferRuntimeInitializerTests
         var store = new MemoryTransferStore();
         var running = TransferTaskFactory.Create(TransferStatus.Running);
         await store.SaveAsync(running);
-        var initializer = new TransferRuntimeInitializer(store);
+        var initializer = new TransferRuntimeInitializer(
+            store,
+            TransferStateTestFactory.CreateProjector(store));
 
         var result = await initializer.InitializeAsync();
 

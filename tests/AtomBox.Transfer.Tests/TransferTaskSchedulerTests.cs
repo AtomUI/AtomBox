@@ -177,7 +177,9 @@ public sealed class TransferTaskSchedulerTests
         var pending = CreateTask(TransferStatus.Pending);
         await store.SaveAsync(running);
         await store.SaveAsync(pending);
-        var initializer = new TransferRuntimeInitializer(store);
+        var initializer = new TransferRuntimeInitializer(
+            store,
+            TransferStateTestFactory.CreateProjector(store));
 
         var result = await initializer.InitializeAsync();
 
@@ -242,7 +244,8 @@ public sealed class TransferTaskSchedulerTests
                 store,
                 cancellations),
             cancellations,
-            new FixedApplicationSettingsRepository(3));
+            new FixedApplicationSettingsRepository(3),
+            TransferStateTestFactory.CreateProjector(store));
         var pending = CreateTask(TransferStatus.Pending);
         await scheduler.SubmitAsync(pending);
 
@@ -517,7 +520,8 @@ public sealed class TransferTaskSchedulerTests
             new TransferQueue(),
             workerFactory,
             new TransferCancellationRegistry(),
-            new FixedApplicationSettingsRepository(defaultConcurrency));
+            new FixedApplicationSettingsRepository(defaultConcurrency),
+            TransferStateTestFactory.CreateProjector(store));
     }
 
     private static TransferWorker CreateWorker(MemoryTransferStore store)

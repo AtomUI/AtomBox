@@ -89,7 +89,7 @@ Interrupted -> Pending // Recover / manual restart
 - 百分比，可计算或为空。
 - 速度快照，可为空。
 
-进度更新可以很频繁，但不能直接推给 ViewModel。Transfer 应先更新内部状态或状态存储，再由 Application 查询用例组织为 UI 需要的快照。
+进度更新可以很频繁，但不能直接推给 ViewModel。Transfer 必须先成功更新状态存储，再原子更新 City.State 队列投影；ViewModel 只读观察该投影。历史分页仍由 Application 查询用例组织。
 
 ## 5. 队列快照
 

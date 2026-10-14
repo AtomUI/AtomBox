@@ -6,7 +6,6 @@ using AtomBox.Desktop.Localization;
 using AtomBox.Core.Transfers;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Services;
-using AtomBox.Desktop.Shell;
 using AtomUI.City.Mvvm;
 using CommunityToolkit.Mvvm.Input;
 using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
@@ -18,7 +17,6 @@ public sealed class TransferHistoryViewModel : ViewModelBase
     private readonly TransferAppService _transfers;
     private readonly IMessageService _messages;
     private readonly IDialogService _dialogs;
-    private readonly StatusBarViewModel _statusBar;
     private readonly IAtomBoxLocalizedText _localization;
     private readonly CityUiDispatcher _dispatcher;
     private ErrorDialogRequest? _lastErrorDetails;
@@ -32,7 +30,6 @@ public sealed class TransferHistoryViewModel : ViewModelBase
         TransferAppService transfers,
         IMessageService messages,
         IDialogService dialogs,
-        StatusBarViewModel statusBar,
         IAtomBoxLocalizedText localization,
         DesktopCommandFactory commands,
         CityUiDispatcher dispatcher)
@@ -40,7 +37,6 @@ public sealed class TransferHistoryViewModel : ViewModelBase
         _transfers = transfers;
         _messages = messages;
         _dialogs = dialogs;
-        _statusBar = statusBar;
         _localization = localization;
         _dispatcher = dispatcher;
         RefreshCommand = commands.CreateAsync(this, nameof(RefreshCommand), RefreshAsync);
@@ -230,7 +226,6 @@ public sealed class TransferHistoryViewModel : ViewModelBase
         }
 
         _messages.Info(_localization.GetString("Transfer", "HistoryCleared"));
-        _statusBar.RequestQueueRefresh();
         PageIndex = 1;
         await RefreshAsync(cancellationToken).ConfigureAwait(true);
     }

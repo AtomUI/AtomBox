@@ -207,7 +207,7 @@ Application 查询传输队列和历史时，只能通过该类端口获得不�
 
 第一版不把 `ITransferStatePublisher` 作为 Core 公共端口暴露。
 
-如果 Transfer 内部需要事件发布机制，只能作为 Transfer 模块内部实现细节，或在后续版本经过重新设计后再进入 Core。第一版传输状态进入 UI 的唯一正式路径是：Transfer Runtime 更新状态存储，Application 通过 Core 查询端口组织不可变快照，Presentation 消费 Application 结果。
+Transfer 不向 Core 添加事件发布或 City.State 端口。队列投影由 Transfer 自身在持久化成功后写入 City.State，Desktop 只读观察；Application 通过本节 Core 端口提供历史分页和显式查询用例。Core 仍保持 City 无关。
 
 ## 7. 结果与错误规则
 

@@ -4,6 +4,7 @@ using AtomBox.Core.Settings;
 using AtomBox.Core.Transfers;
 using AtomBox.Core.ValueObjects;
 using AtomBox.Transfer.Queue;
+using AtomBox.Transfer.State;
 using AtomBox.Transfer.Workers;
 
 namespace AtomBox.Transfer.Scheduling;
@@ -15,6 +16,7 @@ public sealed class TransferTaskScheduler : ITransferTaskScheduler
     private readonly Func<TransferWorker> _workerFactory;
     private readonly TransferCancellationRegistry _cancellations;
     private readonly IApplicationSettingsRepository _settings;
+    private readonly TransferStateProjector _stateProjector;
     private readonly SemaphoreSlim _wakeGate = new(1, 1);
 
     public TransferTaskScheduler(
@@ -22,20 +24,22 @@ public sealed class TransferTaskScheduler : ITransferTaskScheduler
         TransferQueue queue,
         Func<TransferWorker> workerFactory,
         TransferCancellationRegistry cancellations,
-        IApplicationSettingsRepository settings)
+        IApplicationSettingsRepository settings,
+        TransferStateProjector stateProjector)
     {
         _taskStore = taskStore;
         _queue = queue;
         _workerFactory = workerFactory;
         _cancellations = cancellations;
         _settings = settings;
+        _stateProjector = stateProjector;
     }
 
     public Task<OperationResult> SubmitAsync(
         TransferTask task,
         CancellationToken cancellationToken = default)
     {
-        return _taskStore.SaveAsync(task, cancellationToken);
+        return SaveAndProjectAsync(task, cancellationToken);
     }
 
     public async Task<OperationResult> CancelAsync(
@@ -59,7 +63,7 @@ public sealed class TransferTaskScheduler : ITransferTaskScheduler
 
         _cancellations.Cancel(task.Id);
 
-        return await _taskStore.SaveAsync(
+        return await SaveAndProjectAsync(
             task.WithStatus(
                 TransferStatus.Canceled,
                 DateTimeOffset.UtcNow,
@@ -86,9 +90,22 @@ public sealed class TransferTaskScheduler : ITransferTaskScheduler
                 StorageErrorCategory.Conflict));
         }
 
-        return await _taskStore.SaveAsync(
+        return await SaveAndProjectAsync(
             task.WithStatus(TransferStatus.Pending, DateTimeOffset.UtcNow),
             cancellationToken).ConfigureAwait(false);
+    }
+
+    private async Task<OperationResult> SaveAndProjectAsync(
+        TransferTask task,
+        CancellationToken cancellationToken)
+    {
+        var result = await _taskStore.SaveAsync(task, cancellationToken).ConfigureAwait(false);
+        if (result.IsSuccess)
+        {
+            _stateProjector.PublishPersisted(task, progress: null);
+        }
+
+        return result;
     }
 
     public async Task<OperationResult> WakeAsync(CancellationToken cancellationToken = default)

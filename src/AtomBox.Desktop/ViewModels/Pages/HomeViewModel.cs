@@ -7,6 +7,7 @@ using AtomBox.Core.Transfers;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.ViewModels;
+using AtomBox.Transfer.State;
 using AtomUI.City.Mvvm;
 using AtomUI.City.State;
 using CommunityToolkit.Mvvm.Input;
@@ -17,6 +18,7 @@ namespace AtomBox.Desktop.ViewModels.Pages;
 public sealed class HomeViewModel : ViewModelBase
 {
     private readonly IAtomBoxApplicationState _applicationState;
+    private readonly IAtomBoxTransferState _transferState;
     private readonly TransferAppService _transfers;
     private readonly INavigationService _navigation;
     private readonly IAtomBoxLocalizedText _localization;
@@ -30,6 +32,7 @@ public sealed class HomeViewModel : ViewModelBase
 
     public HomeViewModel(
         IAtomBoxApplicationState applicationState,
+        IAtomBoxTransferState transferState,
         TransferAppService transfers,
         INavigationService navigation,
         IAtomBoxLocalizedText localization,
@@ -37,6 +40,7 @@ public sealed class HomeViewModel : ViewModelBase
         CityUiDispatcher dispatcher)
     {
         _applicationState = applicationState;
+        _transferState = transferState;
         _transfers = transfers;
         _navigation = navigation;
         _localization = localization;
@@ -104,8 +108,11 @@ public sealed class HomeViewModel : ViewModelBase
         context.Scope.Add(_applicationState.Accounts.Observe(
             args => ApplyAccountCatalog(args.NewValue),
             StateSubscriptionOptions.Dispatcher(_dispatcher)));
+        context.Scope.Add(_transferState.Queue.Observe(
+            args => ApplyTransferQueue(args.NewValue),
+            StateSubscriptionOptions.Dispatcher(_dispatcher)));
         return _dispatcher.PostAsync(
-            async token => await LoadTransferSummaryAsync(token).ConfigureAwait(true),
+            async token => await LoadRecentTransferHistoryAsync(token).ConfigureAwait(true),
             cancellationToken);
     }
 
@@ -126,21 +133,21 @@ public sealed class HomeViewModel : ViewModelBase
         SetAccountSummary(new("Shell", "AccountSummary", accounts.Count, objectStorageCount, fileTransferCount, webDavCount));
     }
 
-    private async Task LoadTransferSummaryAsync(CancellationToken cancellationToken)
+    private void ApplyTransferQueue(TransferQueueState state)
     {
-        var queueResult = await _transfers.GetQueueAsync(new GetTransferQueueRequest(), cancellationToken).ConfigureAwait(true);
-        if (queueResult.IsFailure)
+        if (state.Status != TransferProjectionStatus.Ready)
         {
             SetQueueSummary(new("Transfer", "QueueUnavailable"));
-        }
-        else
-        {
-            var queue = queueResult.GetValueOrThrow().Tasks;
-            var runningCount = queue.Count(task => task.Task.Status == TransferStatus.Running);
-            var pendingCount = queue.Count(task => task.Task.Status == TransferStatus.Pending);
-            SetQueueSummary(new("Transfer", "RunningPendingSummary", runningCount, pendingCount));
+            return;
         }
 
+        var runningCount = state.Tasks.Count(task => task.Task.Status == TransferStatus.Running);
+        var pendingCount = state.Tasks.Count(task => task.Task.Status == TransferStatus.Pending);
+        SetQueueSummary(new("Transfer", "RunningPendingSummary", runningCount, pendingCount));
+    }
+
+    private async Task LoadRecentTransferHistoryAsync(CancellationToken cancellationToken)
+    {
         var historyResult = await _transfers.GetHistoryAsync(new GetTransferHistoryRequest(), cancellationToken).ConfigureAwait(true);
         RecentTransfers.Clear();
         if (historyResult.IsFailure)

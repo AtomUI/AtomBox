@@ -47,8 +47,10 @@
     <OutputType>WinExe</OutputType>
     <ApplicationIcon>Assets/logo.ico</ApplicationIcon>
     <AtomUICityBuildTasksAssembly>$(MSBuildProjectDirectory)\..\..\external\AtomUI.City\output\bin\$(Configuration)\AtomUI.City.Build.Tasks\net10.0\AtomUI.City.Build.Tasks.dll</AtomUICityBuildTasksAssembly>
+    <AtomUICityManifestIntermediateOutputPath>$(MSBuildProjectExtensionsPath)AtomUI.City/manifests/$(Configuration)/$(TargetFramework)/</AtomUICityManifestIntermediateOutputPath>
+    <AtomUICityBuildDiagnosticsOutputPath>$(MSBuildProjectExtensionsPath)AtomUI.City/diagnostics/$(Configuration)/$(TargetFramework)/</AtomUICityBuildDiagnosticsOutputPath>
   </PropertyGroup>
 
-  <Import Project="..\..\external\AtomUI.City\src\AtomUI.City.Build\buildTransitive\AtomUI.City.Localization.targets" />
+  <Import Project="..\..\external\AtomUI.City\src\AtomUI.City.Build\buildTransitive\AtomUI.City.Build.targets" />
 
 </Project>

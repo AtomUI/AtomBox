@@ -5,6 +5,8 @@ using AtomBox.Application.State;
 using AtomBox.Application.Transfers;
 using AtomBox.Core.Accounts;
 using AtomBox.Core.Results;
+using AtomBox.Core.Settings;
+using AtomBox.Core.Transfers;
 using AtomBox.Core.ValueObjects;
 using AtomBox.Desktop.Dialogs;
 using AtomBox.Desktop.Localization;
@@ -53,7 +55,7 @@ public sealed class MvvmMigrationTests
     }
 
     [Fact]
-    public void CityStateDependencyIsOwnedByApplicationAndOtherBusinessModulesStayIndependent()
+    public void CityStateDependencyIsOwnedByApplicationAndTransferWhileOtherBusinessModulesStayIndependent()
     {
         var desktopReferences = typeof(MainWindowViewModel).Assembly.GetReferencedAssemblies();
         Assert.Contains(desktopReferences, reference => reference.Name == "AtomUI.City.Mvvm");
@@ -65,12 +67,18 @@ public sealed class MvvmMigrationTests
             reference => reference.Name?.StartsWith("AtomUI.City", StringComparison.Ordinal) == true &&
                          reference.Name != "AtomUI.City.State");
 
+        var transferReferences = typeof(TransferRuntimeInitializer).Assembly.GetReferencedAssemblies();
+        Assert.Contains(transferReferences, reference => reference.Name == "AtomUI.City.State");
+        Assert.DoesNotContain(
+            transferReferences,
+            reference => reference.Name?.StartsWith("AtomUI.City", StringComparison.Ordinal) == true &&
+                         reference.Name != "AtomUI.City.State");
+
         var cityIndependentAssemblies = new[]
         {
             typeof(StorageAccount).Assembly,
             typeof(AtomBoxStoragePaths).Assembly,
             typeof(StorageProviderRegistry).Assembly,
-            typeof(TransferRuntimeInitializer).Assembly,
         };
 
         Assert.All(
@@ -116,7 +124,7 @@ public sealed class MvvmMigrationTests
     }
 
     [Fact]
-    public async Task TransferQueueOwnsOnePeriodicWorkerPerActivation()
+    public async Task TransferQueueObservesStateWithoutOwningAPeriodicWorker()
     {
         await using var context = await DesktopTestContext.CreateAsync();
         var viewModel = ActivatorUtilities.CreateInstance<TransferQueueViewModel>(
@@ -126,7 +134,7 @@ public sealed class MvvmMigrationTests
 
         var firstScope = new ActivationScope();
         await viewModel.ActivateAsync(firstScope);
-        Assert.Equal(1, firstScope.ActiveTaskCount);
+        Assert.Equal(0, firstScope.ActiveTaskCount);
 
         await viewModel.DeactivateAsync();
         Assert.True(firstScope.IsDisposed);
@@ -134,10 +142,56 @@ public sealed class MvvmMigrationTests
 
         var secondScope = new ActivationScope();
         await viewModel.ActivateAsync(secondScope);
-        Assert.Equal(1, secondScope.ActiveTaskCount);
+        Assert.Equal(0, secondScope.ActiveTaskCount);
 
         await viewModel.DisposeAsync();
         Assert.True(secondScope.IsDisposed);
+    }
+
+    [Fact]
+    public async Task TransferQueueAndStatusBarObserveCommittedTransferState()
+    {
+        await using var context = await DesktopTestContext.CreateAsync();
+        var localization = new TestLocalizedText();
+        var dispatcher = new ImmediateUiDispatcher();
+        var queue = ActivatorUtilities.CreateInstance<TransferQueueViewModel>(
+            context.Services,
+            localization,
+            dispatcher);
+        var statusBar = ActivatorUtilities.CreateInstance<StatusBarViewModel>(
+            context.Services,
+            localization,
+            dispatcher);
+        await queue.ActivateAsync(new ActivationScope());
+        await statusBar.ActivateAsync(new ActivationScope());
+        var now = DateTimeOffset.UtcNow;
+        var task = new TransferTask(
+            TransferTaskId.New(),
+            StorageAccountId.New(),
+            TransferDirection.Upload,
+            new LocalPath(@"C:\state-observation.txt"),
+            new RemotePath("bucket/state-observation.txt"),
+            TransferStatus.Pending,
+            new TransferOptions(TransferOverwritePolicy.Ask),
+            now,
+            now);
+        var scheduler = context.Services.GetRequiredService<ITransferTaskScheduler>();
+
+        var submitResult = await scheduler.SubmitAsync(task);
+        await WaitUntilAsync(() => queue.Tasks.Any(item => item.TaskId == task.Id));
+
+        Assert.True(submitResult.IsSuccess);
+        Assert.Equal(1, statusBar.ActiveTransferCount);
+        Assert.Equal(0, statusBar.RunningTransfers);
+
+        var cancelResult = await scheduler.CancelAsync(task.Id);
+        await WaitUntilAsync(() => queue.Tasks.All(item => item.TaskId != task.Id));
+
+        Assert.True(cancelResult.IsSuccess);
+        Assert.Equal(0, statusBar.ActiveTransferCount);
+
+        await queue.DisposeAsync();
+        await statusBar.DisposeAsync();
     }
 
     [Fact]
@@ -173,7 +227,7 @@ public sealed class MvvmMigrationTests
         Assert.NotEqual(root.ActivationScope.Id, child.ActivationScope.Id);
         Assert.Single(root.Children);
         Assert.Equal(0, root.ActivationScope.ActiveTaskCount);
-        Assert.Equal(1, child.ActivationScope.ActiveTaskCount);
+        Assert.Equal(0, child.ActivationScope.ActiveTaskCount);
 
         var accountService = context.Services.GetRequiredService<AccountAppService>();
         var beforeRefresh = Volatile.Read(ref refreshCount);
@@ -205,15 +259,10 @@ public sealed class MvvmMigrationTests
         var dispatcher = new ImmediateUiDispatcher();
         var workflow = new TestAccountDialogWorkflow();
         var navigation = new TestNavigationService();
-        var statusBar = ActivatorUtilities.CreateInstance<StatusBarViewModel>(
-            context.Services,
-            new TestLocalizedText(),
-            dispatcher);
         var viewModel = ActivatorUtilities.CreateInstance<RemoteBrowserViewModel>(
             context.Services,
             workflow,
             navigation,
-            statusBar,
             new TestLocalizedText(),
             dispatcher);
 
@@ -230,7 +279,6 @@ public sealed class MvvmMigrationTests
         Assert.Equal(1, scope.ActiveTaskCount);
 
         await viewModel.DisposeAsync();
-        await statusBar.DisposeAsync();
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)

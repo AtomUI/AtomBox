@@ -6,6 +6,7 @@ using AtomBox.Core.Transfers;
 using AtomBox.Transfer.DependencyInjection;
 using AtomBox.Transfer.Queue;
 using AtomBox.Transfer.Scheduling;
+using AtomBox.Transfer.State;
 using AtomBox.Transfer.Workers;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -52,6 +53,16 @@ public sealed class TransferServiceCollectionExtensionsTests
         var services = new ServiceCollection();
         services.AddAtomBoxTransfer();
         Assert.Single(services, s => s.ServiceType == typeof(TransferRuntimeInitializer));
+    }
+
+    [Fact]
+    public void AddAtomBoxTransfer_Registers_ReadOnlyTransferStateAndSynchronizer()
+    {
+        var services = new ServiceCollection();
+        services.AddAtomBoxTransfer();
+
+        Assert.Single(services, service => service.ServiceType == typeof(IAtomBoxTransferState));
+        Assert.Single(services, service => service.ServiceType == typeof(ITransferStateSynchronizer));
     }
 
     [Fact]

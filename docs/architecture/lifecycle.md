@@ -215,7 +215,7 @@ Providers 注册 provider 描述、能力和 factory 实现，但不在启动阶
 
 ### 4.2 Transfer 启动策略
 
-Transfer Runtime 在应用启动时初始化，并读取未完成任务或队列状态；这些状态只能通过 Core 端口和 Application 查询用例形成不可变快照后供 UI 展示。
+Transfer Runtime 在应用启动时初始化，先处理上次运行留下的未完成任务，再通过 Core 存储端口重建 City.State 不可变队列投影。Desktop 只读观察该投影；历史分页继续由 Application 通过 Core 查询端口组织。
 
 第一版不自动恢复执行历史未完成任务。未完成任务应展示为 Paused、Interrupted 或 recoverable 状态，由用户手动恢复。
 

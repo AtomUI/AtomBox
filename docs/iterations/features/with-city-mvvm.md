@@ -16,7 +16,7 @@
 
 AtomBox Desktop 已完成 Host、Module、Routing、Presentation 和 Localization 的 City 化，但仍保留自建 `ViewModelBase`、同步/异步 Command、构造阶段刷新、游离后台任务以及若干由页面自行维护的订阅和定时器。它们没有形成第二套 Host 或 Router，却会绕过 City 已建立的激活、停用、取消、释放和诊断边界。
 
-本轮审计不是把 City 类型下沉到全部业务模块。依赖原则保持不变：`AtomBox.Desktop` 是 City 的应用组合层；Application、Transfer、Providers、Infrastructure 和 Core 保持 City 无关。若取消令牌需要向下传递，这些模块只接收 .NET `CancellationToken`，不引用 City。
+本轮 MVVM 审计不是把 City 类型无差别下沉到全部业务模块。当时的实施范围仅为 Desktop；后续 Application 和 Transfer 已分别经过迁移矩阵专项决策，允许各自直接使用 `AtomUI.City.State`。Providers、Infrastructure 和 Core 仍保持 City 无关；未经矩阵决策的类型不得下沉。
 
 本文件是 21 项审计问题和已确认方案的历史记录。City 通用能力的正式设计由 City 自己的 ADR、Feature、API、Lifecycle、Testing 和 Compatibility 文档定义；本文只记录 AtomBox 为什么需要它、如何消费它以及迁移验收条件。
 

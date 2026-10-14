@@ -100,16 +100,17 @@ Core 端口实现：
 
 ## 6. 设计约束
 
-- Transfer 只能依赖 Core；不能依赖 Application、Desktop、具体 Provider 实现或 Infrastructure 实现。
+- Transfer 只能依赖 Core 和已经通过迁移矩阵正式决策的 City 基础能力；当前仅允许 `AtomUI.City.State`。Transfer 不能依赖 Application、Desktop、具体 Provider 实现或 Infrastructure 实现。
 - Transfer 调用 provider 抽象执行实际读写，但不直接引用 provider 实现类。
 - Transfer 使用 Core 中定义的 `ITransferTaskStore`、`ITransferStateStore`、`IStorageAccountRepository`、`IStorageProviderFactory` 等端口，但不定义这些跨模块端口。
 - Transfer 不保存敏感凭据，不读取配置文件，不访问数据库。
 - Transfer 不读取、不解析、不缓存 secret material；凭据解析和 secret material 使用必须封装在 provider factory / provider 操作链路内部。
-- Transfer 不处理 UI 状态。第一版不暴露传输状态发布端口，传输状态进入 UI 的正式路径是：Transfer Runtime 更新状态存储，Application 通过 Core 查询端口组织不可变快照，Presentation 消费 Application 结果。
+- Transfer 不处理 UI 状态。Transfer Runtime 在持久化成功后，使用 City.State 维护一份应用级、瞬时、不可变的队列投影；对外只暴露只读 State。Application 仍通过 Core 端口组织命令和历史分页，Desktop 只观察 State 并转换为 UI 投影。
 - Transfer 不接收、保存或传播长期 provider 实例，provider 生命周期由 Transfer 执行批次临时创建和释放。
 - Provider 可以暴露可选能力；Transfer 只能基于 Core 能力模型决定任务级调度、重试和并发策略，具体协议分片、SDK 调用细节仍由 Provider 内部负责。
 - Transfer 不负责账号管理和连接测试，这些是 Application 用例。
 - 传输任务状态必须基于 Core 的统一模型，不能在 Transfer 内部发明另一套状态语言。
+- City.State 投影不是持久化事实源；应用启动时必须从 `ITransferStateStore` 重建，持久化失败时不得先行发布。
 
 ## 7. 生命周期约束
 

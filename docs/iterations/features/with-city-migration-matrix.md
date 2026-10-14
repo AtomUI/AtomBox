@@ -78,17 +78,17 @@ City 维度：
 
 ## 当前事实基线
 
-截至 2026-10-13 本轮实施完成时，`AtomBox.Application` 已直接采用 City.State，`AtomBox.Desktop` 负责只读观察并形成 UI 投影；其他业务模块仍没有 City 项目引用。这是当前事实，不是永久禁止未来合理使用 City 的结论。
+截至 2026-10-13 本轮实施完成时，`AtomBox.Application` 与 `AtomBox.Transfer` 已直接采用 City.State，`AtomBox.Desktop` 负责只读观察并形成 UI 投影；其他业务模块仍没有 City 项目引用。这是当前事实，不是永久禁止未来合理使用 City 的结论。
 
 | AtomBox 模块 | 当前直接采用的 City 能力 | 当前说明 |
 | --- | --- | --- |
 | Core | 无 | 保持领域内核纯净；是否存在可复用能力仍须正式审计。 |
 | Application | State | 拥有账号目录和应用设置的运行时投影；Repository 仍为持久化事实源。 |
-| Transfer | 无 | 当前只依赖 AtomBox.Core，拥有应用级持久传输调度。 |
+| Transfer | State | 拥有已持久传输队列的应用级运行时投影；Store 仍是事实源，历史仍按页查询。 |
 | Providers | 无 | 当前只依赖 AtomBox.Core 和具体 SDK/协议库。 |
 | Infrastructure | 无 | 当前只依赖 AtomBox.Core 和技术实现库。 |
 | Desktop | Core、Mvvm、Routing、Presentation、State、Localization、Build、Generators | Host、生命周期、路由、视图组织、本地化、MVVM 以及 Application State 的 UI 消费已完成自动门禁；真实 UI 验证仍由人工完成。 |
-| Engineering | Core、State、Localization（测试引用） | Application/State 与 Desktop 集成测试直接验证 City 合同；尚未正式评估 City.Testing、CLI 和 Templates。 |
+| Engineering | Core、Mvvm、Routing、Presentation、State、Localization（测试引用）、Build、Generators | Application/Transfer State 与 Desktop 集成测试直接验证 City 合同；Build 和 Generators 已进入 Desktop 编译链。City.Testing、CLI 和 Templates 经审计后不采用。 |
 
 ## 主矩阵：运行时基础与交互能力
 
@@ -96,11 +96,11 @@ City 维度：
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Core | 否 | 否 | 否 | 否 | 否 | 否 | 否 |
 | Application | 审-M | 审-L | 审-M | 审-L | 已 | 否 | 审-M |
-| Transfer | 审-H | 审-L | 审-L | 审-L | 审-H | 审-H | 审-L |
-| Providers | 审-M | 审-L | 审-L | 审-L | 审-M | 审-M | 审-L |
-| Infrastructure | 审-H | 审-L | 审-L | 审-L | 审-H | 审-M | 审-L |
+| Transfer | 审-H | 审-L | 审-L | 审-L | 已 | 审-H | 审-L |
+| Providers | 否 | 否 | 否 | 否 | 否 | 否 | 否 |
+| Infrastructure | 否 | 否 | 否 | 否 | 否 | 否 | 否 |
 | Desktop | 已 | 已 | 已 | 已 | 已 | 审-H | 已 |
-| Engineering | 审-M | 审-M | 审-M | 审-M | 审-M | 审-M | 已 |
+| Engineering | 已 | 已 | 已 | 已 | 已 | 否 | 已 |
 
 ## 主矩阵：数据、安全与扩展能力
 
@@ -109,10 +109,10 @@ City 维度：
 | Core | 否 | 否 | 否 |
 | Application | 审-M | 审-H | 审-M |
 | Transfer | 审-M | 审-L | 审-M |
-| Providers | 审-H | 审-H | 审-H |
-| Infrastructure | 审-M | 审-H | 审-M |
+| Providers | 否 | 否 | 否 |
+| Infrastructure | 否 | 否 | 否 |
 | Desktop | 审-L | 审-M | 审-M |
-| Engineering | 审-M | 审-M | 审-M |
+| Engineering | 否 | 否 | 否 |
 
 ## 主矩阵：工程能力
 
@@ -121,10 +121,10 @@ City 维度：
 | Core | 否 | 否 | 否 | 否 | 否 |
 | Application | 审-L | 审-L | 审-M | 审-L | 审-L |
 | Transfer | 审-L | 审-L | 审-H | 审-L | 审-L |
-| Providers | 审-L | 审-L | 审-H | 审-L | 审-L |
-| Infrastructure | 审-L | 审-L | 审-H | 审-L | 审-L |
+| Providers | 否 | 否 | 否 | 否 | 否 |
+| Infrastructure | 否 | 否 | 否 | 否 | 否 |
 | Desktop | 已 | 已 | 审-H | 审-M | 审-M |
-| Engineering | 审-H | 审-H | 审-H | 审-M | 审-M |
+| Engineering | 已 | 已 | 否 | 否 | 否 |
 
 ## 审计顺序
 
@@ -183,6 +183,10 @@ City 维度：
 | Desktop：Mvvm / Presentation 生命周期扩展 | [AtomBox × AtomUI.City MVVM 迁移](with-city-mvvm.md) | 21 项已实施，人工 UI 验证待完成。 |
 | Application：State / EventBus | [AtomBox.Application × AtomUI.City.State 迁移](with-city-application.md) | State 自动化实施完成，真实 UI 验证待完成；EventBus 本轮不采用。 |
 | Core：全部 City 能力与领域纯净边界 | [AtomBox.Core × AtomUI.City 迁移审计](with-city-core.md) | Core 不采用 City；不可变集合缺陷已修复并完成自动化验证。 |
+| Transfer：State | [AtomBox.Transfer × AtomUI.City.State 迁移](with-city-transfer.md) | 自动化实施完成，人工 UI 验证待完成；其他 Transfer 工程问题本轮延后。 |
+| Providers：全部 City 能力 | [AtomBox.Providers × AtomUI.City 迁移审计](with-city-providers.md) | 决策完成：本轮全部不采用；SDK、自研 HTTP、S3Compatible、FTP/SFTP 均保持现状。 |
+| Infrastructure：全部 City 能力 | [AtomBox.Infrastructure × AtomUI.City 迁移审计](with-city-infrastructure.md) | 决策完成：全部不采用；自身工程债独立登记，不以 City 迁移名义处理。 |
+| Engineering：全部 City 能力 | [AtomBox Engineering × AtomUI.City 工程能力审计](with-city-engineering.md) | Build/Generators 已完成收口并通过自动门禁；现有运行时合同测试保留，Testing/CLI/Templates 不采用。 |
 | 其余矩阵单元 | 后续按审计顺序建立专项记录 | 待审计。 |
 
 ## Core 审计结论
@@ -196,6 +200,35 @@ City 维度：
 - `AB-APPLICATION × CITY-STATE`：账号目录与应用设置是跨调用方共享的运行时事实投影，业务所有者是 Application。`AtomBox.Application` 直接引用 City.State，Repository 仍为持久化事实源，Desktop 只读消费。City `AUC-STATE-009` 原子 Observe 和 DI Writer factory 已由 City 提交 `c2843b9`、`ac70dad` 完成；AtomBox 自动化迁移已完成。
 - `AB-APPLICATION × CITY-EVENTBUS`：当前账号/设置需求都是“当前事实 + 后续变化”，State 已完整覆盖；为同一事实再发业务事件会形成双通道一致性问题，因此标记为 `否`。
 - Desktop State 候选已完成归属回退：账号和设置不在 Desktop 自建 State；Desktop 只负责 Dispatcher、ActivationScope 和 UI 投影。
+
+## Transfer 审计结论
+
+- `AB-TRANSFER × CITY-STATE`：传输队列和进度是 Transfer 拥有的应用级运行时事实投影。`AtomBox.Transfer` 直接采用 City.State，持久化 Store 继续是事实源，Desktop 只读观察。历史分页不进入 State。
+- 本单元仅迁移状态投影与消费路径。Runtime 关停、worker 所有权/竞态、进度持久化阻塞与读-改-写并发等已识别问题延后处理，不得在本轮顺手重构。
+- 自动化证据：Transfer 106/106、Application 163/163、Desktop 32/32，全解回归 693/693；Release 构建 0 warning / 0 error。真实 UI 仍待人工验收。
+
+## Providers 审计结论
+
+- `AB-PROVIDERS × CITY-*` 全部标记为 `否`。厂商 SDK 始终优先保留，自研 HTTP、S3Compatible、FTP 和 SFTP 同样不做 City 迁移。
+- City.Data 的错误响应、多账号认证和连接治理收益已完成评估，但不足以抵消领域语义、幂等、stream replay 和依赖成本；本轮不补 City 能力，也不建立 pilot。
+- City.Security 与外部存储账号凭据不是同一安全边界；Provider 插件化没有第一版产品目标，因此 Security 与 PluginSystem 同样不采用。
+- 审计同时发现 Providers 自有的同步阻塞 IO、取消不可贯穿、短生命周期 `HttpClient`、部分全量内存下载和生产 dispose 合同测试缺口。它们必须按业务所有权在 Providers 治理，不能归因给 Desktop 或用 City 名义掩盖。
+- 详细的候选收益、冲突和否决理由见 [Providers 专项审计](with-city-providers.md)。
+
+## Infrastructure 审计结论
+
+- `AB-INFRASTRUCTURE × CITY-*` 全部标记为 `否`。Infrastructure 保持零 City 引用，继续实现 Core 技术端口。
+- Desktop 在 City Host 初始化阶段调用 `InfrastructureInitializer` 是组合根接线，不构成 Infrastructure 迁移，也不要求 Infrastructure 依赖 City.Core。
+- City.State 不能取代磁盘事实，City.Security 不能取代外部账号 secret/lease，City.Data 与本地存储无关；其他 City 模块也没有成立的所有权场景。
+- 并发读改写、pending-delete 清理、密钥保护、schema migration、日志和缓存空壳已作为 Infrastructure 自有工程债记录，详见 [Infrastructure 专项审计](with-city-infrastructure.md)。
+
+## Engineering 审计结论
+
+- Build 和 Generators 已进入 Desktop 编译链。本轮把局部 Localization targets 接入收口为完整 City.Build targets，并保持 City application packaging、Strict AOT 和插件打包关闭。
+- Application/Transfer/Desktop 测试继续直接验证其实际采用的 Core、Mvvm、Routing、Presentation、State 和 Localization 合同；不为此引入 City.Testing。
+- City.Testing、CLI 和 Templates 的收益不足以覆盖依赖与维护成本，标记为 `否`。EventBus、Data、Security、PluginSystem 仍由业务模块决定，Engineering 不接管。
+- Release 的 Windows、macOS、Linux 主仓 checkout 必须递归检出 City submodule；详细设计与验收见 [Engineering 专项审计](with-city-engineering.md)。
+- 自动化证据：Desktop 32/32、Infrastructure 160/160、全仓 Release 693/693；Release 全解构建 0 warning / 0 error。
 
 ## 状态维护规则
 

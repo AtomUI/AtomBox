@@ -16,7 +16,6 @@ using AtomBox.Desktop.Dialogs;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Services;
-using AtomBox.Desktop.Shell;
 using AtomUI.Controls;
 using AtomUI.Desktop.Controls;
 using AtomUI.Icons.AntDesign;
@@ -40,7 +39,6 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
     private readonly IFilePickerService _filePicker;
     private readonly IDesktopPreferencesService _preferences;
     private readonly IAccountDialogWorkflow _accountDialogWorkflow;
-    private readonly StatusBarViewModel _statusBar;
     private readonly IAtomBoxLocalizedText _localization;
     private readonly SemaphoreSlim _loadGate = new(1, 1);
     private readonly CityUiDispatcher _dispatcher;
@@ -85,7 +83,6 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         IFilePickerService filePicker,
         IDesktopPreferencesService preferences,
         IAccountDialogWorkflow accountDialogWorkflow,
-        StatusBarViewModel statusBar,
         IAtomBoxLocalizedText localization,
         DesktopCommandFactory commands,
         CityUiDispatcher dispatcher)
@@ -99,7 +96,6 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         _filePicker = filePicker;
         _preferences = preferences;
         _accountDialogWorkflow = accountDialogWorkflow;
-        _statusBar = statusBar;
         _localization = localization;
         _dispatcher = dispatcher;
         _title = Localization.GetString("RemoteBrowser", "Title");
@@ -1506,7 +1502,6 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             return;
         }
 
-        _statusBar.RequestQueueRefresh();
         StatusMessage = Localization.Format("RemoteBrowser", "DownloadCreatedAt", localPath.Value);
         _messages.Success(Localization.GetString("RemoteBrowser", "DownloadCreated"));
     }
@@ -1559,7 +1554,6 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         }
 
         var createdCount = result.GetValueOrThrow().Tasks.Count;
-        _statusBar.RequestQueueRefresh();
         ClearSelectedFiles();
         StatusMessage = Localization.Format("RemoteBrowser", "DownloadsCreatedAt", createdCount, preferences.DefaultDownloadDirectory);
         _messages.Success(Localization.Format("RemoteBrowser", "DownloadsCreated", createdCount));
@@ -1931,7 +1925,6 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         }
 
         var createdCount = result.GetValueOrThrow().Tasks.Count;
-        _statusBar.RequestQueueRefresh();
         StatusMessage = createdCount <= 1
             ? Localization.GetString("RemoteBrowser", "UploadCreatedWaitSingle")
             : Localization.Format("RemoteBrowser", "UploadCreatedWaitMultiple", createdCount);

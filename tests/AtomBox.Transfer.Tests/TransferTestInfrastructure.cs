@@ -7,8 +7,20 @@ using AtomBox.Core.Results;
 using AtomBox.Core.Settings;
 using AtomBox.Core.Transfers;
 using AtomBox.Core.ValueObjects;
+using AtomBox.Transfer.State;
+using AtomUI.City.State;
 
 namespace AtomBox.Transfer.Tests;
+
+public static class TransferStateTestFactory
+{
+    public static TransferStateProjector CreateProjector(ITransferStateStore? store = null)
+    {
+        var registry = new ApplicationStateRegistry();
+        var state = new AtomBoxTransferState(registry, registry, registry);
+        return new TransferStateProjector(state, store ?? new MemoryTransferStore());
+    }
+}
 
 public sealed class MemoryTransferStore : ITransferTaskStore, ITransferStateStore
 {

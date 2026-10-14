@@ -116,19 +116,29 @@ Application
 
 ## 6. 状态更新
 
-第一版不把 `ITransferStatePublisher` 作为 Core 公共端口暴露。
+不把 `ITransferStatePublisher` 作为 Core 公共端口暴露。
 
-Transfer 内部可以有事件、回调或队列机制用于 worker 向 manager 汇报状态，但这只是 Transfer 内部实现细节，不能泄漏给 Application、Presentation 或 ViewModel。
+Transfer 使用 City.State 作为已持久化队列事实的应用级运行时投影。写入权限属于 `AtomBox.Transfer`，外部只能获得 `IReadOnlyState<TransferQueueState>`；不向 Core 暴露 City 类型。
 
 正式状态路径：
 
 ```text
 Transfer Runtime
   -> 更新 ITransferTaskStore / ITransferStateStore 对应实现
-  -> Application 查询用例
-  -> TransferQueueSnapshot / TransferHistoryPage
-  -> Presentation 展示
+  -> 持久化成功后原子更新 City.State 队列投影
+  -> Desktop 只读 Observe
 ```
+
+历史分页不进入 State，仍按以下路径查询：
+
+```text
+Application 查询用例
+  -> ITransferStateStore.ListHistoryAsync
+  -> TransferHistoryPage
+  -> Desktop 展示
+```
+
+State 不取代 Store，也不改变 Application 的命令入口。
 
 ## 7. 启动与关闭
 
