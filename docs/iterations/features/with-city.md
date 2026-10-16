@@ -8,7 +8,7 @@
 
 AtomBox Desktop 的框架职责已迁移到 AtomUI.City：City Host 是唯一组合根，City Module 管理应用初始化和关闭，City Routing 保存导航真相，City Presentation 管理 WindowSession、View 注册、ViewModel lease、绑定、Outlet 提交和旧页面释放。
 
-City 能力遵循业务所有权落位：Application 和 Transfer 分别直接采用 City.State；Core、Providers 和 Infrastructure 保持零 City 引用。Desktop 只消费上游状态并形成 UI 投影，不接管上游业务事实。
+City 能力遵循业务所有权落位：Application 直接采用 City.State；Transfer 采用 City.Core.Module 与 City.State；Core、Providers 和 Infrastructure 保持零 City 引用。Desktop 只消费上游状态并形成 UI 投影，不接管上游业务事实。
 
 ## 当前架构
 
@@ -192,15 +192,15 @@ City `353d3b9` 修复了该契约：非 OS 关闭若已被更早的应用处理�
 ## 自动验证
 
 - AtomBox Release 全解构建：0 warning、0 error；
-- AtomBox 全量测试：693/693；
+- AtomBox 当前全量测试：666/666；
 - win-x64、linux-x64、osx-arm64 自包含单文件发布全部成功；
-- Desktop 测试：32/32，覆盖 Host 启停、六条 route、六个 View 注册、导航参数往返、City 本地化、MVVM 生命周期、Shell composition、唯一 worker 和依赖边界；
+- Desktop 当前测试：34/34，覆盖 Host 启停与失败回滚、Transfer Module 生命周期、单实例、六条 route、六个 View 注册、导航参数往返、City 本地化、MVVM 生命周期、Shell composition 和依赖边界；
 - City MVVM 测试 89/89、Public API governance 4/4，Mvvm net8.0/net10.0 构建通过；
 - 本地化集成测试覆盖 City embedded package 读取、英文到简体中文切换，以及同一 revision 的原子快照发布；
 - City Generator 测试 206/206、Localization 测试 96/96；静态 embedded package 不依赖 `Assembly.Location`，单文件发布可直接加载 source assembly；
 - City Presentation Headless 进程测试：4/4，覆盖真实 Avalonia Window/VisualTree、预取消 Closing 和 10,000 次 Outlet 提交压力；
 - `src` 中不存在 `BuildServiceProvider`；
-- Application 和 Transfer 只引用其业务所有权需要的 `AtomUI.City.State`；Core、Providers 和 Infrastructure 不引用 City；
+- Application 只引用其业务所有权需要的 `AtomUI.City.State`；Transfer 引用 `AtomUI.City.Core` 与 `AtomUI.City.State`；Core、Providers 和 Infrastructure 不引用 City；
 - Desktop 运行时代码不存在旧 `ResourceManager` 或自建 `ILocalizationService`；
 - 已删除的自建 ViewFactory、PageViewModelFactory 和 `CurrentViewModel` 在源码与测试中均无残留引用。
 - 已删除的自建 `ViewModelBase`、`LocalizedViewModelBase`、`RelayCommand` 和 `AsyncRelayCommand` 在源码与测试中均无残留定义。

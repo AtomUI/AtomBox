@@ -1,10 +1,12 @@
 # AtomBox × AtomUI.City 迁移主矩阵
 
-> 状态：Active / Governing
+> 状态：Active / Governing / Decisions Closed
 >
 > 实施分支：`feature/with-city`
 >
 > 创建时间：2026-10-13
+>
+> 全矩阵决策收口时间：2026-10-16
 >
 > 覆盖范围：AtomBox 全部模块 × AtomUI.City 全部能力模块
 
@@ -78,15 +80,15 @@ City 维度：
 
 ## 当前事实基线
 
-截至 2026-10-13 本轮实施完成时，`AtomBox.Application` 与 `AtomBox.Transfer` 已直接采用 City.State，`AtomBox.Desktop` 负责只读观察并形成 UI 投影；其他业务模块仍没有 City 项目引用。这是当前事实，不是永久禁止未来合理使用 City 的结论。
+截至 2026-10-16，AtomBox 全部现有模块与 City 全部现有能力的矩阵决策已经收口。`AtomBox.Application` 直接采用 City.State；`AtomBox.Transfer` 直接采用 City.Core.Module 与 City.State；`AtomBox.Desktop` 负责 Host、UI 能力和上游 State 的只读消费。其他业务模块经审计后明确不采用 City。这是当前产品和架构事实，不是永久禁止未来新需求重新开启对应单元。
 
 | AtomBox 模块 | 当前直接采用的 City 能力 | 当前说明 |
 | --- | --- | --- |
-| Core | 无 | 保持领域内核纯净；是否存在可复用能力仍须正式审计。 |
+| Core | 无 | 保持领域内核纯净；全部 City 能力均已审计并明确不采用。 |
 | Application | State | 拥有账号目录和应用设置的运行时投影；Repository 仍为持久化事实源。 |
-| Transfer | State | 拥有已持久传输队列的应用级运行时投影；Store 仍是事实源，历史仍按页查询。 |
-| Providers | 无 | 当前只依赖 AtomBox.Core 和具体 SDK/协议库。 |
-| Infrastructure | 无 | 当前只依赖 AtomBox.Core 和技术实现库。 |
+| Transfer | Core、State | 通过 City Module 接入 Host 生命周期，并拥有已持久传输队列与 Runtime 健康的应用级投影；Store 仍是事实源。 |
+| Providers | 无 | 全部 City 能力均已审计并明确不采用；继续依赖 AtomBox.Core 和具体 SDK/协议库。 |
+| Infrastructure | 无 | 全部 City 能力均已审计并明确不采用；继续实现 AtomBox.Core 技术端口。 |
 | Desktop | Core、Mvvm、Routing、Presentation、State、Localization、Build、Generators | Host、生命周期、路由、视图组织、本地化、MVVM 以及 Application State 的 UI 消费已完成自动门禁；真实 UI 验证仍由人工完成。 |
 | Engineering | Core、Mvvm、Routing、Presentation、State、Localization（测试引用）、Build、Generators | Application/Transfer State 与 Desktop 集成测试直接验证 City 合同；Build 和 Generators 已进入 Desktop 编译链。City.Testing、CLI 和 Templates 经审计后不采用。 |
 
@@ -96,7 +98,7 @@ City 维度：
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | Core | 否 | 否 | 否 | 否 | 否 | 否 | 否 |
 | Application | 否 | 否 | 否 | 否 | 已 | 否 | 否 |
-| Transfer | 审-H | 审-L | 审-L | 审-L | 已 | 审-H | 审-L |
+| Transfer | 已 | 否 | 否 | 否 | 已 | 否 | 否 |
 | Providers | 否 | 否 | 否 | 否 | 否 | 否 | 否 |
 | Infrastructure | 否 | 否 | 否 | 否 | 否 | 否 | 否 |
 | Desktop | 已 | 已 | 已 | 已 | 已 | 否 | 已 |
@@ -108,7 +110,7 @@ City 维度：
 | --- | --- | --- | --- |
 | Core | 否 | 否 | 否 |
 | Application | 否 | 否 | 否 |
-| Transfer | 审-M | 审-L | 审-M |
+| Transfer | 否 | 否 | 否 |
 | Providers | 否 | 否 | 否 |
 | Infrastructure | 否 | 否 | 否 |
 | Desktop | 否 | 否 | 否 |
@@ -120,15 +122,15 @@ City 维度：
 | --- | --- | --- | --- | --- | --- |
 | Core | 否 | 否 | 否 | 否 | 否 |
 | Application | 否 | 否 | 否 | 否 | 否 |
-| Transfer | 审-L | 审-L | 审-H | 审-L | 审-L |
+| Transfer | 否 | 否 | 否 | 否 | 否 |
 | Providers | 否 | 否 | 否 | 否 | 否 |
 | Infrastructure | 否 | 否 | 否 | 否 | 否 |
 | Desktop | 已 | 已 | 否 | 否 | 否 |
 | Engineering | 已 | 已 | 否 | 否 | 否 |
 
-## 审计顺序
+## 审计顺序（已完成）
 
-顺序表示评估先后，不预设一定要迁移：
+以下是本轮已经执行完成的评估顺序，不表示所有能力都必须迁移。现有矩阵已经没有开放的 `审-*` 或 `阻` 单元：
 
 1. `Desktop` 已采用能力收口：以现有 Desktop 总结和 MVVM 21 项记录作为已完成基线，人工 UI 烟测仍是最终验收项。
 2. `Core`：先确认领域纯净边界和 City 类型可见性，为其余模块建立共同约束。
@@ -195,7 +197,7 @@ City 维度：
 | Application：Localization | [AtomBox.Application × AtomUI.City 迁移与审计](with-city-application.md) | 决策完成：不采用；Application 返回稳定错误语义与诊断信息，Desktop 在展示时使用 City.Localization 生成可即时切换语言的用户文案。 |
 | Application：Data | [AtomBox.Application × AtomUI.City 迁移与审计](with-city-application.md) | 决策完成：不采用；Application 只通过 Core Provider 端口编排用例，网络 transport、认证与协议错误仍归 Providers 所有。 |
 | Application：PluginSystem | [AtomBox.Application × AtomUI.City 迁移与审计](with-city-application.md) | 决策完成：不采用；当前没有插件产品合同，未来 Provider 插件运行时也应先由 Providers 或专用集成模块拥有。 |
-| Application：Testing | [AtomBox.Application × AtomUI.City 迁移与审计](with-city-application.md) | 决策完成：不采用；保留 xUnit、真实 City.State 合同和 AtomBox 专属替身，当前 163/163 测试通过。 |
+| Application：Testing | [AtomBox.Application × AtomUI.City 迁移与审计](with-city-application.md) | 决策完成：不采用；保留 xUnit、真实 City.State 合同和 AtomBox 专属替身。 |
 | Application：Mvvm | [AtomBox.Application × AtomUI.City 迁移与审计](with-city-application.md) | 决策完成：不采用；City.Mvvm 由 Desktop 使用，Application 保留普通异步用例、权威校验和跨调用方并发保护。 |
 | Application：Presentation | [AtomBox.Application × AtomUI.City 迁移与审计](with-city-application.md) | 决策完成：不采用；Application 返回前端无关用例快照，View、Window、Outlet、Interaction 和 ViewModel composition 继续由 Desktop 持有。 |
 | Application：Build | [AtomBox.Application × AtomUI.City 迁移与审计](with-city-application.md) | 决策完成：不采用；City.Build 由 Desktop/Engineering 编译链持有，Application 没有 RESX、manifest、插件打包或 AOT 发布职责。 |
@@ -203,12 +205,13 @@ City 维度：
 | Application：CLI | [AtomBox.Application × AtomUI.City 迁移与审计](with-city-application.md) | 决策完成：不采用；City.CLI 是框架工程工具进程，未来 AtomBox 业务 CLI 也应作为独立前端调用 Application。 |
 | Application：Templates | [AtomBox.Application × AtomUI.City 迁移与审计](with-city-application.md) | 决策完成：不采用；通用模板不匹配现有 Application 的业务设置、测试和无 Module 边界，也不进入生产依赖。 |
 | Core：全部 City 能力与领域纯净边界 | [AtomBox.Core × AtomUI.City 迁移审计](with-city-core.md) | Core 不采用 City；不可变集合缺陷已修复并完成自动化验证。 |
-| Transfer：State | [AtomBox.Transfer × AtomUI.City.State 迁移](with-city-transfer.md) | 自动化实施完成，人工 UI 验证待完成；其他 Transfer 工程问题本轮延后。 |
+| Transfer：State | [AtomBox.Transfer × AtomUI.City.State 迁移](with-city-transfer.md) | 自动化实施完成，人工 UI 验证待完成；State 阶段延后的工程问题已由 Runtime 专项接续完成。 |
 | Transfer：Core / Module 后台 Runtime | [AtomBox.Transfer 后台 Runtime 与 City.Core.Module 重构决策记录](with-city-transfer-runtime.md) | 代码重构与默认自动化门禁完成：City Module 承载应用级启停，Transfer 自有 Runtime 负责持久化队列、CAS 领取、执行租约、进度、取消、恢复与有限关闭；真实 Provider/UI 人工验收待执行。 |
+| Transfer：其余 City 能力 | 本文“Transfer 审计结论” | 决策完成：均不采用；UI 能力不属于 Transfer，协议与认证属于 Providers，工程能力没有独立采用场景。 |
 | Providers：全部 City 能力 | [AtomBox.Providers × AtomUI.City 迁移审计](with-city-providers.md) | 决策完成：本轮全部不采用；SDK、自研 HTTP、S3Compatible、FTP/SFTP 均保持现状。 |
 | Infrastructure：全部 City 能力 | [AtomBox.Infrastructure × AtomUI.City 迁移审计](with-city-infrastructure.md) | 决策完成：全部不采用；自身工程债独立登记，不以 City 迁移名义处理。 |
 | Engineering：全部 City 能力 | [AtomBox Engineering × AtomUI.City 工程能力审计](with-city-engineering.md) | Build/Generators 已完成收口并通过自动门禁；现有运行时合同测试保留，Testing/CLI/Templates 不采用。 |
-| 其余矩阵单元 | 后续按审计顺序建立专项记录 | 待审计。 |
+| 全矩阵收口 | 本文三张主矩阵及各专项记录 | 决策完成；当前无开放的 `审-*` 或 `阻` 单元，真实 Provider/UI 人工验收单独保持 Manual Pending。 |
 
 ## Desktop 尚未采用能力审计结论
 
@@ -259,8 +262,8 @@ City 维度：
 - `AB-APPLICATION × CITY-PLUGINSYSTEM`：标记为 `否`。Application 当前只有固定注册的账号、浏览、传输和设置用例，不拥有插件目录、manifest、动态加载、启停、贡献或卸载流程；将来即使 Provider 动态插件化，Application 仍应通过稳定的 `IStorageProviderFactory` 使用能力而不感知来源。
 - City.PluginSystem 只提供通用插件运行时，不定义 AtomBox 的 Provider 或业务插件合同。当前 Provider 插件化没有产品目标；未来立项时必须先由 Providers 或专用集成模块设计共享 contribution contract、动态 registry、冲突处理、实例与凭据 lease 排空和撤销流程，再按实际插件管理用例重新审计 Application。本单元不修改 City 或 AtomBox 运行时代码。
 - `AB-APPLICATION × CITY-TESTING`：标记为 `否`。Application 测试直接验证用例、真实 `ApplicationStateRegistry`、State 投影、DI 注册及 Infrastructure 数据实现，并使用 `TaskCompletionSource` 等明确完成信号；City.Testing 当前没有已实现的 State test kit，其他 Module/Plugin/Routing/Data/UI 测试宿主不匹配 Application 边界。
-- City.Testing 的通用 `TestHost` 不能装配 `AddAtomBoxApplication()` 所需服务，`DeterministicScheduler` 也不能接管现有 Repository、`SemaphoreSlim`、`TaskCompletionSource` 或 State 通知。只为 `TestDirectory` 等小工具引入全部 City 运行时模块和 Roslyn，依赖成本高于收益。自动化证据：Application 163/163 通过，无跳过。
-- `AtomBox.Application.Tests` 当前直接引用但未在源码使用 `AtomUI.City.Core`；该引用很可能可由 City.State 的传递依赖覆盖，应作为独立测试依赖清理候选，在删除后以构建和 163 项回归验证。City State Testing 文档领先于实现的问题在 City 仓库另行登记。
+- City.Testing 的通用 `TestHost` 不能装配 `AddAtomBoxApplication()` 所需服务，`DeterministicScheduler` 也不能接管现有 Repository、`SemaphoreSlim`、`TaskCompletionSource` 或 State 通知。只为 `TestDirectory` 等小工具引入全部 City 运行时模块和 Roslyn，依赖成本高于收益。当前全解门禁中的 Application 测试为 161/161 通过，无跳过。
+- `AtomBox.Application.Tests` 当前直接引用但未在源码使用 `AtomUI.City.Core`；该引用很可能可由 City.State 的传递依赖覆盖，应作为独立测试依赖清理候选，在删除后以构建和当前 Application 全量回归验证。City State Testing 文档领先于实现的问题在 City 仓库另行登记。
 - `AB-APPLICATION × CITY-MVVM`：标记为 `否`。Application 没有 ViewModel、属性通知、Command、Interaction 或 MVVM Validation；City Command/Activation/Operation scope 由 Desktop ViewModel 所有，只把标准 `CancellationToken` 传入 Application 用例。
 - Application 的参数校验是所有前端都必须经过的权威业务边界，不能由 Desktop `ValidationScope` 替代；账号、设置和 State 投影的 `SemaphoreSlim` 保护跨多个调用者的一致性，也不能由单个 ViewModel Command 的并发策略替代。`IProgress<T>` 继续作为标准 .NET 业务进度端口。本单元不修改 City 或 AtomBox 运行时代码。
 - `AB-APPLICATION × CITY-PRESENTATION`：标记为 `否`。Application 没有 Avalonia、View、Window、Dialog、Outlet、ViewLocator、ViewBinder、Interaction handler 或 ViewModel composition；它返回账号摘要、远端项、分页、路径能力和错误等前端无关用例快照，Desktop 再投影为 ViewModel 与真实 UI。
@@ -278,9 +281,15 @@ City 维度：
 ## Transfer 审计结论
 
 - `AB-TRANSFER × CITY-STATE`：传输队列和进度是 Transfer 拥有的应用级运行时事实投影。`AtomBox.Transfer` 直接采用 City.State，持久化 Store 继续是事实源，Desktop 只读观察。历史分页不进入 State。
-- 本单元仅迁移状态投影与消费路径。Runtime 关停、worker 所有权/竞态、进度持久化阻塞与读-改-写并发等已识别问题延后处理，不得在本轮顺手重构。
+- State 迁移阶段曾延后的 Runtime 关停、worker 所有权、取消竞态和进度持久化问题，已经在 `AB-TRANSFER × CITY-CORE` 专项中完成治理；早期 State 专项记录保留为历史阶段证据。
 - 自动化证据：2026-10-16 最终门禁 Core 61/61、Infrastructure 164/164、Providers 171/171、Application 161/161、Transfer 71/71、EndToEnd 4/4、Desktop 34/34，全解回归 666/666；Release 全解构建 0 warning / 0 error。真实 Provider 与真实 UI 仍待人工验收。
 - `AB-TRANSFER × CITY-CORE`：默认自动化实施完成。City Module 只承载应用级启停边界，后台 Runtime、持久化队列扫描、执行租约和恢复事务由 Transfer 自行实现；公开同步 `WakeAsync`、旧 `TransferTaskScheduler`、内存 `TransferQueue` 和独立 `TransferRuntimeInitializer` 已退出生产路径，详见专项决策记录。
+- `AB-TRANSFER × CITY-MVVM / ROUTING / PRESENTATION / LOCALIZATION`：标记为 `否`。Transfer 不拥有 ViewModel、Command、页面路由、View 组织或用户文案；这些能力由 Desktop 使用，Transfer 只暴露前端无关合同和只读状态。
+- `AB-TRANSFER × CITY-EVENTBUS`：标记为 `否`。队列、进度与 Runtime 健康需要“当前事实 + 后续变化”，City.State 已完整覆盖；再发布同义事件会形成双通道一致性责任。
+- `AB-TRANSFER × CITY-DATA / SECURITY`：标记为 `否`。Transfer 只通过 Core Provider 端口调度操作，不拥有 HTTP/协议实现、厂商认证或应用主体；相关边界属于 Providers，且 Providers 专项已决定不采用对应 City 能力。
+- `AB-TRANSFER × CITY-PLUGINSYSTEM`：标记为 `否`。当前没有动态 Provider 插件产品合同；未来如立项，插件运行时应先由 Providers 或专用集成模块拥有。
+- `AB-TRANSFER × CITY-BUILD / GENERATORS / TESTING / CLI / TEMPLATES`：标记为 `否`。Build 与 Generators 由 Desktop/Engineering 编译链使用；Transfer 继续以真实 Runtime、Store、Provider 替身和 City Host 集成测试验证合同，不为复用有限工具引入其余工程模块。
+- Transfer 全部 City 单元至此完成决策收口。采用项是 Core 与 State；其余单元均为经过审计后的主动不采用，而不是遗漏。
 
 ## Providers 审计结论
 
@@ -303,7 +312,7 @@ City 维度：
 - Application/Transfer/Desktop 测试继续直接验证其实际采用的 Core、Mvvm、Routing、Presentation、State 和 Localization 合同；不为此引入 City.Testing。
 - City.Testing、CLI 和 Templates 的收益不足以覆盖依赖与维护成本，标记为 `否`。EventBus、Data、Security、PluginSystem 仍由业务模块决定，Engineering 不接管。
 - Release 的 Windows、macOS、Linux 主仓 checkout 必须递归检出 City submodule；详细设计与验收见 [Engineering 专项审计](with-city-engineering.md)。
-- 自动化证据：Desktop 32/32、Infrastructure 160/160、全仓 Release 693/693；Release 全解构建 0 warning / 0 error。
+- 当前自动化证据统一采用 2026-10-16 最终门禁：全解回归 666/666；Release 全解构建 0 warning / 0 error。
 
 ## 状态维护规则
 

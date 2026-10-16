@@ -2,7 +2,7 @@
 
 > Matrix ID：`AB-TRANSFER × CITY-STATE`
 >
-> 状态：Automated / Manual UI Pending
+> 状态：State 阶段已完成；Runtime 后续设计已由 `with-city-transfer-runtime.md` 接续并完成默认自动化门禁；Manual UI Pending
 >
 > 实施分支：`feature/with-city`
 >
@@ -30,7 +30,7 @@ Desktop 不再为队列和状态栏每秒读取持久化文件，而是通过 Ci
 - `Ready`：包含当前队列的不可变快照。
 - `Faulted`：初始查询失败，仅暴露结构化、脱敏的存储错误摘要。
 
-队列成员判定与现有 `ITransferStateStore.ListQueueAsync` 保持一致：`Pending` / `Running` / `Paused` / `Interrupted` 在队列中，`Succeeded` / `Failed` / `Canceled` 移出队列。
+队列成员判定与现有 `ITransferStateStore.ListQueueAsync` 保持一致：`Pending` / `Running` / `Paused` / `Interrupted` / `Canceling` 在队列中，`Succeeded` / `Failed` / `Canceled` 移出队列。读取暂时失败时保留最后可信快照并标记 stale，不得把故障错误投影成空队列。
 
 发布顺序必须是：
 
@@ -45,7 +45,7 @@ Desktop 不再为队列和状态栏每秒读取持久化文件，而是通过 Ci
 
 ## 4. 启动与重同步
 
-`TransferRuntimeInitializer` 首先沿用现有逻辑，将上次运行留下的 `Running` 任务持久化为 `Interrupted`；然后从 `ITransferStateStore.ListQueueAsync` 读取一次完整队列并发布 `Ready`。这是应用启动时的明确重同步路径。
+当前由 `TransferRuntimeController.StartAsync` 将上次运行留下的 `Running` 任务通过 Revision/预期状态条件更新为 `Interrupted`，随后从持久化 Store 重建队列并发布 `Ready`。旧 `TransferRuntimeInitializer` 已退出生产路径并删除；完整启动、恢复和关闭合同以 [Transfer Runtime 专项](with-city-transfer-runtime.md) 为准。
 
 任务提交、取消、重试、worker 状态变化和进度持久化成功后，都必须同步更新投影。
 
@@ -57,15 +57,15 @@ Desktop 不再为队列和状态栏每秒读取持久化文件，而是通过 Ci
 - `HomeViewModel` 使用 State 计算队列摘要；最近历史仍在激活时查询。
 - `TransferHistoryViewModel` 保留分页查询，不把无界历史集合投影到 City.State。
 
-## 6. 本轮明确不处理
+## 6. 后续 Runtime 专项的接续结果
 
-以下是审计已识别的 Transfer 自有工程问题，不是 City.State 引入所造成，且按本轮决策延后：
+State 阶段曾识别并延后的 Transfer 自有工程问题，已在后续 Runtime 专项中完成治理：
 
-- Runtime 还没有完整的停止接收、有限等待和关停 flush 实现。
-- `WakeAsync` 和 worker 任务所有权、取消与重试竞态需要单独治理。
-- 进度持久化存在同步阻塞与读-改-写并发等技术债。
+- Runtime 已实现停止准入、受管任务、有限等待、最终 flush 与迟到结果围栏。
+- 公开同步 `WakeAsync`、旧 Scheduler、内存 Queue 和独立 Initializer 已退出生产路径；调度唤醒由 Runtime 内部管理。
+- 进度改为异步汇聚、节流批量持久化，并以 Revision/预期状态 CAS 保护并发状态转换。
 
-本轮不用 State 掩盖这些问题，也不将它们与状态订阅迁移捆绑重构。
+City.State 仍只承担已持久化事实的运行时投影，不承担队列执行、并发、恢复或持久化职责。
 
 ## 7. 验收证据
 
@@ -75,10 +75,12 @@ Desktop 不再为队列和状态栏每秒读取持久化文件，而是通过 Ci
 - `dotnet build AtomBox.slnx -c Release`。
 - 真实 UI 验收由人工完成，在此之前状态不记为 Done。
 
-2026-10-13 自动化结果：
+以下为 2026-10-13 State 阶段的历史自动化结果：
 
 - `AtomBox.Transfer.Tests`：106/106 通过，包含本次新增的初始投影、原子并发合并、重同步不覆盖并发提交、进度保留、终态移出、持久化失败不发布和启动修复测试。
 - `AtomBox.Application.Tests`：163/163 通过。
 - `AtomBox.Desktop.Tests`：32/32 通过，验证队列页与状态栏能观察已提交状态，并将原“每次激活拥有一个周期 worker”门禁更新为“观察 State 且不拥有周期 worker”。
 - 整体回归：693/693 通过。
 - `dotnet build AtomBox.slnx -c Release --no-restore -v:minimal`：0 warning / 0 error。
+
+当前权威证据以 [Phase 12 Transfer Runtime 测试矩阵](../../implementation/testing/phase-12-transfer-runtime-testing.md) 为准：2026-10-16 全解回归 666/666，Release 全解构建 0 warning / 0 error；真实 Provider 和真实 UI 仍待人工验收。
