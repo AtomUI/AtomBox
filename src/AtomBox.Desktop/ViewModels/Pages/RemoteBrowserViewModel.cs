@@ -625,16 +625,12 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
             HandleAccountCatalogChanged,
             StateSubscriptionOptions.Dispatcher(_dispatcher)));
 
-        return _dispatcher.PostAsync(
-            async token =>
-            {
-                await RefreshAsync(token).ConfigureAwait(true);
-                _refreshWorker = context.Scope.StartUniqueAsync(
-                    "remote-browser-refresh",
-                    workerToken => RunRefreshWorkerAsync(requests.Reader, workerToken),
-                    token);
-            },
+        _refreshWorker = context.Scope.StartUniqueAsync(
+            "remote-browser-refresh",
+            workerToken => RunRefreshLifecycleAsync(requests.Reader, workerToken),
             cancellationToken);
+
+        return ValueTask.CompletedTask;
     }
 
     protected override ValueTask OnDeactivatedAsync(CancellationToken cancellationToken)
@@ -664,6 +660,19 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
     private void RequestRefresh()
     {
         _refreshRequests?.Writer.TryWrite(0);
+    }
+
+    private Task RunRefreshLifecycleAsync(
+        ChannelReader<byte> requests,
+        CancellationToken cancellationToken)
+    {
+        return _dispatcher.PostAsync(
+            async token =>
+            {
+                await RefreshAsync(token).ConfigureAwait(true);
+                await RunRefreshWorkerAsync(requests, token).ConfigureAwait(true);
+            },
+            cancellationToken).AsTask();
     }
 
     private async Task RunRefreshWorkerAsync(

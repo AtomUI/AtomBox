@@ -22,6 +22,8 @@ public sealed class MainWindowViewModel : ViewModelBase
     private readonly IDesktopPreferencesService _preferences;
     private readonly CityUiDispatcher _dispatcher;
     private readonly Dictionary<StorageAccountId, StorageAccountSummary> _navigationAccounts = [];
+    private readonly object _menuNavigationGate = new();
+    private CancellationTokenSource? _menuNavigationCancellation;
     private string? _currentMenuKey;
 
     public MainWindowViewModel(
@@ -64,14 +66,51 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public ObservableCollection<RemoteAccountNavigationItem> WebDavAccounts { get; } = [];
 
-    public Task NavigateByMenuKeyAsync(
+    public async Task NavigateByMenuKeyAsync(
         string? itemKey,
         CancellationToken cancellationToken = default)
     {
-        var effectiveCancellationToken = cancellationToken.CanBeCanceled
+        var lifetimeCancellationToken = cancellationToken.CanBeCanceled
             ? cancellationToken
             : CurrentActivationScope?.CancellationToken ?? CancellationToken.None;
 
+        using var supersession = new CancellationTokenSource();
+        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            lifetimeCancellationToken,
+            supersession.Token);
+
+        lock (_menuNavigationGate)
+        {
+            _menuNavigationCancellation?.Cancel();
+            _menuNavigationCancellation = supersession;
+        }
+
+        try
+        {
+            await NavigateByMenuKeyCoreAsync(itemKey, linkedCancellation.Token).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (
+            supersession.IsCancellationRequested &&
+            !lifetimeCancellationToken.IsCancellationRequested)
+        {
+            // A newer menu selection superseded this navigation intent.
+        }
+        finally
+        {
+            lock (_menuNavigationGate)
+            {
+                if (ReferenceEquals(_menuNavigationCancellation, supersession))
+                {
+                    _menuNavigationCancellation = null;
+                }
+            }
+        }
+    }
+
+    private Task NavigateByMenuKeyCoreAsync(
+        string? itemKey,
+        CancellationToken cancellationToken)
+    {
         if (TryParseRemoteAccountMenuKey(itemKey, out var accountId) &&
             _navigationAccounts.TryGetValue(accountId, out var account))
         {
@@ -81,33 +120,33 @@ public sealed class MainWindowViewModel : ViewModelBase
                     ToResourceGroup(account),
                     account.Id,
                     GetInitialPath(account)),
-                effectiveCancellationToken);
+                cancellationToken);
         }
 
         return itemKey switch
         {
-            NavigationMenuKeys.Home => NavigateAsync(NavigationTarget.Home, cancellationToken: effectiveCancellationToken),
+            NavigationMenuKeys.Home => NavigateAsync(NavigationTarget.Home, cancellationToken: cancellationToken),
             NavigationMenuKeys.RemoteStorage => NavigateAsync(
                 NavigationTarget.RemoteBrowser,
                 new RemoteBrowserNavigationParameter(NavigationResourceGroup.All),
-                effectiveCancellationToken),
+                cancellationToken),
             NavigationMenuKeys.RemoteObjectStorage => NavigateAsync(
                 NavigationTarget.RemoteBrowser,
                 new RemoteBrowserNavigationParameter(NavigationResourceGroup.ObjectStorage),
-                effectiveCancellationToken),
+                cancellationToken),
             NavigationMenuKeys.RemoteFileTransfer => NavigateAsync(
                 NavigationTarget.RemoteBrowser,
                 new RemoteBrowserNavigationParameter(NavigationResourceGroup.FileTransfer),
-                effectiveCancellationToken),
+                cancellationToken),
             NavigationMenuKeys.RemoteWebDav => NavigateAsync(
                 NavigationTarget.RemoteBrowser,
                 new RemoteBrowserNavigationParameter(NavigationResourceGroup.WebDav),
-                effectiveCancellationToken),
-            NavigationMenuKeys.AddRemote => AddAccountAndNavigateAsync(null, effectiveCancellationToken),
-            NavigationMenuKeys.TransferQueue => NavigateAsync(NavigationTarget.TransferQueue, cancellationToken: effectiveCancellationToken),
-            NavigationMenuKeys.TransferHistory => NavigateAsync(NavigationTarget.TransferHistory, cancellationToken: effectiveCancellationToken),
-            NavigationMenuKeys.Settings => NavigateAsync(NavigationTarget.Settings, cancellationToken: effectiveCancellationToken),
-            NavigationMenuKeys.AccountManagement => NavigateAsync(NavigationTarget.AccountManagement, cancellationToken: effectiveCancellationToken),
+                cancellationToken),
+            NavigationMenuKeys.AddRemote => AddAccountAndNavigateAsync(null, cancellationToken),
+            NavigationMenuKeys.TransferQueue => NavigateAsync(NavigationTarget.TransferQueue, cancellationToken: cancellationToken),
+            NavigationMenuKeys.TransferHistory => NavigateAsync(NavigationTarget.TransferHistory, cancellationToken: cancellationToken),
+            NavigationMenuKeys.Settings => NavigateAsync(NavigationTarget.Settings, cancellationToken: cancellationToken),
+            NavigationMenuKeys.AccountManagement => NavigateAsync(NavigationTarget.AccountManagement, cancellationToken: cancellationToken),
             _ => Task.CompletedTask
         };
     }

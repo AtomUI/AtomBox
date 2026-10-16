@@ -201,6 +201,28 @@ public sealed class S3CompatibleProviderTests
     }
 
     [Fact]
+    public async Task ListPageAsync_PropagatesCancellationToAsyncClient()
+    {
+        var client = new FakeS3CompatibleClient
+        {
+            BlockListObjectsUntilCancellation = true
+        };
+        await using var provider = CreateProvider(client);
+        using var cancellation = new CancellationTokenSource();
+
+        var operation = provider.ListPageAsync(
+            new RemotePath("bucket-a/folder", RemotePathKind.Folder),
+            new RemotePageRequest(100),
+            cancellation.Token);
+        await client.ListObjectsStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+        Assert.True(client.ListObjectsObservedCancellation);
+    }
+
+    [Fact]
     public async Task MoveAsync_MapsClientFailureWithoutLeakingExceptionMessage()
     {
         var client = new FakeS3CompatibleClient
@@ -325,7 +347,7 @@ public sealed class S3CompatibleProviderTests
                 StorageCapability.Move));
     }
 
-    private sealed class FakeS3CompatibleClient : IS3CompatibleClient
+    private sealed class FakeS3CompatibleClient : IAsyncS3CompatibleClient
     {
         public IReadOnlyList<S3CompatibleBucket> Buckets { get; init; } = [];
 
@@ -362,22 +384,55 @@ public sealed class S3CompatibleProviderTests
 
         public Exception? CopyException { get; init; }
 
+        public bool BlockListObjectsUntilCancellation { get; init; }
+
+        public TaskCompletionSource<bool> ListObjectsStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool ListObjectsObservedCancellation { get; private set; }
+
         public bool WasDisposed { get; private set; }
 
-        public IReadOnlyList<S3CompatibleBucket> ListBuckets()
+        public Task<IReadOnlyList<S3CompatibleBucket>> ListBucketsAsync(
+            CancellationToken cancellationToken = default)
         {
-            return Buckets;
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(Buckets);
         }
 
-        public void CreateBucket(string bucketName)
+        public Task CreateBucketAsync(
+            string bucketName,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             PutBucketName = bucketName;
+            return Task.CompletedTask;
         }
 
-        public S3CompatibleObjectListing ListObjects(string bucketName, string prefix, string? cursor = null, int maxKeys = 1000)
+        public async Task<S3CompatibleObjectListing> ListObjectsAsync(
+            string bucketName,
+            string prefix,
+            string? cursor = null,
+            int maxKeys = 1000,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             LastListBucketName = bucketName;
             LastListPrefix = prefix;
+            if (BlockListObjectsUntilCancellation)
+            {
+                ListObjectsStarted.TrySetResult(true);
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    ListObjectsObservedCancellation = true;
+                    throw;
+                }
+            }
+
             if (CursorListings.Count > 0)
             {
                 return CursorListings[cursor ?? string.Empty];
@@ -395,19 +450,26 @@ public sealed class S3CompatibleProviderTests
             return new S3CompatibleObjectListing(objects, ObjectListing.CommonPrefixes, nextCursor);
         }
 
-        public void DeleteObject(string bucketName, string key)
+        public Task DeleteObjectAsync(
+            string bucketName,
+            string key,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             DeletedBucketName = bucketName;
             DeletedKey = key;
             DeletedKeys.Add(key);
+            return Task.CompletedTask;
         }
 
-        public void CopyObject(
+        public Task CopyObjectAsync(
             string sourceBucketName,
             string sourceKey,
             string destinationBucketName,
-            string destinationKey)
+            string destinationKey,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             if (CopyException is not null)
             {
                 throw CopyException;
@@ -417,26 +479,45 @@ public sealed class S3CompatibleProviderTests
             CopySourceKey = sourceKey;
             CopyDestinationBucketName = destinationBucketName;
             CopyDestinationKey = destinationKey;
+            return Task.CompletedTask;
         }
 
-        public void PutObject(string bucketName, string key, Stream content)
+        public Task PutObjectAsync(
+            string bucketName,
+            string key,
+            Stream content,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             PutBucketName = bucketName;
             PutKey = key;
             using var copy = new MemoryStream();
             content.CopyTo(copy);
             PutPayload = copy.ToArray();
+            return Task.CompletedTask;
         }
 
-        public void PutObjectMultipart(string bucketName, string key, Stream content, long contentLength, Action<long, long>? progress = null)
+        public async Task PutObjectMultipartAsync(
+            string bucketName,
+            string key,
+            Stream content,
+            long contentLength,
+            Action<long, long>? progress = null,
+            CancellationToken cancellationToken = default)
         {
-            PutObject(bucketName, key, content);
+            await PutObjectAsync(bucketName, key, content, cancellationToken);
             progress?.Invoke(contentLength, contentLength);
         }
 
-        public S3CompatibleDownloadObject GetObject(string bucketName, string key)
+        public Task<S3CompatibleDownloadObject> GetObjectAsync(
+            string bucketName,
+            string key,
+            CancellationToken cancellationToken = default)
         {
-            return new S3CompatibleDownloadObject(new MemoryStream(DownloadPayload), DownloadPayload.LongLength);
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(new S3CompatibleDownloadObject(
+                new MemoryStream(DownloadPayload),
+                DownloadPayload.LongLength));
         }
 
         public void Dispose()

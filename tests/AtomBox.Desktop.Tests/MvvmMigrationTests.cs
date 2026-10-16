@@ -285,6 +285,36 @@ public sealed class MvvmMigrationTests
     }
 
     [Fact]
+    public async Task MenuNavigationCancelsSupersededIntentAndCommitsLatestSelection()
+    {
+        await using var context = await DesktopTestContext.CreateAsync();
+        var dispatcher = new ImmediateUiDispatcher();
+        var navigation = new SupersedingNavigationService();
+        var statusBar = ActivatorUtilities.CreateInstance<StatusBarViewModel>(
+            context.Services,
+            new TestLocalizedText(),
+            dispatcher);
+        var shell = ActivatorUtilities.CreateInstance<MainWindowViewModel>(
+            context.Services,
+            navigation,
+            new TestAccountDialogWorkflow(),
+            statusBar,
+            dispatcher);
+
+        var firstNavigation = shell.NavigateByMenuKeyAsync(NavigationMenuKeys.Home);
+        await navigation.FirstNavigationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        var latestNavigation = shell.NavigateByMenuKeyAsync(NavigationMenuKeys.Settings);
+        await Task.WhenAll(firstNavigation, latestNavigation).WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(navigation.FirstNavigationObservedCancellation);
+        Assert.Equal(NavigationTarget.Settings, navigation.CommittedTarget);
+
+        await shell.DisposeAsync();
+        await statusBar.DisposeAsync();
+    }
+
+    [Fact]
     public async Task RemoteBrowserAppliesFinalNavigationParameterBeforeFirstActivationLoad()
     {
         await using var context = await DesktopTestContext.CreateAsync();
@@ -311,6 +341,29 @@ public sealed class MvvmMigrationTests
         Assert.Equal(1, scope.ActiveTaskCount);
 
         await viewModel.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task RemoteBrowserActivationDoesNotWaitForInitialRefreshWork()
+    {
+        await using var context = await DesktopTestContext.CreateAsync();
+        var dispatcher = new BlockingPostUiDispatcher();
+        var viewModel = ActivatorUtilities.CreateInstance<RemoteBrowserViewModel>(
+            context.Services,
+            new TestAccountDialogWorkflow(),
+            new TestNavigationService(),
+            new TestLocalizedText(),
+            dispatcher);
+        var scope = new ActivationScope();
+
+        await viewModel.ActivateAsync(scope).AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        await dispatcher.PostStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.Equal(ActivationState.Active, viewModel.ActivationState);
+        Assert.Equal(1, scope.ActiveTaskCount);
+
+        await viewModel.DisposeAsync();
+        Assert.True(scope.IsDisposed);
     }
 
     private static async Task WaitUntilAsync(Func<bool> condition)
@@ -435,6 +488,36 @@ public sealed class MvvmMigrationTests
         }
     }
 
+    private sealed class BlockingPostUiDispatcher : CityUiDispatcher
+    {
+        public TaskCompletionSource<bool> PostStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool CheckAccess() => false;
+
+        public ValueTask InvokeAsync(Action callback, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            callback();
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<T> InvokeAsync<T>(Func<T> callback, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(callback());
+        }
+
+        public ValueTask PostAsync(
+            Func<CancellationToken, ValueTask> callback,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PostStarted.TrySetResult(true);
+            return new ValueTask(Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken));
+        }
+    }
+
     private sealed class NoopCommandExceptionHandler : ICommandExceptionHandler
     {
         public ValueTask HandleAsync(
@@ -488,6 +571,58 @@ public sealed class MvvmMigrationTests
             CurrentMenuKey = target.ToString();
             CurrentMenuKeyChanged?.Invoke(this, EventArgs.Empty);
             return Task.CompletedTask;
+        }
+    }
+
+    private sealed class SupersedingNavigationService : INavigationService
+    {
+        private readonly SemaphoreSlim _navigationGate = new(1, 1);
+        private int _navigationCount;
+        private int _firstNavigationObservedCancellation;
+
+        public event EventHandler? CurrentMenuKeyChanged;
+
+        public TaskCompletionSource<bool> FirstNavigationStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public string? CurrentMenuKey { get; private set; }
+
+        public NavigationTarget? CommittedTarget { get; private set; }
+
+        public bool FirstNavigationObservedCancellation =>
+            Volatile.Read(ref _firstNavigationObservedCancellation) != 0;
+
+        public async Task NavigateAsync(
+            NavigationTarget target,
+            object? parameter = null,
+            CancellationToken cancellationToken = default)
+        {
+            await _navigationGate.WaitAsync(cancellationToken);
+            try
+            {
+                if (Interlocked.Increment(ref _navigationCount) == 1)
+                {
+                    FirstNavigationStarted.TrySetResult(true);
+                    try
+                    {
+                        await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                    }
+                    catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                    {
+                        Volatile.Write(ref _firstNavigationObservedCancellation, 1);
+                        throw;
+                    }
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                CommittedTarget = target;
+                CurrentMenuKey = target.ToString();
+                CurrentMenuKeyChanged?.Invoke(this, EventArgs.Empty);
+            }
+            finally
+            {
+                _navigationGate.Release();
+            }
         }
     }
 

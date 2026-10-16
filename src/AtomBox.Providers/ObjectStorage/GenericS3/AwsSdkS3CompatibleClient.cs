@@ -4,7 +4,7 @@ using AtomBox.Providers.ObjectStorage.S3Compatible;
 
 namespace AtomBox.Providers.ObjectStorage.GenericS3;
 
-internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
+internal sealed class AwsSdkS3CompatibleClient : IAsyncS3CompatibleClient
 {
     private readonly IAmazonS3 _client;
 
@@ -13,33 +13,41 @@ internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
         _client = client;
     }
 
-    public IReadOnlyList<S3CompatibleBucket> ListBuckets()
+    public async Task<IReadOnlyList<S3CompatibleBucket>> ListBucketsAsync(
+        CancellationToken cancellationToken = default)
     {
-        var response = Wait(_client.ListBucketsAsync());
+        var response = await _client.ListBucketsAsync(cancellationToken).ConfigureAwait(false);
         return (response.Buckets ?? [])
             .Select(bucket => new S3CompatibleBucket(bucket.BucketName, ToDateTimeOffset(bucket.CreationDate)))
             .ToArray();
     }
 
-    public void CreateBucket(string bucketName)
+    public async Task CreateBucketAsync(
+        string bucketName,
+        CancellationToken cancellationToken = default)
     {
-        Wait(_client.PutBucketAsync(new PutBucketRequest { BucketName = bucketName }));
+        await _client.PutBucketAsync(
+            new PutBucketRequest { BucketName = bucketName },
+            cancellationToken).ConfigureAwait(false);
     }
 
-    public S3CompatibleObjectListing ListObjects(
+    public async Task<S3CompatibleObjectListing> ListObjectsAsync(
         string bucketName,
         string prefix,
         string? cursor = null,
-        int maxKeys = 1000)
+        int maxKeys = 1000,
+        CancellationToken cancellationToken = default)
     {
-        var response = Wait(_client.ListObjectsV2Async(new ListObjectsV2Request
-        {
-            BucketName = bucketName,
-            Prefix = prefix,
-            Delimiter = "/",
-            ContinuationToken = cursor,
-            MaxKeys = maxKeys
-        }));
+        var response = await _client.ListObjectsV2Async(
+            new ListObjectsV2Request
+            {
+                BucketName = bucketName,
+                Prefix = prefix,
+                Delimiter = "/",
+                ContinuationToken = cursor,
+                MaxKeys = maxKeys
+            },
+            cancellationToken).ConfigureAwait(false);
 
         var objects = (response.S3Objects ?? [])
             .Select(item => new S3CompatibleObjectSummary(
@@ -52,49 +60,64 @@ internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
         return new S3CompatibleObjectListing(objects, response.CommonPrefixes ?? [], response.NextContinuationToken);
     }
 
-    public void DeleteObject(string bucketName, string key)
+    public async Task DeleteObjectAsync(
+        string bucketName,
+        string key,
+        CancellationToken cancellationToken = default)
     {
-        Wait(_client.DeleteObjectAsync(bucketName, key));
+        await _client.DeleteObjectAsync(bucketName, key, cancellationToken).ConfigureAwait(false);
     }
 
-    public void CopyObject(
+    public async Task CopyObjectAsync(
         string sourceBucketName,
         string sourceKey,
         string destinationBucketName,
-        string destinationKey)
+        string destinationKey,
+        CancellationToken cancellationToken = default)
     {
-        Wait(_client.CopyObjectAsync(new CopyObjectRequest
-        {
-            SourceBucket = sourceBucketName,
-            SourceKey = sourceKey,
-            DestinationBucket = destinationBucketName,
-            DestinationKey = destinationKey
-        }));
+        await _client.CopyObjectAsync(
+            new CopyObjectRequest
+            {
+                SourceBucket = sourceBucketName,
+                SourceKey = sourceKey,
+                DestinationBucket = destinationBucketName,
+                DestinationKey = destinationKey
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
-    public void PutObject(string bucketName, string key, Stream content)
+    public async Task PutObjectAsync(
+        string bucketName,
+        string key,
+        Stream content,
+        CancellationToken cancellationToken = default)
     {
-        Wait(_client.PutObjectAsync(new PutObjectRequest
-        {
-            BucketName = bucketName,
-            Key = key,
-            InputStream = content,
-            AutoCloseStream = false
-        }));
+        await _client.PutObjectAsync(
+            new PutObjectRequest
+            {
+                BucketName = bucketName,
+                Key = key,
+                InputStream = content,
+                AutoCloseStream = false
+            },
+            cancellationToken).ConfigureAwait(false);
     }
 
-    public void PutObjectMultipart(
+    public async Task PutObjectMultipartAsync(
         string bucketName,
         string key,
         Stream content,
         long contentLength,
-        Action<long, long>? progress = null)
+        Action<long, long>? progress = null,
+        CancellationToken cancellationToken = default)
     {
-        var initiation = Wait(_client.InitiateMultipartUploadAsync(new InitiateMultipartUploadRequest
-        {
-            BucketName = bucketName,
-            Key = key
-        }));
+        var initiation = await _client.InitiateMultipartUploadAsync(
+            new InitiateMultipartUploadRequest
+            {
+                BucketName = bucketName,
+                Key = key
+            },
+            cancellationToken).ConfigureAwait(false);
         var parts = new List<PartETag>();
         var transferred = 0L;
 
@@ -103,6 +126,7 @@ internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
             var partNumber = 1;
             while (transferred < contentLength)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var expectedLength = (int)Math.Min(ObjectStorageUploadPolicy.PartSize, contentLength - transferred);
                 var payload = ReadPart(content, expectedLength);
                 if (payload.Length == 0)
@@ -111,15 +135,17 @@ internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
                 }
 
                 using var partStream = new MemoryStream(payload, writable: false);
-                var response = Wait(_client.UploadPartAsync(new UploadPartRequest
-                {
-                    BucketName = bucketName,
-                    Key = key,
-                    UploadId = initiation.UploadId,
-                    PartNumber = partNumber,
-                    PartSize = payload.LongLength,
-                    InputStream = partStream
-                }));
+                var response = await _client.UploadPartAsync(
+                    new UploadPartRequest
+                    {
+                        BucketName = bucketName,
+                        Key = key,
+                        UploadId = initiation.UploadId,
+                        PartNumber = partNumber,
+                        PartSize = payload.LongLength,
+                        InputStream = partStream
+                    },
+                    cancellationToken).ConfigureAwait(false);
                 parts.Add(new PartETag(partNumber, response.ETag));
                 transferred += payload.LongLength;
                 progress?.Invoke(transferred, contentLength);
@@ -133,19 +159,21 @@ internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
                 UploadId = initiation.UploadId
             };
             completion.AddPartETags(parts);
-            Wait(_client.CompleteMultipartUploadAsync(completion));
+            await _client.CompleteMultipartUploadAsync(completion, cancellationToken).ConfigureAwait(false);
             progress?.Invoke(contentLength, contentLength);
         }
         catch
         {
             try
             {
-                Wait(_client.AbortMultipartUploadAsync(new AbortMultipartUploadRequest
-                {
-                    BucketName = bucketName,
-                    Key = key,
-                    UploadId = initiation.UploadId
-                }));
+                await _client.AbortMultipartUploadAsync(
+                    new AbortMultipartUploadRequest
+                    {
+                        BucketName = bucketName,
+                        Key = key,
+                        UploadId = initiation.UploadId
+                    },
+                    CancellationToken.None).ConfigureAwait(false);
             }
             catch
             {
@@ -156,20 +184,18 @@ internal sealed class AwsSdkS3CompatibleClient : IS3CompatibleClient
         }
     }
 
-    public S3CompatibleDownloadObject GetObject(string bucketName, string key)
+    public async Task<S3CompatibleDownloadObject> GetObjectAsync(
+        string bucketName,
+        string key,
+        CancellationToken cancellationToken = default)
     {
-        var response = Wait(_client.GetObjectAsync(bucketName, key));
+        var response = await _client.GetObjectAsync(bucketName, key, cancellationToken).ConfigureAwait(false);
         return new S3CompatibleDownloadObject(response.ResponseStream, response.ContentLength, response);
     }
 
     public void Dispose()
     {
         _client.Dispose();
-    }
-
-    private static T Wait<T>(Task<T> operation)
-    {
-        return operation.ConfigureAwait(false).GetAwaiter().GetResult();
     }
 
     private static byte[] ReadPart(Stream content, int expectedLength)
