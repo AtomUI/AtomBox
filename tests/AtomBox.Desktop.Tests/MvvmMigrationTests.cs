@@ -14,6 +14,7 @@ using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Services;
 using AtomBox.Desktop.Shell;
+using AtomBox.Desktop.ViewModels;
 using AtomBox.Desktop.ViewModels.Pages;
 using AtomBox.Infrastructure.Configuration;
 using AtomBox.Providers.Common;
@@ -124,6 +125,30 @@ public sealed class MvvmMigrationTests
         Assert.Equal(1, subtitleChanges);
 
         await viewModel.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task DesktopCommandFactoryDispatchesOwnerStateNotificationsToUi()
+    {
+        var dispatcher = new QueueingUiDispatcher();
+        var owner = new TestCommandViewModel();
+        var factory = new DesktopCommandFactory(new NoopCommandExceptionHandler(), dispatcher);
+        var command = factory.CreateAsync(owner, "refresh", _ => Task.CompletedTask);
+        var notifications = 0;
+        command.CanExecuteChanged += (_, _) => notifications++;
+
+        await owner.ActivateAsync(new ActivationScope());
+
+        Assert.Equal(0, notifications);
+        Assert.True(dispatcher.PendingCount > 0);
+        var pendingNotifications = dispatcher.PendingCount;
+
+        dispatcher.Drain();
+
+        Assert.Equal(pendingNotifications, notifications);
+
+        await owner.DisposeAsync();
+        dispatcher.Drain();
     }
 
     [Fact]
@@ -370,6 +395,58 @@ public sealed class MvvmMigrationTests
             return callback(cancellationToken);
         }
     }
+
+    private sealed class QueueingUiDispatcher : CityUiDispatcher
+    {
+        private readonly Queue<Func<ValueTask>> _queue = [];
+
+        public int PendingCount => _queue.Count;
+
+        public bool CheckAccess() => false;
+
+        public ValueTask InvokeAsync(Action callback, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            callback();
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask<T> InvokeAsync<T>(Func<T> callback, CancellationToken cancellationToken)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.FromResult(callback());
+        }
+
+        public ValueTask PostAsync(
+            Func<CancellationToken, ValueTask> callback,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            _queue.Enqueue(() => callback(cancellationToken));
+            return ValueTask.CompletedTask;
+        }
+
+        public void Drain()
+        {
+            while (_queue.TryDequeue(out var callback))
+            {
+                callback().GetAwaiter().GetResult();
+            }
+        }
+    }
+
+    private sealed class NoopCommandExceptionHandler : ICommandExceptionHandler
+    {
+        public ValueTask HandleAsync(
+            CommandExceptionContext context,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    public sealed class TestCommandViewModel : ViewModelBase;
 
     private sealed class TestLocalizedText : IAtomBoxLocalizedText
     {

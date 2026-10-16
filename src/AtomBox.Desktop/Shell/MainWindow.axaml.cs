@@ -114,6 +114,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
         catch (Exception exception)
         {
             System.Diagnostics.Debug.WriteLine(exception);
+            Console.Error.WriteLine(exception);
         }
     }
 
@@ -228,6 +229,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
         catch (Exception ex)
         {
             System.Diagnostics.Debug.WriteLine(ex);
+            Console.Error.WriteLine(ex);
         }
     }
 

@@ -1,6 +1,7 @@
 using AtomUI.City.Core.Diagnostics;
 using AtomUI.City.Mvvm;
 using CommunityToolkit.Mvvm.Input;
+using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.ViewModels;
 
@@ -8,12 +9,15 @@ public sealed class DesktopCommandFactory
 {
     private readonly ICommandExceptionHandler _exceptionHandler;
     private readonly IHostDiagnostics? _diagnostics;
+    private readonly CityUiDispatcher _dispatcher;
 
     public DesktopCommandFactory(
         ICommandExceptionHandler exceptionHandler,
+        CityUiDispatcher dispatcher,
         IHostDiagnostics? diagnostics = null)
     {
         _exceptionHandler = exceptionHandler;
+        _dispatcher = dispatcher;
         _diagnostics = diagnostics;
     }
 
@@ -31,7 +35,8 @@ public sealed class DesktopCommandFactory
             owner,
             concurrencyPolicy,
             _exceptionHandler,
-            _diagnostics);
+            _diagnostics,
+            _dispatcher);
     }
 
     public IAsyncRelayCommand<T> CreateAsync<T>(
@@ -50,7 +55,8 @@ public sealed class DesktopCommandFactory
             concurrencyPolicy,
             concurrencyKeySelector,
             _exceptionHandler,
-            _diagnostics);
+            _diagnostics,
+            _dispatcher);
     }
 
     public IRelayCommand Create(
