@@ -28,6 +28,13 @@ public class S3CompatibleProvider : IStorageProvider
 
     public StorageCapabilitySet Capabilities { get; }
 
+    public TransferExecutionCapabilities TransferCapabilities { get; } = new(
+        TransferIoExecutionKind.Blocking,
+        TransferIoExecutionKind.Blocking,
+        supportsCooperativeCancellation: false,
+        supportsActiveAbort: false,
+        supportsProgress: true);
+
     public Task<OperationResult<IReadOnlyList<RemoteItem>>> ListAsync(
         RemotePath path,
         CancellationToken cancellationToken = default)

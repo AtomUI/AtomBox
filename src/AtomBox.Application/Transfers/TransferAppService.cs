@@ -208,22 +208,17 @@ public sealed class TransferAppService
         return _scheduler.CancelAsync(request.TaskId, cancellationToken);
     }
 
-    public async Task<OperationResult> RetryAsync(
+    public Task<OperationResult> RetryAsync(
         RetryTransferTaskRequest request,
         CancellationToken cancellationToken = default)
     {
         if (request.TaskId.IsEmpty)
         {
-            return OperationResult.Failure(StorageError.Validation("Transfer task id is required."));
+            return Task.FromResult(OperationResult.Failure(
+                StorageError.Validation("Transfer task id is required.")));
         }
 
-        var retryResult = await _scheduler.RetryAsync(request.TaskId, cancellationToken).ConfigureAwait(false);
-        if (retryResult.IsFailure)
-        {
-            return retryResult;
-        }
-
-        return await _scheduler.WakeAsync(cancellationToken).ConfigureAwait(false);
+        return _scheduler.RetryAsync(request.TaskId, cancellationToken);
     }
 
     public async Task<OperationResult> ClearHistoryAsync(
@@ -260,12 +255,6 @@ public sealed class TransferAppService
             {
                 return OperationResult<CreateTransferTasksResult>.Failure(submitResult.Error!);
             }
-        }
-
-        var wakeResult = await _scheduler.WakeAsync(cancellationToken).ConfigureAwait(false);
-        if (wakeResult.IsFailure)
-        {
-            return OperationResult<CreateTransferTasksResult>.Failure(wakeResult.Error!);
         }
 
         return OperationResult<CreateTransferTasksResult>.Success(new CreateTransferTasksResult(tasks));

@@ -5,8 +5,7 @@ using AtomBox.Infrastructure.DependencyInjection;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Providers.DependencyInjection;
-using AtomBox.Transfer.DependencyInjection;
-using AtomBox.Transfer.Scheduling;
+using AtomBox.Transfer;
 using AtomUI.City.Generated;
 using AtomUI.City.Core.Modularity;
 using AtomUI.City.Localization;
@@ -19,6 +18,7 @@ namespace AtomBox.Desktop.Composition;
 [Module("AtomBox.Desktop", Description = "Composes the AtomBox desktop application.")]
 [DependsOn(typeof(PresentationModule))]
 [DependsOn(typeof(RoutingModule))]
+[DependsOn(typeof(AtomBoxTransferModule))]
 public sealed class AtomBoxDesktopModule : ModuleBase
 {
     public override void ConfigureServices(ServiceConfigurationContext context)
@@ -27,7 +27,6 @@ public sealed class AtomBoxDesktopModule : ModuleBase
 
         context.Services.AddAtomBoxInfrastructure();
         context.Services.AddAtomBoxProviders();
-        context.Services.AddAtomBoxTransfer();
         context.Services.AddAtomBoxApplication();
         context.Services.AddRouting(AtomBoxRouteCatalog.Descriptors);
         context.Services.AddAtomBoxDesktop();
@@ -65,14 +64,5 @@ public sealed class AtomBoxDesktopModule : ModuleBase
             .InitializeAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        var transferResult = await context.Services
-            .GetRequiredService<TransferRuntimeInitializer>()
-            .InitializeAsync(cancellationToken)
-            .ConfigureAwait(false);
-        if (transferResult.IsFailure)
-        {
-            throw new InvalidOperationException(
-                transferResult.Error?.Message ?? "Transfer runtime initialization failed.");
-        }
     }
 }

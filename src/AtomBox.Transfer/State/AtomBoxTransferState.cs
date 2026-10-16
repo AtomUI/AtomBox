@@ -7,6 +7,8 @@ public sealed class AtomBoxTransferState : IAtomBoxTransferState
     private const string OwnerModule = "AtomBox.Transfer";
     private static readonly StateKey<TransferQueueState> QueueKey = new(
         "AtomBox.Transfer.Queue");
+    private static readonly StateKey<TransferRuntimeSnapshot> RuntimeKey = new(
+        "AtomBox.Transfer.Runtime");
 
     private readonly IApplicationStateWriter _writer;
 
@@ -27,11 +29,22 @@ public sealed class AtomBoxTransferState : IAtomBoxTransferState
             StateSnapshotPolicy.Transient,
             ownerModule: OwnerModule));
 
+        registry.Add(StateDefinition.Create(
+            RuntimeKey,
+            TransferRuntimeSnapshot.Initial,
+            StateLifetime.Application,
+            StateAccessPolicy.OwnerWrite,
+            StateSnapshotPolicy.Transient,
+            ownerModule: OwnerModule));
+
         Queue = state.Get(QueueKey);
+        Runtime = state.Get(RuntimeKey);
         _writer = writerFactory.CreateWriter(StateWriteAuthority.Module(OwnerModule));
     }
 
     public IReadOnlyState<TransferQueueState> Queue { get; }
+
+    public IReadOnlyState<TransferRuntimeSnapshot> Runtime { get; }
 
     internal void Publish(TransferQueueState state)
     {
@@ -43,5 +56,11 @@ public sealed class AtomBoxTransferState : IAtomBoxTransferState
     {
         ArgumentNullException.ThrowIfNull(updater);
         _writer.Update(QueueKey, updater);
+    }
+
+    internal void PublishRuntime(TransferRuntimeSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        _writer.Set(RuntimeKey, snapshot);
     }
 }

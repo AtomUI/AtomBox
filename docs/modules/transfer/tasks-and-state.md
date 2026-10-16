@@ -45,6 +45,7 @@ Interrupted
 Succeeded
 Failed
 Canceled
+Canceling
 ```
 
 状态语义：
@@ -57,9 +58,10 @@ Canceled
 | `Interrupted` | 非正常中断，例如退出超时、进程关闭、网络中断导致执行上下文丢失。 |
 | `Succeeded` | 成功完成。 |
 | `Failed` | 执行失败，可根据错误和策略决定是否可重试。 |
-| `Canceled` | 用户取消。 |
+| `Canceled` | 用户已请求取消，并且执行体已经退出；不承诺回滚远端已经产生的部分数据。 |
+| `Canceling` | 用户已请求取消，但 Worker/Provider 尚未确认退出；仍是活动任务并占用并发槽位。 |
 
-第一版不自动恢复 `Paused` / `Interrupted` 任务。它们可以展示给用户，由用户手动恢复或重试。
+第一版在 Runtime 启动后自动调度已可靠受理且尚未领取的 `Pending`。不自动恢复 `Paused` / `Interrupted`；它们可以展示给用户，由用户手动重试并从任务起点重新执行。
 
 ## 3. 状态流转
 
@@ -69,6 +71,10 @@ Canceled
 Pending -> Running -> Succeeded
 Pending -> Running -> Failed
 Pending -> Running -> Canceled
+Pending -> Canceled
+Running -> Canceling -> Canceled
+Running -> Canceling -> Succeeded // 取消生效前远端已明确成功
+Running -> Canceling -> Interrupted // Host 关闭或放弃等待
 Pending -> Running -> Paused
 Pending -> Running -> Interrupted
 Failed -> Pending   // Retry
@@ -90,6 +96,8 @@ Interrupted -> Pending // Recover / manual restart
 - 速度快照，可为空。
 
 进度更新可以很频繁，但不能直接推给 ViewModel。Transfer 必须先成功更新状态存储，再原子更新 City.State 队列投影；ViewModel 只读观察该投影。历史分页仍由 Application 查询用例组织。
+
+队列事实投影和 Runtime 健康投影是两个不同维度。单个任务失败只更新该任务，不改变 Runtime 健康；Runtime 降级或故障也不能凭空删除最后一次可信的队列快照。队列刷新在已有成功快照后失败时必须保留任务列表，并附带 `IsStale`、失败摘要和最后成功刷新时间；首次加载从未成功时才表示当前没有可用快照。
 
 ## 5. 队列快照
 
@@ -130,6 +138,12 @@ Provider SDK/API/协议异常必须先由 Providers 转换为 Core 统一错误�
 Transfer 可以根据 Core 错误模型和 `TransferRetryPolicy` 判断是否重试，但不能判断具体 SDK 异常类型。
 
 重试必须改变任务状态或创建明确的重试调度行为，不能在 worker 内无限循环。无限重试是后台任务系统里最蠢的灾难之一。
+
+第一版不提供断点续传。`Failed`、`Interrupted` 或用户手动重试均从任务起点重新执行；历史进度只用于展示和诊断，不能作为上传分片、下载偏移或协议会话的恢复依据。
+
+Provider 返回取消结果时必须结合 Runtime 记录的取消来源判断：用户取消并且执行体已退出为 `Canceled`，Host 关闭或结果未知为 `Interrupted`，AtomBox 未请求取消却由 Provider 自行取消则为 `Failed`。Provider 已明确结束并返回普通错误或 timeout 为 `Failed`；Runtime 等待超时但 SDK 仍未结束为 `Interrupted`。
+
+进度回调不得同步执行磁盘写入。Transfer 汇聚并节流各 Worker 的最新进度，Infrastructure 通过批量端口完成受保护的 JSON 读改写；只有持久化成功的进度才能发布到 City.State。任务结束时必须先强制保存最终进度，再提交终态。
 
 ## 8. 删除与历史
 

@@ -11,6 +11,47 @@ public sealed class TransferModelTests
     private static readonly TransferOptions DefaultOptions = new(TransferOverwritePolicy.Overwrite);
 
     [Fact]
+    public void TransferStatus_NumericValues_AreStableAndCancelingIsAppended()
+    {
+        Assert.Equal(0, (int)TransferStatus.Pending);
+        Assert.Equal(1, (int)TransferStatus.Running);
+        Assert.Equal(2, (int)TransferStatus.Paused);
+        Assert.Equal(3, (int)TransferStatus.Interrupted);
+        Assert.Equal(4, (int)TransferStatus.Succeeded);
+        Assert.Equal(5, (int)TransferStatus.Failed);
+        Assert.Equal(6, (int)TransferStatus.Canceled);
+        Assert.Equal(7, (int)TransferStatus.Canceling);
+    }
+
+    [Fact]
+    public void TransferTask_StatusChangesAdvanceRevisionMonotonically()
+    {
+        var pending = CreateTask(TransferStatus.Pending);
+        var running = pending.WithStatus(TransferStatus.Running, Now.AddSeconds(1));
+        var succeeded = running.WithStatus(TransferStatus.Succeeded, Now.AddSeconds(2));
+
+        Assert.Equal(0, pending.Revision);
+        Assert.Equal(1, running.Revision);
+        Assert.Equal(2, succeeded.Revision);
+    }
+
+    [Fact]
+    public void TransferTask_RejectsNegativeRevision()
+    {
+        Assert.Throws<ArgumentOutOfRangeException>(() => new TransferTask(
+            TransferTaskId.New(),
+            StorageAccountId.New(),
+            TransferDirection.Upload,
+            new LocalPath(@"C:\temp\a.txt"),
+            new RemotePath("bucket/a.txt"),
+            TransferStatus.Pending,
+            new TransferOptions(TransferOverwritePolicy.Overwrite),
+            Now,
+            Now,
+            Revision: -1));
+    }
+
+    [Fact]
     public void TransferProgress_ComputesPercentAndRejectsImpossibleValues()
     {
         var progress = new TransferProgress(25, 100, 1024);

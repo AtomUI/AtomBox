@@ -143,11 +143,11 @@ Credential Store 必须支持 `CredentialLease` 或等价运行时占用机制�
 
 ### 3.4 Transfer Runtime
 
-`TransferManager` / `ITransferTaskScheduler` 是应用级运行时服务。
+`TransferRuntimeController` / `ITransferTaskScheduler` 是应用级运行时服务，由 `AtomBoxTransferModule` 随 City Host 启停。
 
 Transfer Runtime 拥有任务队列、并发调度、取消、重试、进度聚合和任务状态更新。`Paused` / `Interrupted` 状态用于关闭、中断和后续恢复设计，第一版不承诺对外暂停/恢复调度能力。`TransferQueue` 是 Transfer Runtime 的内部状态，不直接暴露给 UI 或 Application。
 
-`TransferWorker` 是单个执行批次生命周期对象，由 Transfer Runtime 创建和释放。`TransferProgressReporter`、`TransferSpeedMeter` 等对象属于任务执行期，输出进度快照，不作为应用级单例。
+`TransferOperationExecutor` 是单任务执行期对象，由 Transfer Runtime 创建和释放。进度汇聚器、`TransferSpeedMeter` 等对象属于执行租约，不作为应用级单例。
 
 一个 Transfer 执行批次可以包含一个任务，也可以包含同账号、同方向、同目标、同策略的一组可合并任务。批次内部可以复用 provider 或 provider session；批次之间第一版不共享 provider 实例。
 
@@ -202,7 +202,7 @@ Program.Main
   -> City Build（创建唯一 Root Provider）
   -> City StartAsync
      -> 初始化 / 校验 Infrastructure
-     -> 初始化 Transfer Runtime
+     -> AtomBoxTransferModule 在 Post 初始化阶段启动 Transfer Runtime
   -> Avalonia UI 主循环
      -> Presentation runtime attach
      -> 注册主窗口 session

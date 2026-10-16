@@ -1,4 +1,8 @@
-﻿# Phase 12 Transfer 测试矩阵
+﻿# Phase 12 Transfer 测试矩阵（历史基线）
+
+> 本文记录 2026-06 第一版同步调度器的历史测试基线，不再作为当前 Transfer Runtime 重构的验收标准。
+>
+> 自 2026-10-16 起，新的权威验收基线为 [`phase-12-transfer-runtime-testing.md`](phase-12-transfer-runtime-testing.md)。凡本文涉及 7 状态模型、同步式 `WakeAsync`、`TransferRuntimeInitializer` 或“启动恢复后置”的内容，均已被新基线取代。
 
 > 文档状态： 第一版发布基线冻结
 >

@@ -19,6 +19,8 @@ public sealed class StatusBarViewModel : ViewModelBase
     private double _uploadSpeed;
     private double _downloadSpeed;
     private int _errorCount;
+    private TransferQueueState _queueState = TransferQueueState.Uninitialized;
+    private TransferRuntimeSnapshot _runtimeState = TransferRuntimeSnapshot.Initial;
 
     public StatusBarViewModel(
         IAtomBoxTransferState transferState,
@@ -80,32 +82,51 @@ public sealed class StatusBarViewModel : ViewModelBase
         context.Scope.Add(_transferState.Queue.Observe(
             args => ApplyQueue(args.NewValue),
             StateSubscriptionOptions.Dispatcher(_dispatcher)));
+        context.Scope.Add(_transferState.Runtime.Observe(
+            args =>
+            {
+                _runtimeState = args.NewValue;
+                UpdateStateKey();
+            },
+            StateSubscriptionOptions.Dispatcher(_dispatcher)));
         return ValueTask.CompletedTask;
     }
 
     private void ApplyQueue(TransferQueueState state)
     {
-        if (state.Status != TransferProjectionStatus.Ready)
+        _queueState = state;
+        if (state.Status != TransferProjectionStatus.Ready && !state.IsStale)
         {
             ActiveTransferCount = 0;
             RunningTransfers = 0;
             ErrorCount = 0;
             _uploadSpeed = 0;
             _downloadSpeed = 0;
-            _stateKey = state.Status == TransferProjectionStatus.Faulted
-                ? "TransferStatusReadFailed"
-                : "Ready";
+            UpdateStateKey();
             RaiseStatusTextChanged();
             return;
         }
 
         var tasks = state.Tasks;
         ActiveTransferCount = tasks.Count;
-        RunningTransfers = tasks.Count(item => item.Task.Status == TransferStatus.Running);
+        RunningTransfers = tasks.Count(item => item.Task.Status is TransferStatus.Running or TransferStatus.Canceling);
         ErrorCount = tasks.Count(item => item.Task.Status is TransferStatus.Failed or TransferStatus.Interrupted);
         _uploadSpeed = SumSpeed(tasks, TransferDirection.Upload);
         _downloadSpeed = SumSpeed(tasks, TransferDirection.Download);
-        _stateKey = RunningTransfers > 0 ? "Transferring" : "Ready";
+        UpdateStateKey();
+    }
+
+    private void UpdateStateKey()
+    {
+        _stateKey = _runtimeState.Health switch
+        {
+            TransferRuntimeHealthState.Faulted => "TransferRuntimeFaulted",
+            TransferRuntimeHealthState.Degraded => "TransferRuntimeDegraded",
+            _ when _queueState.Status == TransferProjectionStatus.Faulted => "TransferStatusReadFailed",
+            _ when _runtimeState.Lifecycle == TransferRuntimeLifecycleState.Starting => "TransferRuntimeStarting",
+            _ when _runtimeState.Lifecycle == TransferRuntimeLifecycleState.Stopping => "TransferRuntimeStopping",
+            _ => RunningTransfers > 0 ? "Transferring" : "Ready",
+        };
         RaiseStatusTextChanged();
     }
 
@@ -119,7 +140,8 @@ public sealed class StatusBarViewModel : ViewModelBase
     private static double SumSpeed(IEnumerable<TransferStateSnapshot> tasks, TransferDirection direction)
     {
         return tasks
-            .Where(item => item.Task.Direction == direction && item.Task.Status == TransferStatus.Running)
+            .Where(item => item.Task.Direction == direction &&
+                           item.Task.Status is TransferStatus.Running or TransferStatus.Canceling)
             .Sum(item => item.Progress?.SpeedBytesPerSecond ?? 0);
     }
 

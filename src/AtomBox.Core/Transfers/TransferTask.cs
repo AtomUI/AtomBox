@@ -21,7 +21,8 @@ public sealed record TransferTask
         string? FingerprintHashAlgorithm = null,
         string? FingerprintHashValue = null,
         long? FingerprintFileSize = null,
-        DateTimeOffset? FingerprintCalculatedAt = null)
+        DateTimeOffset? FingerprintCalculatedAt = null,
+        long Revision = 0)
     {
         ArgumentNullException.ThrowIfNull(Options);
 
@@ -43,6 +44,11 @@ public sealed record TransferTask
         if (UpdatedAt < CreatedAt)
         {
             throw new ArgumentException("Updated time cannot be earlier than created time.", nameof(UpdatedAt));
+        }
+
+        if (Revision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(Revision), "Transfer task revision cannot be negative.");
         }
 
         ValidateFingerprintMetadata(
@@ -70,6 +76,7 @@ public sealed record TransferTask
             : FingerprintHashValue.Trim().ToLowerInvariant();
         this.FingerprintFileSize = FingerprintFileSize;
         this.FingerprintCalculatedAt = FingerprintCalculatedAt;
+        this.Revision = Revision;
     }
 
     public TransferTaskId Id { get; }
@@ -104,6 +111,8 @@ public sealed record TransferTask
 
     public DateTimeOffset? FingerprintCalculatedAt { get; }
 
+    public long Revision { get; }
+
     public bool HasCompleteFingerprintMetadata =>
         !string.IsNullOrWhiteSpace(FingerprintHashAlgorithm) &&
         !string.IsNullOrWhiteSpace(FingerprintHashValue) &&
@@ -132,7 +141,8 @@ public sealed record TransferTask
             FingerprintHashAlgorithm,
             FingerprintHashValue,
             FingerprintFileSize,
-            FingerprintCalculatedAt);
+            FingerprintCalculatedAt,
+            checked(Revision + 1));
     }
 
     public TransferTask WithLocalPath(LocalPath localPath, DateTimeOffset updatedAt)
@@ -153,7 +163,8 @@ public sealed record TransferTask
             FingerprintHashAlgorithm,
             FingerprintHashValue,
             FingerprintFileSize,
-            FingerprintCalculatedAt);
+            FingerprintCalculatedAt,
+            checked(Revision + 1));
     }
 
     public TransferTask WithFingerprintMetadata(
@@ -178,12 +189,13 @@ public sealed record TransferTask
             hashAlgorithm,
             hashValue,
             fileSize,
-            calculatedAt);
+            calculatedAt,
+            checked(Revision + 1));
     }
 
     public bool CanCancel()
     {
-        return Status is TransferStatus.Pending or TransferStatus.Running;
+        return Status is TransferStatus.Pending or TransferStatus.Running or TransferStatus.Canceling;
     }
 
     public bool CanRetry()

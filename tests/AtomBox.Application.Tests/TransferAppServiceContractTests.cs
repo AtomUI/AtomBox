@@ -95,7 +95,6 @@ public sealed class TransferAppServiceContractTests
         Assert.Equal(TransferDirection.Upload, tasks[0].Direction);
         Assert.Equal(TransferStatus.Pending, tasks[0].Status);
         Assert.Equal(1, scheduler.SubmitCalls);
-        Assert.Equal(1, scheduler.WakeCalls);
     }
 
     [Fact]
@@ -120,22 +119,6 @@ public sealed class TransferAppServiceContractTests
     public async Task CreateUploadAsync_SchedulerSubmitFailure_PropagatesError()
     {
         var scheduler = new FailOnSubmitScheduler();
-        var service = new TransferAppService(
-            scheduler, new EmptyStateStore(), new EmptyTaskStore());
-
-        var result = await service.CreateUploadTasksAsync(new CreateUploadTasksRequest(
-            StorageAccountId.New(),
-            [new LocalPath(@"C:\test.txt")],
-            RemotePath.Root,
-            TransferOverwritePolicy.Ask));
-
-        Assert.True(result.IsFailure);
-    }
-
-    [Fact]
-    public async Task CreateUploadAsync_SchedulerWakeFailure_PropagatesError()
-    {
-        var scheduler = new FailOnWakeScheduler();
         var service = new TransferAppService(
             scheduler, new EmptyStateStore(), new EmptyTaskStore());
 
@@ -326,7 +309,6 @@ public sealed class TransferAppServiceContractTests
         Assert.Single(result.GetValueOrThrow().Tasks);
         Assert.Equal(TransferDirection.Download, result.GetValueOrThrow().Tasks[0].Direction);
         Assert.Equal(1, scheduler.SubmitCalls);
-        Assert.Equal(1, scheduler.WakeCalls);
     }
 
     [Fact]
@@ -364,7 +346,6 @@ public sealed class TransferAppServiceContractTests
                 Assert.Equal(secondLocalPath, task.LocalPath);
             });
         Assert.Equal(2, scheduler.SubmitCalls);
-        Assert.Equal(1, scheduler.WakeCalls);
     }
 
     [Fact]
@@ -528,7 +509,6 @@ public sealed class TransferAppServiceContractTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal(1, scheduler.RetryCalls);
-        Assert.Equal(1, scheduler.WakeCalls);
     }
 
     [Fact]
@@ -541,20 +521,6 @@ public sealed class TransferAppServiceContractTests
         var result = await service.RetryAsync(new RetryTransferTaskRequest(TransferTaskId.New()));
 
         Assert.True(result.IsFailure);
-        Assert.Equal(0, scheduler.WakeCalls);
-    }
-
-    [Fact]
-    public async Task RetryAsync_SchedulerWakeFailure_PropagatesError()
-    {
-        var scheduler = new FailOnWakeScheduler();
-        var service = new TransferAppService(
-            scheduler, new EmptyStateStore(), new EmptyTaskStore());
-
-        var result = await service.RetryAsync(new RetryTransferTaskRequest(TransferTaskId.New()));
-
-        Assert.True(result.IsFailure);
-        Assert.Equal(1, scheduler.RetryCalls);
     }
 
     [Fact]
@@ -635,7 +601,6 @@ public sealed class TransferAppServiceContractTests
         public int SubmitCalls { get; set; }
         public int CancelCalls { get; set; }
         public int RetryCalls { get; set; }
-        public int WakeCalls { get; set; }
         public List<TransferTask> SubmittedTasks { get; } = [];
 
         public Task<OperationResult> SubmitAsync(TransferTask task, CancellationToken cancellationToken = default)
@@ -657,11 +622,6 @@ public sealed class TransferAppServiceContractTests
             return Task.FromResult(OperationResult.Success());
         }
 
-        public Task<OperationResult> WakeAsync(CancellationToken cancellationToken = default)
-        {
-            WakeCalls++;
-            return Task.FromResult(OperationResult.Success());
-        }
     }
 
     private sealed class FixedSettingsRepository : IApplicationSettingsRepository
@@ -761,7 +721,6 @@ public sealed class TransferAppServiceContractTests
 
     private sealed class FailOnSubmitScheduler : ITransferTaskScheduler
     {
-        public int WakeCalls { get; private set; }
 
         public Task<OperationResult> SubmitAsync(TransferTask task, CancellationToken cancellationToken = default)
             => Task.FromResult(OperationResult.Failure(
@@ -773,36 +732,6 @@ public sealed class TransferAppServiceContractTests
         public Task<OperationResult> RetryAsync(TransferTaskId taskId, CancellationToken cancellationToken = default)
             => Task.FromResult(OperationResult.Success());
 
-        public Task<OperationResult> WakeAsync(CancellationToken cancellationToken = default)
-        {
-            WakeCalls++;
-            return Task.FromResult(OperationResult.Success());
-        }
-    }
-
-    private sealed class FailOnWakeScheduler : ITransferTaskScheduler
-    {
-        public int SubmitCalls { get; private set; }
-        public int RetryCalls { get; private set; }
-
-        public Task<OperationResult> SubmitAsync(TransferTask task, CancellationToken cancellationToken = default)
-        {
-            SubmitCalls++;
-            return Task.FromResult(OperationResult.Success());
-        }
-
-        public Task<OperationResult> CancelAsync(TransferTaskId taskId, CancellationToken cancellationToken = default)
-            => Task.FromResult(OperationResult.Success());
-
-        public Task<OperationResult> RetryAsync(TransferTaskId taskId, CancellationToken cancellationToken = default)
-        {
-            RetryCalls++;
-            return Task.FromResult(OperationResult.Success());
-        }
-
-        public Task<OperationResult> WakeAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(OperationResult.Failure(
-                new StorageError(StorageErrorCode.Unknown, "wake failed", StorageErrorCategory.Unknown)));
     }
 
     private sealed class FailOnCancelScheduler : ITransferTaskScheduler
@@ -817,13 +746,10 @@ public sealed class TransferAppServiceContractTests
         public Task<OperationResult> RetryAsync(TransferTaskId taskId, CancellationToken cancellationToken = default)
             => Task.FromResult(OperationResult.Success());
 
-        public Task<OperationResult> WakeAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(OperationResult.Success());
     }
 
     private sealed class FailOnRetryScheduler : ITransferTaskScheduler
     {
-        public int WakeCalls { get; private set; }
 
         public Task<OperationResult> SubmitAsync(TransferTask task, CancellationToken cancellationToken = default)
             => Task.FromResult(OperationResult.Success());
@@ -835,11 +761,6 @@ public sealed class TransferAppServiceContractTests
             => Task.FromResult(OperationResult.Failure(
                 new StorageError(StorageErrorCode.Unknown, "retry failed", StorageErrorCategory.Unknown)));
 
-        public Task<OperationResult> WakeAsync(CancellationToken cancellationToken = default)
-        {
-            WakeCalls++;
-            return Task.FromResult(OperationResult.Success());
-        }
     }
 
     private sealed class EmptyStateStore : ITransferStateStore

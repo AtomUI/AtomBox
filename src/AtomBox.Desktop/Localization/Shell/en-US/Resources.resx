@@ -22,6 +22,10 @@
   <data name="Ready" xml:space="preserve"><value>Ready</value></data>
   <data name="Transferring" xml:space="preserve"><value>Transferring</value></data>
   <data name="TransferStatusReadFailed" xml:space="preserve"><value>Failed to read transfer status</value></data>
+  <data name="TransferRuntimeStarting" xml:space="preserve"><value>Transfer service starting</value></data>
+  <data name="TransferRuntimeStopping" xml:space="preserve"><value>Transfer service stopping</value></data>
+  <data name="TransferRuntimeDegraded" xml:space="preserve"><value>Transfer service degraded</value></data>
+  <data name="TransferRuntimeFaulted" xml:space="preserve"><value>Transfer service failed</value></data>
   <data name="UploadSpeed" xml:space="preserve"><value>Upload {0}</value></data>
   <data name="DownloadSpeed" xml:space="preserve"><value>Download {0}</value></data>
   <data name="NoObjectStorageAccounts" xml:space="preserve"><value>No object storage accounts</value></data>

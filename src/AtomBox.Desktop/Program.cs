@@ -3,6 +3,7 @@ using AtomBox.Desktop.Composition;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Services;
 using AtomBox.Infrastructure.Configuration;
+using AtomBox.Transfer;
 using AtomUI;
 using AtomUI.City.Core.Hosting;
 using AtomUI.City.Core.Modularity;
@@ -83,6 +84,7 @@ internal static class Program
         builder
             .UseModule<PresentationModule>()
             .UseModule<RoutingModule>()
+            .UseModule<AtomBoxTransferModule>()
             .UseModule<AtomBoxDesktopModule>();
 
         return builder.Build();
@@ -90,6 +92,14 @@ internal static class Program
 
     private static int Run(string[] args)
     {
+        if (!DesktopSingleInstanceLease.TryAcquire(out var instanceLease))
+        {
+            System.Diagnostics.Debug.WriteLine(
+                "AtomBox is already running; the second process will exit without starting a Host.");
+            return 0;
+        }
+
+        using var acquiredInstanceLease = instanceLease!;
         using var host = CreateHost(args);
         Exception? startupFailure = null;
         try

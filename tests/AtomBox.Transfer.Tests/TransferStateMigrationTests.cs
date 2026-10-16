@@ -2,7 +2,6 @@ using AtomBox.Core.Errors;
 using AtomBox.Core.Results;
 using AtomBox.Core.Settings;
 using AtomBox.Core.Transfers;
-using AtomBox.Transfer.Queue;
 using AtomBox.Transfer.Scheduling;
 using AtomBox.Transfer.State;
 using AtomBox.Transfer.Workers;
@@ -123,36 +122,13 @@ public sealed class TransferStateMigrationTests
         var store = new FailingTransferStore(error);
         var (state, projector) = CreateState(store);
         projector.PublishReady([]);
-        var scheduler = new TransferTaskScheduler(
-            store,
-            new TransferQueue(),
-            () => throw new InvalidOperationException("Worker is not expected."),
-            new TransferCancellationRegistry(),
-            new FixedSettingsRepository(),
-            projector);
+        var projectingStore = new ProjectingTransferStateStore(store, projector);
+        var task = TransferTaskFactory.Create(TransferStatus.Pending);
 
-        var result = await scheduler.SubmitAsync(TransferTaskFactory.Create(TransferStatus.Pending));
+        var result = await projectingStore.UpdateStatusAsync(task, progress: null);
 
         Assert.True(result.IsFailure);
         Assert.Empty(state.Queue.Value.Tasks);
-        Assert.Equal(TransferProjectionStatus.Ready, state.Queue.Value.Status);
-    }
-
-    [Fact]
-    public async Task InitializerRepairsRunningTasksBeforePublishingQueue()
-    {
-        var store = new MemoryTransferStore();
-        var running = TransferTaskFactory.Create(TransferStatus.Running);
-        await store.SaveAsync(running);
-        var (state, projector) = CreateState(store);
-        var initializer = new TransferRuntimeInitializer(store, projector);
-
-        var result = await initializer.InitializeAsync();
-
-        Assert.True(result.IsSuccess);
-        var snapshot = Assert.Single(state.Queue.Value.Tasks);
-        Assert.Equal(running.Id, snapshot.Task.Id);
-        Assert.Equal(TransferStatus.Interrupted, snapshot.Task.Status);
         Assert.Equal(TransferProjectionStatus.Ready, state.Queue.Value.Status);
     }
 
@@ -162,23 +138,6 @@ public sealed class TransferStateMigrationTests
         var registry = new ApplicationStateRegistry();
         var state = new AtomBoxTransferState(registry, registry, registry);
         return (state, new TransferStateProjector(state, store));
-    }
-
-    private sealed class FixedSettingsRepository : IApplicationSettingsRepository
-    {
-        public Task<OperationResult<ApplicationSettings>> GetAsync(
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(OperationResult<ApplicationSettings>.Success(
-                new ApplicationSettings(1, TransferOverwritePolicy.Ask, true)));
-        }
-
-        public Task<OperationResult> SaveAsync(
-            ApplicationSettings settings,
-            CancellationToken cancellationToken = default)
-        {
-            return Task.FromResult(OperationResult.Success());
-        }
     }
 
     private sealed class FailingTransferStore : ITransferTaskStore, ITransferStateStore

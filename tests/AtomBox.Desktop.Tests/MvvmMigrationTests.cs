@@ -4,6 +4,7 @@ using AtomBox.Application.Accounts;
 using AtomBox.Application.State;
 using AtomBox.Application.Transfers;
 using AtomBox.Core.Accounts;
+using AtomBox.Core.Errors;
 using AtomBox.Core.Results;
 using AtomBox.Core.Settings;
 using AtomBox.Core.Transfers;
@@ -16,6 +17,7 @@ using AtomBox.Desktop.Shell;
 using AtomBox.Desktop.ViewModels.Pages;
 using AtomBox.Infrastructure.Configuration;
 using AtomBox.Providers.Common;
+using AtomBox.Transfer;
 using AtomBox.Transfer.Scheduling;
 using AtomUI.City.Mvvm;
 using AtomUI.City.Presentation;
@@ -67,12 +69,13 @@ public sealed class MvvmMigrationTests
             reference => reference.Name?.StartsWith("AtomUI.City", StringComparison.Ordinal) == true &&
                          reference.Name != "AtomUI.City.State");
 
-        var transferReferences = typeof(TransferRuntimeInitializer).Assembly.GetReferencedAssemblies();
+        var transferReferences = typeof(AtomBoxTransferModule).Assembly.GetReferencedAssemblies();
         Assert.Contains(transferReferences, reference => reference.Name == "AtomUI.City.State");
+        Assert.Contains(transferReferences, reference => reference.Name == "AtomUI.City.Core");
         Assert.DoesNotContain(
             transferReferences,
             reference => reference.Name?.StartsWith("AtomUI.City", StringComparison.Ordinal) == true &&
-                         reference.Name != "AtomUI.City.State");
+                         reference.Name is not ("AtomUI.City.State" or "AtomUI.City.Core"));
 
         var cityIndependentAssemblies = new[]
         {
@@ -182,12 +185,16 @@ public sealed class MvvmMigrationTests
 
         Assert.True(submitResult.IsSuccess);
         Assert.Equal(1, statusBar.ActiveTransferCount);
-        Assert.Equal(0, statusBar.RunningTransfers);
+        Assert.InRange(statusBar.RunningTransfers, 0, 1);
 
         var cancelResult = await scheduler.CancelAsync(task.Id);
-        await WaitUntilAsync(() => queue.Tasks.All(item => item.TaskId != task.Id));
+        await WaitUntilAsync(() =>
+            queue.Tasks.All(item => item.TaskId != task.Id) &&
+            statusBar.ActiveTransferCount == 0);
 
-        Assert.True(cancelResult.IsSuccess);
+        Assert.True(
+            cancelResult.IsSuccess || cancelResult.Error?.Category == StorageErrorCategory.Conflict,
+            "The task must either accept cancellation or have already crossed a terminal state boundary.");
         Assert.Equal(0, statusBar.ActiveTransferCount);
 
         await queue.DisposeAsync();
@@ -319,9 +326,21 @@ public sealed class MvvmMigrationTests
         public async ValueTask DisposeAsync()
         {
             await _host.DisposeAsync();
-            if (Directory.Exists(_root))
+            for (var attempt = 0; attempt < 20; attempt++)
             {
-                Directory.Delete(_root, recursive: true);
+                try
+                {
+                    if (Directory.Exists(_root))
+                    {
+                        Directory.Delete(_root, recursive: true);
+                    }
+
+                    return;
+                }
+                catch (IOException) when (attempt < 19)
+                {
+                    await Task.Delay(25);
+                }
             }
         }
     }

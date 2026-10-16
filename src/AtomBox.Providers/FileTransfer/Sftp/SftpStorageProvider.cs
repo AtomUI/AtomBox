@@ -30,6 +30,13 @@ public sealed class SftpStorageProvider : IStorageProvider, IRemoteHomePathProvi
 
     public StorageCapabilitySet Capabilities { get; }
 
+    public TransferExecutionCapabilities TransferCapabilities { get; } = new(
+        TransferIoExecutionKind.Blocking,
+        TransferIoExecutionKind.Blocking,
+        supportsCooperativeCancellation: false,
+        supportsActiveAbort: false,
+        supportsProgress: true);
+
     public string? HomePath
     {
         get

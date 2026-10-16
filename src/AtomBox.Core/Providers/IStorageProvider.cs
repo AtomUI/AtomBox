@@ -11,6 +11,8 @@ public interface IStorageProvider : IAsyncDisposable
 {
     StorageCapabilitySet Capabilities { get; }
 
+    TransferExecutionCapabilities TransferCapabilities => TransferExecutionCapabilities.Conservative;
+
     Task<OperationResult<IReadOnlyList<RemoteItem>>> ListAsync(
         RemotePath path,
         CancellationToken cancellationToken = default);
@@ -113,4 +115,10 @@ public interface IStorageProvider : IAsyncDisposable
         Stream destination,
         IProgress<TransferProgress>? progress = null,
         CancellationToken cancellationToken = default);
+
+    ValueTask<OperationResult> TryAbortTransferAsync(CancellationToken cancellationToken = default)
+    {
+        return ValueTask.FromResult(OperationResult.Failure(
+            StorageError.NotSupported("Active transfer abort is not supported by this provider.")));
+    }
 }

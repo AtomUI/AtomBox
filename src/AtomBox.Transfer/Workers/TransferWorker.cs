@@ -4,30 +4,26 @@ using AtomBox.Core.Providers;
 using AtomBox.Core.Results;
 using AtomBox.Core.Transfers;
 using AtomBox.Transfer.Progress;
-using AtomBox.Transfer.Scheduling;
 
 namespace AtomBox.Transfer.Workers;
 
-public sealed class TransferWorker
+internal sealed class TransferWorker
 {
     private readonly IStorageAccountRepository _accounts;
     private readonly IStorageProviderFactory _providerFactory;
     private readonly ILocalTransferFileStore _localFiles;
     private readonly ITransferStateStore _stateStore;
-    private readonly ITransferCancellationState _cancellationState;
 
     public TransferWorker(
         IStorageAccountRepository accounts,
         IStorageProviderFactory providerFactory,
         ILocalTransferFileStore localFiles,
-        ITransferStateStore stateStore,
-        ITransferCancellationState? cancellationState = null)
+        ITransferStateStore stateStore)
     {
         _accounts = accounts;
         _providerFactory = providerFactory;
         _localFiles = localFiles;
         _stateStore = stateStore;
-        _cancellationState = cancellationState ?? NoTransferCancellationState.Instance;
     }
 
     public async Task<OperationResult> ExecuteAsync(
@@ -50,7 +46,7 @@ public sealed class TransferWorker
 
         if (cancellationToken.IsCancellationRequested)
         {
-            return await MarkCanceledOrInterruptedAsync(
+            return await MarkInterruptedAsync(
                 running,
                 progress: null,
                 "传输任务在启动后被中断。",
@@ -65,7 +61,7 @@ public sealed class TransferWorker
         }
         catch (OperationCanceledException)
         {
-            return await MarkCanceledOrInterruptedAsync(
+            return await MarkInterruptedAsync(
                 progress.CurrentTask,
                 progress.Latest,
                 "传输任务被应用关闭或取消令牌中断，远端最终状态未知。",
@@ -74,7 +70,7 @@ public sealed class TransferWorker
 
         if (cancellationToken.IsCancellationRequested)
         {
-            return await MarkCanceledOrInterruptedAsync(
+            return await MarkInterruptedAsync(
                 progress.CurrentTask,
                 progress.Latest,
                 "传输任务在执行完成前被中断。",
@@ -83,11 +79,6 @@ public sealed class TransferWorker
 
         if (executeResult.IsFailure)
         {
-            if (_cancellationState.IsUserCancellationRequested(progress.CurrentTask.Id))
-            {
-                return await MarkCanceledAsync(progress.CurrentTask, progress.Latest, CancellationToken.None).ConfigureAwait(false);
-            }
-
             var failed = progress.CurrentTask.WithStatus(
                 TransferStatus.Failed,
                 DateTimeOffset.UtcNow,
@@ -107,30 +98,6 @@ public sealed class TransferWorker
             completed,
             progress.Latest ?? new TransferProgress(1, 1, null),
             cancellationToken).ConfigureAwait(false);
-    }
-
-    private Task<OperationResult> MarkCanceledOrInterruptedAsync(
-        TransferTask running,
-        TransferProgress? progress,
-        string reason,
-        CancellationToken cancellationToken)
-    {
-        return _cancellationState.IsUserCancellationRequested(running.Id)
-            ? MarkCanceledAsync(running, progress, cancellationToken)
-            : MarkInterruptedAsync(running, progress, reason, cancellationToken);
-    }
-
-    private Task<OperationResult> MarkCanceledAsync(
-        TransferTask running,
-        TransferProgress? progress,
-        CancellationToken cancellationToken)
-    {
-        var canceled = running.WithStatus(
-            TransferStatus.Canceled,
-            DateTimeOffset.UtcNow,
-            "用户取消了传输任务。");
-
-        return _stateStore.UpdateStatusAsync(canceled, progress, cancellationToken);
     }
 
     private Task<OperationResult> MarkInterruptedAsync(
@@ -262,27 +229,6 @@ public sealed class TransferWorker
         public void Report(TransferProgress value)
         {
             Latest = _speedMeter.Apply(value);
-            PersistLatestIfNeeded();
-        }
-
-        private void PersistLatestIfNeeded()
-        {
-            if (Latest is null || _cancellationToken.IsCancellationRequested)
-            {
-                return;
-            }
-
-            var now = DateTimeOffset.UtcNow;
-            var isFinal = Latest.TotalBytes is not null && Latest.BytesTransferred >= Latest.TotalBytes.Value;
-            if (!isFinal && (now - _lastPersistedAt) < TimeSpan.FromMilliseconds(250))
-            {
-                return;
-            }
-
-            _lastPersistedAt = now;
-            _stateStore.UpdateStatusAsync(_runningTask, Latest, _cancellationToken)
-                .GetAwaiter()
-                .GetResult();
         }
     }
 }

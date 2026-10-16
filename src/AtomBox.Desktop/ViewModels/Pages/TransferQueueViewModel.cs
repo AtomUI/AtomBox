@@ -27,6 +27,8 @@ public sealed class TransferQueueViewModel : ViewModelBase
     private static readonly HashSet<TransferTaskId> CompletionNotificationsShown = [];
     private LocalizedText _statusMessage = new("Transfer", "LoadingQueue");
     private IReadOnlyList<TransferStateSnapshot> _currentSnapshots = [];
+    private TransferQueueState _queueState = TransferQueueState.Uninitialized;
+    private TransferRuntimeSnapshot _runtimeState = TransferRuntimeSnapshot.Initial;
     private bool _isLoading;
     private TransferTaskRowViewModel? _selectedTask;
 
@@ -136,6 +138,13 @@ public sealed class TransferQueueViewModel : ViewModelBase
                 }
             },
             StateSubscriptionOptions.Dispatcher(_dispatcher)));
+        context.Scope.Add(_transferState.Runtime.Observe(
+            args =>
+            {
+                _runtimeState = args.NewValue;
+                ApplyQueue(_queueState);
+            },
+            StateSubscriptionOptions.Dispatcher(_dispatcher)));
         return ValueTask.CompletedTask;
     }
 
@@ -149,8 +158,9 @@ public sealed class TransferQueueViewModel : ViewModelBase
 
     private void ApplyQueue(TransferQueueState state)
     {
+        _queueState = state;
         Tasks.Clear();
-        if (state.Status != TransferProjectionStatus.Ready)
+        if (state.Status != TransferProjectionStatus.Ready && !state.IsStale)
         {
             _currentSnapshots = [];
             IsLoading = false;
@@ -171,9 +181,15 @@ public sealed class TransferQueueViewModel : ViewModelBase
                 _localization));
         }
 
-        SetStatus(Tasks.Count == 0
-            ? new("Transfer", "NoQueueTasksLong")
-            : new("Transfer", "QueueCount", Tasks.Count));
+        SetStatus(state.Status == TransferProjectionStatus.Faulted
+            ? new("Transfer", "QueueStale")
+            : _runtimeState.Health == TransferRuntimeHealthState.Faulted
+                ? new("Transfer", "RuntimeFaulted")
+                : _runtimeState.Health == TransferRuntimeHealthState.Degraded
+                    ? new("Transfer", "RuntimeDegraded")
+                    : Tasks.Count == 0
+                        ? new("Transfer", "NoQueueTasksLong")
+                        : new("Transfer", "QueueCount", Tasks.Count));
         IsLoading = false;
         RaiseTaskCollectionStateChanged();
     }
@@ -193,7 +209,7 @@ public sealed class TransferQueueViewModel : ViewModelBase
             .ToHashSet();
         var completedCandidates = previousSnapshots
             .Select(snapshot => snapshot.Task)
-            .Where(task => task.Status is TransferStatus.Pending or TransferStatus.Running &&
+            .Where(task => task.Status is TransferStatus.Pending or TransferStatus.Running or TransferStatus.Canceling &&
                            !currentTaskIds.Contains(task.Id) &&
                            !IsCompletionNotificationShown(task.Id))
             .ToArray();
@@ -466,6 +482,7 @@ public sealed record TransferTaskRowViewModel(
             TransferStatus.Pending => localization.GetString("Transfer", "Pending"),
             TransferStatus.Running when progress?.Percent is { } percent => $"{percent:0}%",
             TransferStatus.Running => localization.GetString("Transfer", "Running"),
+            TransferStatus.Canceling => localization.GetString("Transfer", "Canceling"),
             TransferStatus.Paused when progress?.Percent is { } percent => localization.Format("Transfer", "PausedPercent", percent),
             TransferStatus.Paused => localization.GetString("Transfer", "Paused"),
             TransferStatus.Interrupted => localization.GetString("Transfer", "Interrupted"),
@@ -507,6 +524,7 @@ public sealed record TransferTaskRowViewModel(
         {
             TransferStatus.Pending => localization.GetString("Common", "Cancel"),
             TransferStatus.Running => localization.GetString("Common", "Cancel"),
+            TransferStatus.Canceling => "-",
             TransferStatus.Paused => "-",
             TransferStatus.Interrupted => localization.GetString("Common", "Retry"),
             TransferStatus.Succeeded => "-",

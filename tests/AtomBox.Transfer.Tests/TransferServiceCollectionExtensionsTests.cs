@@ -4,41 +4,16 @@ using AtomBox.Core.Results;
 using AtomBox.Core.Settings;
 using AtomBox.Core.Transfers;
 using AtomBox.Transfer.DependencyInjection;
-using AtomBox.Transfer.Queue;
 using AtomBox.Transfer.Scheduling;
 using AtomBox.Transfer.State;
 using AtomBox.Transfer.Workers;
+using AtomUI.City.Core.Diagnostics;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace AtomBox.Transfer.Tests;
 
 public sealed class TransferServiceCollectionExtensionsTests
 {
-    [Fact]
-    public void AddAtomBoxTransfer_Registers_TransferQueue()
-    {
-        var services = new ServiceCollection();
-        services.AddAtomBoxTransfer();
-        Assert.Single(services, s => s.ServiceType == typeof(TransferQueue));
-    }
-
-    [Fact]
-    public void AddAtomBoxTransfer_Registers_TransferWorker()
-    {
-        var services = new ServiceCollection();
-        services.AddAtomBoxTransfer();
-        Assert.Single(services, s => s.ServiceType == typeof(TransferWorker));
-    }
-
-    [Fact]
-    public void AddAtomBoxTransfer_Registers_FuncTransferWorkerFactory()
-    {
-        var services = new ServiceCollection();
-        services.AddAtomBoxTransfer();
-        var descriptor = Assert.Single(services, s => s.ServiceType == typeof(Func<TransferWorker>));
-        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
-    }
-
     [Fact]
     public void AddAtomBoxTransfer_Registers_ITransferTaskScheduler()
     {
@@ -48,11 +23,12 @@ public sealed class TransferServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void AddAtomBoxTransfer_Registers_TransferRuntimeInitializer()
+    public void AddAtomBoxTransfer_Registers_TransferRuntimeController()
     {
         var services = new ServiceCollection();
         services.AddAtomBoxTransfer();
-        Assert.Single(services, s => s.ServiceType == typeof(TransferRuntimeInitializer));
+        Assert.Single(services, s => s.ServiceType == typeof(TransferRuntimeController));
+        Assert.Single(services, s => s.ServiceType == typeof(ITransferRuntimeDiagnostics));
     }
 
     [Fact]
@@ -63,26 +39,6 @@ public sealed class TransferServiceCollectionExtensionsTests
 
         Assert.Single(services, service => service.ServiceType == typeof(IAtomBoxTransferState));
         Assert.Single(services, service => service.ServiceType == typeof(ITransferStateSynchronizer));
-    }
-
-    [Fact]
-    public void FuncTransferWorker_CreatesNewInstanceEachTime()
-    {
-        var services = new ServiceCollection();
-        services.AddSingleton<IStorageAccountRepository>(_ => new AnyAccountRepository());
-        services.AddSingleton<IStorageProviderFactory>(_ => new FakeProviderFactory());
-        services.AddSingleton<ILocalTransferFileStore>(_ => new MemoryLocalTransferFileStore());
-        services.AddSingleton<ITransferStateStore>(_ => new MemoryTransferStore());
-        services.AddAtomBoxTransfer();
-        var provider = services.BuildServiceProvider();
-
-        var factory = provider.GetRequiredService<Func<TransferWorker>>();
-        var worker1 = factory();
-        var worker2 = factory();
-
-        Assert.NotNull(worker1);
-        Assert.NotNull(worker2);
-        Assert.NotSame(worker1, worker2);
     }
 
     [Fact]
@@ -101,7 +57,7 @@ public sealed class TransferServiceCollectionExtensionsTests
         var scheduler = provider.GetRequiredService<ITransferTaskScheduler>();
 
         Assert.NotNull(scheduler);
-        Assert.IsType<TransferTaskScheduler>(scheduler);
+        Assert.IsType<TransferRuntimeController>(scheduler);
     }
 
     [Fact]
@@ -109,24 +65,6 @@ public sealed class TransferServiceCollectionExtensionsTests
     {
         Assert.Throws<ArgumentNullException>(() =>
             TransferServiceCollectionExtensions.AddAtomBoxTransfer(null!));
-    }
-
-    [Fact]
-    public void TransferQueue_IsSingleton()
-    {
-        var services = new ServiceCollection();
-        services.AddAtomBoxTransfer();
-        var descriptor = services.Single(s => s.ServiceType == typeof(TransferQueue));
-        Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
-    }
-
-    [Fact]
-    public void TransferWorker_IsTransient()
-    {
-        var services = new ServiceCollection();
-        services.AddAtomBoxTransfer();
-        var descriptor = services.Single(s => s.ServiceType == typeof(TransferWorker));
-        Assert.Equal(ServiceLifetime.Transient, descriptor.Lifetime);
     }
 
     [Fact]
@@ -139,12 +77,38 @@ public sealed class TransferServiceCollectionExtensionsTests
     }
 
     [Fact]
-    public void TransferRuntimeInitializer_IsSingleton()
+    public void TransferRuntimeController_IsSingleton()
     {
         var services = new ServiceCollection();
         services.AddAtomBoxTransfer();
-        var descriptor = services.Single(s => s.ServiceType == typeof(TransferRuntimeInitializer));
+        var descriptor = services.Single(s => s.ServiceType == typeof(TransferRuntimeController));
         Assert.Equal(ServiceLifetime.Singleton, descriptor.Lifetime);
+    }
+
+    [Fact]
+    public void RuntimeDiagnosticsPreservesExceptionChainInCityHostDiagnostics()
+    {
+        var services = new ServiceCollection();
+        using var hostDiagnostics = new InMemoryHostDiagnostics();
+        services.AddSingleton<IHostDiagnostics>(hostDiagnostics);
+        services.AddAtomBoxTransfer();
+        using var provider = services.BuildServiceProvider();
+        var exception = new InvalidOperationException(
+            "outer failure",
+            new IOException("inner failure"));
+
+        provider.GetRequiredService<ITransferRuntimeDiagnostics>().Write(
+            new TransferRuntimeDiagnostic(
+                "TRANSFER_TEST_FAILURE",
+                "Transfer test failed.",
+                TransferRuntimeDiagnosticSeverity.Error,
+                exception));
+
+        var record = Assert.Single(hostDiagnostics.Records);
+        Assert.Equal(HostDiagnosticSeverity.Error, record.Severity);
+        Assert.Contains("outer failure", record.Message);
+        Assert.Contains("inner failure", record.Message);
+        Assert.Equal(typeof(InvalidOperationException).FullName, record.Context["exceptionType"]);
     }
 
     private sealed class FixedApplicationSettingsRepository : IApplicationSettingsRepository

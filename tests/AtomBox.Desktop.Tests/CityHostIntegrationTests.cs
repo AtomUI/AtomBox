@@ -10,6 +10,8 @@ using AtomBox.Desktop.Views.Settings;
 using AtomBox.Desktop.Views.Transfers;
 using AtomBox.Infrastructure.Configuration;
 using AtomBox.Transfer.Scheduling;
+using AtomBox.Transfer.State;
+using AtomUI.City.Core.Diagnostics;
 using AtomUI.City.Presentation;
 using AtomUI.City.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -18,6 +20,39 @@ namespace AtomBox.Desktop.Tests;
 
 public sealed class CityHostIntegrationTests
 {
+    [Fact]
+    public async Task TransferRuntimeStartupFailureFailsHostAndLeavesNoOpenAdmission()
+    {
+        var root = Path.Combine(
+            Path.GetTempPath(),
+            "AtomBox.Desktop.Tests",
+            Guid.NewGuid().ToString("N"));
+        var paths = new AtomBoxStoragePaths(root);
+        Directory.CreateDirectory(paths.StateDirectory);
+        await File.WriteAllTextAsync(paths.TransferTasksFile, "{ invalid json");
+
+        try
+        {
+            await using var host = Program.CreateHost([], paths);
+
+            await Assert.ThrowsAnyAsync<Exception>(() => host.StartAsync());
+
+            var runtime = host.Services.GetRequiredService<TransferRuntimeController>();
+            Assert.False(runtime.Current.IsAcceptingSubmissions);
+            Assert.NotEqual(TransferRuntimeLifecycleState.Running, runtime.Current.Lifecycle);
+            Assert.Contains(
+                host.Services.GetRequiredService<IHostDiagnostics>().Records,
+                record => record.Code == HostDiagnosticIds.HostStartFailed);
+        }
+        finally
+        {
+            if (Directory.Exists(root))
+            {
+                Directory.Delete(root, recursive: true);
+            }
+        }
+    }
+
     [Fact]
     public async Task CityLocalizationProjectsAndSwitchesOneCompleteSnapshot()
     {
@@ -101,12 +136,14 @@ public sealed class CityHostIntegrationTests
             Assert.NotNull(host.Services.GetRequiredService<IAtomBoxLocalizedText>());
             Assert.NotNull(host.Services.GetRequiredService<IDesktopLanguageService>());
             Assert.NotNull(host.Services.GetRequiredService<IPresentationRuntime>());
-            Assert.NotNull(host.Services.GetRequiredService<TransferRuntimeInitializer>());
+            var runtime = host.Services.GetRequiredService<TransferRuntimeController>();
+            Assert.Equal(TransferRuntimeLifecycleState.Created, runtime.Current.Lifecycle);
             Assert.Null(host.ApplicationScope);
 
             await host.StartAsync();
 
             Assert.NotNull(host.ApplicationScope);
+            Assert.Equal(TransferRuntimeLifecycleState.Running, runtime.Current.Lifecycle);
             Assert.True(Directory.Exists(paths.ConfigurationDirectory));
 
             var viewLocator = host.Services.GetRequiredService<IViewLocator>();
@@ -127,6 +164,7 @@ public sealed class CityHostIntegrationTests
             AssertRoute<AccountManagementViewModel>(routeGraph, "AtomBox.AccountManagement", "accounts");
 
             await host.StopAsync();
+            Assert.Equal(TransferRuntimeLifecycleState.Stopped, runtime.Current.Lifecycle);
         }
         finally
         {

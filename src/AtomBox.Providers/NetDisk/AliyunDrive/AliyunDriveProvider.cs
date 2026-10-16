@@ -33,6 +33,13 @@ public sealed class AliyunDriveProvider : IStorageProvider
 
     public StorageCapabilitySet Capabilities { get; }
 
+    public TransferExecutionCapabilities TransferCapabilities { get; } = new(
+        TransferIoExecutionKind.Asynchronous,
+        TransferIoExecutionKind.Asynchronous,
+        supportsCooperativeCancellation: true,
+        supportsActiveAbort: false,
+        supportsProgress: true);
+
     public async Task<OperationResult<IReadOnlyList<RemoteItem>>> ListAsync(
         RemotePath path,
         CancellationToken cancellationToken = default)

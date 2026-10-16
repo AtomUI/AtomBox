@@ -16,7 +16,4 @@ public interface ITransferTaskScheduler
     Task<OperationResult> RetryAsync(
         TransferTaskId taskId,
         CancellationToken cancellationToken = default);
-
-    Task<OperationResult> WakeAsync(
-        CancellationToken cancellationToken = default);
 }

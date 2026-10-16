@@ -137,6 +137,45 @@ public sealed class TransferStateStoreContractTests : IDisposable
     }
 
     [Fact]
+    public async Task SaveProgressBatch_PreservesConcurrentTaskUpdates()
+    {
+        var first = CreateTask(TransferStatus.Running);
+        var second = CreateTask(TransferStatus.Running);
+        await _taskStore.SaveAsync(first);
+        await _taskStore.SaveAsync(second);
+
+        await Task.WhenAll(
+            _stateStore.SaveProgressBatchAsync(
+                [new TransferProgressUpdate(first.Id, first.Revision, 1, new TransferProgress(40, 100, null))]),
+            _stateStore.SaveProgressBatchAsync(
+                [new TransferProgressUpdate(second.Id, second.Revision, 1, new TransferProgress(70, 100, null))]));
+
+        var queue = (await _stateStore.ListQueueAsync()).GetValueOrThrow();
+        Assert.Equal(40, queue.Single(item => item.Task.Id == first.Id).Progress?.BytesTransferred);
+        Assert.Equal(70, queue.Single(item => item.Task.Id == second.Id).Progress?.BytesTransferred);
+    }
+
+    [Fact]
+    public async Task SaveProgressBatch_IgnoresStaleExecutionRevision()
+    {
+        var pending = CreateTask(TransferStatus.Pending);
+        await _taskStore.SaveAsync(pending);
+        var running = pending.WithStatus(TransferStatus.Running, pending.UpdatedAt.AddSeconds(1));
+        await _taskStore.CompareExchangeAsync(running, pending.Revision, TransferStatus.Pending);
+
+        await _stateStore.SaveProgressBatchAsync(
+            [new TransferProgressUpdate(running.Id, running.Revision, 1, new TransferProgress(50, 100, null))]);
+
+        var succeeded = running.WithStatus(TransferStatus.Succeeded, running.UpdatedAt.AddSeconds(1));
+        await _taskStore.CompareExchangeAsync(succeeded, running.Revision, TransferStatus.Running);
+        await _stateStore.SaveProgressBatchAsync(
+            [new TransferProgressUpdate(running.Id, running.Revision, 2, new TransferProgress(90, 100, null))]);
+
+        var history = (await _stateStore.ListHistoryAsync(0, 10)).GetValueOrThrow();
+        Assert.Equal(50, Assert.Single(history).Progress?.BytesTransferred);
+    }
+
+    [Fact]
     public async Task ListHistory_OrdersByUpdatedAtDescending()
     {
         var now = DateTimeOffset.UtcNow;

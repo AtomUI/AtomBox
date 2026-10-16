@@ -22,6 +22,10 @@
   <data name="Ready" xml:space="preserve"><value>就绪</value></data>
   <data name="Transferring" xml:space="preserve"><value>传输中</value></data>
   <data name="TransferStatusReadFailed" xml:space="preserve"><value>传输状态读取失败</value></data>
+  <data name="TransferRuntimeStarting" xml:space="preserve"><value>传输服务启动中</value></data>
+  <data name="TransferRuntimeStopping" xml:space="preserve"><value>传输服务停止中</value></data>
+  <data name="TransferRuntimeDegraded" xml:space="preserve"><value>传输服务暂时降级</value></data>
+  <data name="TransferRuntimeFaulted" xml:space="preserve"><value>传输服务故障</value></data>
   <data name="UploadSpeed" xml:space="preserve"><value>上传 {0}</value></data>
   <data name="DownloadSpeed" xml:space="preserve"><value>下载 {0}</value></data>
   <data name="NoObjectStorageAccounts" xml:space="preserve"><value>暂无 OSS 账号</value></data>

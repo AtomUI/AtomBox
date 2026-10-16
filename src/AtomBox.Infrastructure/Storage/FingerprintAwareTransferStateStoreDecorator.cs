@@ -77,6 +77,13 @@ public sealed class FingerprintAwareTransferStateStoreDecorator : ITransferState
         return saveResult;
     }
 
+    public Task<OperationResult> SaveProgressBatchAsync(
+        IReadOnlyList<TransferProgressUpdate> updates,
+        CancellationToken cancellationToken = default)
+    {
+        return _inner.SaveProgressBatchAsync(updates, cancellationToken);
+    }
+
     private static bool ShouldWriteFingerprint(TransferTask task)
     {
         return task.Direction == TransferDirection.Upload &&

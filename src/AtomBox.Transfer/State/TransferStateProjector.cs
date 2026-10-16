@@ -26,7 +26,7 @@ public sealed class TransferStateProjector : ITransferStateSynchronizer
             var result = await _stateStore.ListQueueAsync(cancellationToken).ConfigureAwait(false);
             if (result.IsFailure)
             {
-                _state.Publish(TransferQueueState.Faulted(result.Error!));
+                _state.Update(current => TransferQueueState.Faulted(result.Error!, current));
                 return AtomBox.Core.Results.OperationResult.Failure(result.Error!);
             }
 
@@ -59,7 +59,7 @@ public sealed class TransferStateProjector : ITransferStateSynchronizer
         _projectionGate.Wait();
         try
         {
-            _state.Publish(TransferQueueState.Faulted(error));
+            _state.Update(current => TransferQueueState.Faulted(error, current));
         }
         finally
         {
@@ -76,7 +76,7 @@ public sealed class TransferStateProjector : ITransferStateSynchronizer
         {
             _state.Update(current =>
             {
-                var tasks = current.Status == TransferProjectionStatus.Ready
+                var tasks = current.Status is TransferProjectionStatus.Ready or TransferProjectionStatus.Faulted
                     ? current.Tasks.ToList()
                     : [];
                 var existingIndex = tasks.FindIndex(snapshot => snapshot.Task.Id == task.Id);
@@ -120,6 +120,7 @@ public sealed class TransferStateProjector : ITransferStateSynchronizer
     {
         return task.Status is TransferStatus.Pending or
             TransferStatus.Running or
+            TransferStatus.Canceling or
             TransferStatus.Paused or
             TransferStatus.Interrupted;
     }
