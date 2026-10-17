@@ -116,7 +116,18 @@
 - 取消接口幂等：`Running -> Canceling` 只发生一次，重复取消 `Canceling` 直接成功，已经 `Canceled` 也返回已完成语义；终态是否允许新建重试由明确用例决定。
 - 当前版本中 `Canceled` 只表示用户发起取消且执行体已经退出，不承诺回滚远端已经产生的部分数据；`Interrupted` 明确表示最终远端结果未知。
 
-### 2.11 进度异步汇聚、持久化与 State 发布
+### 2.11 Interrupted 的用户决策与放弃语义
+
+- `Interrupted` 表示本地执行已经结束，但远端最终结果未知。它不是普通失败，也不是用户已经取消完成的任务；Runtime 不得自动重试、自动删除或把它伪装成 `Canceled`。
+- `Interrupted` 必须保留在活动队列中等待用户显式决策。队列 Action 列同时提供“重试”和“放弃”两个入口：重试执行 `Interrupted -> Pending`，从任务起点重新执行；放弃执行 `Interrupted -> Abandoned`，终止本地任务生命周期。
+- `Abandoned` 是用户明确表示“不再重试”的持久化终态。它从活动队列移入历史，用于保留可审计事实；不得复用 `Canceled`、`Failed` 或直接物理删除任务记录来表达放弃。为保持既有持久化枚举兼容性，新状态只能追加到 `TransferStatus` 数值末尾。
+- 放弃只改变 AtomBox 本地任务状态，不调用 Provider，不删除、回滚或覆盖远端对象，也不承诺远端没有产生完整或部分数据。Desktop 必须在执行前显示确认提示，明确说明“远端最终结果仍然未知”和“本操作不会处理远端数据”。
+- `RetryAsync` 与 `AbandonAsync` 必须使用任务 ID、预期 Revision 和预期 `Interrupted` 状态执行条件更新。两者并发时最多一个成功，失败方返回冲突，不得覆盖已经完成的另一项决策。
+- 状态查询必须保持单一归属：活动队列包含 `Pending`、`Running`、`Canceling`、`Paused`、`Interrupted`；历史包含 `Succeeded`、`Failed`、`Canceled`、`Abandoned`。同一 `Interrupted` 任务不得同时出现在队列和历史。
+- Application 暴露独立的放弃用例，Transfer Runtime 拥有状态转换和 City.State 发布，Infrastructure 只实现条件持久化，Desktop 只负责双操作展示、确认和反馈；任何 UI 都不得直接调用 Store 删除任务。
+- 自动化测试至少覆盖放弃成功、非 `Interrupted` 状态拒绝、重试与放弃并发互斥、State 从队列移除、历史可见以及放弃过程不调用 Provider。
+
+### 2.12 进度异步汇聚、持久化与 State 发布
 
 - Provider 继续只接收标准 `IProgress<TransferProgress>`。`Report` 路径必须是线程安全、O(1)、不等待磁盘的内存更新；禁止在 SDK 回调中使用 `GetAwaiter().GetResult()` 同步等待异步 Store。
 - Transfer 为每个活跃执行维护最新进度、执行 Revision/序号和 ExecutionLease，并由统一异步 flush 循环合并高频回调。旧中间值允许被覆盖，最新值不能丢失；迟到执行或已经 Abandoned 的回调不得继续落盘。
@@ -128,12 +139,12 @@
 - 中间进度写入失败时保留内存最新值、记录诊断并退避重试，不立即中断网络传输，也不发布 State；连续失败使 Runtime 进入降级并停止新任务准入。最终进度或终态提交失败不得宣称成功，原始错误必须保留，遗留 `Running` 下次启动按 `Interrupted` 恢复。
 - Core 负责定义无 City 依赖的进度批量、条件转换和最终提交端口/DTO；Transfer 负责汇聚、节流、ExecutionLease、flush 时序及 State 投影；Infrastructure 负责完整 JSON 读改写锁、批量 upsert、原子文件替换和真实持久化错误。Providers 与 City 均不因本项修改。
 
-### 2.12 City Module 接入与组合边界
+### 2.13 City Module 接入与组合边界
 
 - `AtomBox.Transfer` 新增直接的 `AtomUI.City.Core` 项目引用及 `AtomBoxTransferModule`；已有 City.State 引用继续保留。Runtime、队列和 Worker 仍由 AtomBox 实现，Module 只负责生命周期接线。
 - `AtomBoxTransferModule.ConfigureServices` 调用现有 `AddAtomBoxTransfer()`。该标准 DI 扩展继续保留供测试组合使用；Desktop 删除重复的 `AddAtomBoxTransfer()` 调用。
 - Module 在 `OnPostApplicationInitializationAsync` 启动 Runtime。此时所有 Module 的普通初始化已经结束，当前 Desktop 组合根负责的 Infrastructure 初始化和 Application State 初始化均已完成。
-- Module 把 `ApplicationScope.CancellationToken` 作为 Runtime 运行期生命令牌，把当前启动阶段 token 作为本次 `StartAsync` 的期限；Runtime 内核只接收标准 CancellationToken，不持有 City `LifecycleScope` 对象。
+- Module 把 `ApplicationScope.CancellationToken` 作为 Runtime 运行期 owner 令牌，把 City 传给 Module 回调的唯一 Effective Token 原样作为本次 `StartAsync` 的取消令牌；Runtime 内核只接收标准 CancellationToken，不持有 City `LifecycleScope` 对象。这里单独传 owner 令牌属于 City 取消合同明确保留的长生命周期高级适配器场景：初始化回调结束后 City 会释放内部 linked CTS，因此不得把回调 Effective Token 保存为 Runtime 的永久生命令牌。
 - Module 在 `OnApplicationShutdownAsync` 调用 Runtime `StopAsync`，并把 City shutdown token 作为收尾期限。ApplicationScope token 已先广播取消，shutdown token 只约束有限等待和最终 flush。
 - `AtomBoxDesktopModule` 增加对 `AtomBoxTransferModule` 的显式 `DependsOn`，组合根同时显式 `UseModule<AtomBoxTransferModule>()`。City 当前不会自动注册缺失的依赖模块，只有显式注册后模块图才可验证。
 - Desktop 删除 `TransferRuntimeInitializer` 的手工调用，不再拥有 Transfer 的注册、启动、停止或恢复；Desktop 继续作为组合根提供 Infrastructure、Providers 等 Core 端口的具体实现。
@@ -141,7 +152,7 @@
 - Runtime 启动失败必须使 City Host 启动失败并触发回滚；Runtime 关闭失败在完成其他尽力清理后向 City 传播，由 Host 聚合。禁止把结构化错误压扁成只含 message、无 inner cause 的普通异常。
 - `TransferRuntimeInitializer` 的恢复职责并入 `TransferRuntimeController.StartAsync` 后删除；同一 Host 内 Runtime 只启动一次，停止后不可重启。
 
-### 2.13 任务故障、Runtime 健康状态与异常传播
+### 2.14 任务故障、Runtime 健康状态与异常传播
 
 - 必须严格区分单个传输任务故障与整个 Runtime 故障。Provider、网络、文件或单任务业务失败只影响对应任务，任务保存为 `Failed` 后 Runtime 继续调度其他任务；不能因为一个任务失败就停止整个传输系统。
 - Runtime 健康采用 `Healthy / Degraded / Faulted` 三态，并与 `Created / Starting / Running / Stopping / Stopped / Faulted` 生命周期状态分开表达。生命周期回答“Runtime 正处于哪个阶段”，健康状态回答“当前阶段是否仍能可靠工作”。
@@ -154,7 +165,7 @@
 - 队列事实投影与 Runtime 健康投影必须分离。`IAtomBoxTransferState` 分别公开只读 Queue 与 Runtime 快照；健康快照至少包含生命周期、健康等级、是否接受提交、活跃/等待数量、最后一次脱敏故障和更新时间。
 - 已经获得过成功队列快照后再发生刷新故障时，必须保留最后可信任务列表并标记 `IsStale`、失败摘要和最后成功时间；只有首次初始化从未成功时才允许呈现“当前无可用快照”，不能把故障错误表达为“队列为空”。
 
-### 2.14 自动化测试与真实 UI 验收门禁
+### 2.15 自动化测试与真实 UI 验收门禁
 
 - 旧 `Phase 12 Transfer 测试矩阵` 中基于 7 状态、同步式 `WakeAsync` 和 `TransferRuntimeInitializer` 的合同被本次 Runtime 设计取代。新的权威测试基线见 `docs/implementation/testing/phase-12-transfer-runtime-testing.md`。
 - Runtime 单元测试必须确定性覆盖并发启停、幂等、同 Host 不可重启、信号合并且不丢持久化任务、并发上限、CAS 唯一领取、任务故障隔离、健康降级与恢复、致命故障、取消来源、迟到结果围栏、非阻塞进度和有限关闭。

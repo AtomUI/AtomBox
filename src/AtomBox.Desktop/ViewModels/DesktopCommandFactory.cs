@@ -1,24 +1,23 @@
-using AtomUI.City.Core.Diagnostics;
 using AtomUI.City.Mvvm;
+using AtomUI.City.Presentation;
 using CommunityToolkit.Mvvm.Input;
-using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.ViewModels;
 
 public sealed class DesktopCommandFactory
 {
     private readonly ICommandExceptionHandler _exceptionHandler;
-    private readonly IHostDiagnostics? _diagnostics;
-    private readonly CityUiDispatcher _dispatcher;
+    private readonly IUiCommandFactory _uiCommands;
 
     public DesktopCommandFactory(
         ICommandExceptionHandler exceptionHandler,
-        CityUiDispatcher dispatcher,
-        IHostDiagnostics? diagnostics = null)
+        IUiCommandFactory uiCommands)
     {
+        ArgumentNullException.ThrowIfNull(exceptionHandler);
+        ArgumentNullException.ThrowIfNull(uiCommands);
+
         _exceptionHandler = exceptionHandler;
-        _dispatcher = dispatcher;
-        _diagnostics = diagnostics;
+        _uiCommands = uiCommands;
     }
 
     public IAsyncRelayCommand CreateAsync(
@@ -28,15 +27,13 @@ public sealed class DesktopCommandFactory
         Func<bool>? canExecute = null,
         CommandConcurrencyPolicy concurrencyPolicy = CommandConcurrencyPolicy.Reject)
     {
-        return CommandFactory.CreateAsync(
+        return _uiCommands.CreateAsync(
             execute,
             canExecute,
             new CommandExecutionState(commandName, owner.GetType()),
             owner,
             concurrencyPolicy,
-            _exceptionHandler,
-            _diagnostics,
-            _dispatcher);
+            _exceptionHandler);
     }
 
     public IAsyncRelayCommand<T> CreateAsync<T>(
@@ -47,16 +44,14 @@ public sealed class DesktopCommandFactory
         CommandConcurrencyPolicy concurrencyPolicy = CommandConcurrencyPolicy.Reject,
         Func<T?, object?>? concurrencyKeySelector = null)
     {
-        return CommandFactory.CreateAsync(
+        return _uiCommands.CreateAsync(
             execute,
             canExecute,
             new CommandExecutionState(commandName, owner.GetType()),
             owner,
             concurrencyPolicy,
             concurrencyKeySelector,
-            _exceptionHandler,
-            _diagnostics,
-            _dispatcher);
+            _exceptionHandler);
     }
 
     public IRelayCommand Create(
@@ -65,11 +60,10 @@ public sealed class DesktopCommandFactory
         Action execute,
         Func<bool>? canExecute = null)
     {
-        return CommandFactory.Create(
+        return _uiCommands.Create(
             execute,
             canExecute,
-            new CommandExecutionState(commandName, owner.GetType()),
-            _diagnostics);
+            new CommandExecutionState(commandName, owner.GetType()));
     }
 
     public IRelayCommand<T> Create<T>(
@@ -78,10 +72,9 @@ public sealed class DesktopCommandFactory
         Action<T?> execute,
         Predicate<T?>? canExecute = null)
     {
-        return CommandFactory.Create(
+        return _uiCommands.Create(
             execute,
             canExecute,
-            new CommandExecutionState(commandName, owner.GetType()),
-            _diagnostics);
+            new CommandExecutionState(commandName, owner.GetType()));
     }
 }

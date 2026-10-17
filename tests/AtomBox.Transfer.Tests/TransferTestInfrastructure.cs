@@ -166,7 +166,7 @@ public sealed class MemoryTransferStore : ITransferTaskStore, ITransferStateStor
         lock (_gate)
         {
             var history = _tasks
-                .Where(task => task.Status is TransferStatus.Succeeded or TransferStatus.Failed or TransferStatus.Canceled or TransferStatus.Interrupted)
+                .Where(task => task.Status is TransferStatus.Succeeded or TransferStatus.Failed or TransferStatus.Canceled or TransferStatus.Abandoned)
                 .Skip(skip)
                 .Take(take)
                 .Select(task => new TransferStateSnapshot(
@@ -308,6 +308,8 @@ public sealed class FixedProviderFactory : IStorageProviderFactory
 {
     private readonly IStorageProvider _provider;
 
+    public int CreateCalls { get; private set; }
+
     public FixedProviderFactory(IStorageProvider provider)
     {
         _provider = provider;
@@ -317,6 +319,7 @@ public sealed class FixedProviderFactory : IStorageProviderFactory
         StorageAccount account,
         CancellationToken cancellationToken = default)
     {
+        CreateCalls++;
         return Task.FromResult(OperationResult<IStorageProvider>.Success(_provider));
     }
 }

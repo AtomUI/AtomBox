@@ -57,6 +57,13 @@ public sealed class TransferQueueViewModel : ViewModelBase
             row => row is { CanExecuteAction: true },
             CommandConcurrencyPolicy.RejectByKey,
             row => row?.TaskId);
+        AbandonTaskCommand = commands.CreateAsync<TransferTaskRowViewModel>(
+            this,
+            nameof(AbandonTaskCommand),
+            AbandonTaskAsync,
+            row => row is { CanAbandon: true },
+            CommandConcurrencyPolicy.RejectByKey,
+            row => row?.TaskId);
         CancelPendingTasksCommand = commands.CreateAsync(
             this,
             nameof(CancelPendingTasksCommand),
@@ -81,6 +88,8 @@ public sealed class TransferQueueViewModel : ViewModelBase
     public IAsyncRelayCommand RefreshCommand { get; }
 
     public IAsyncRelayCommand<TransferTaskRowViewModel> ExecuteTaskActionCommand { get; }
+
+    public IAsyncRelayCommand<TransferTaskRowViewModel> AbandonTaskCommand { get; }
 
     public IAsyncRelayCommand CancelPendingTasksCommand { get; }
 
@@ -177,6 +186,7 @@ public sealed class TransferQueueViewModel : ViewModelBase
             Tasks.Add(TransferTaskRowViewModel.From(
                 task,
                 ExecuteTaskActionCommand,
+                AbandonTaskCommand,
                 ShowTaskDetailsCommand,
                 _localization));
         }
@@ -242,7 +252,12 @@ public sealed class TransferQueueViewModel : ViewModelBase
                 continue;
             }
 
-            var completed = TransferTaskRowViewModel.From(snapshot, ExecuteTaskActionCommand, ShowTaskDetailsCommand, _localization);
+            var completed = TransferTaskRowViewModel.From(
+                snapshot,
+                ExecuteTaskActionCommand,
+                AbandonTaskCommand,
+                ShowTaskDetailsCommand,
+                _localization);
             completedTasks.Add(completed);
         }
 
@@ -313,6 +328,40 @@ public sealed class TransferQueueViewModel : ViewModelBase
             return;
         }
 
+    }
+
+    private async Task AbandonTaskAsync(
+        TransferTaskRowViewModel? parameter,
+        CancellationToken cancellationToken)
+    {
+        if (parameter is not { CanAbandon: true } row)
+        {
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var confirmed = await _dialogs.ConfirmAsync(new ConfirmDialogRequest(
+            _localization.GetString("Transfer", "AbandonTaskTitle"),
+            _localization.Format("Transfer", "AbandonTaskMessage", row.FileName),
+            _localization.GetString("Common", "Abandon"),
+            _localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
+        if (!confirmed)
+        {
+            return;
+        }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        var result = await _transfers.AbandonAsync(
+            new AbandonTransferTaskRequest(row.TaskId),
+            cancellationToken).ConfigureAwait(true);
+        if (result.IsFailure)
+        {
+            SetStatus(new("Transfer", "AbandonTaskFailed"));
+            _messages.Error(StatusMessage);
+            return;
+        }
+
+        _messages.Success(_localization.GetString("Transfer", "TaskAbandoned"));
     }
 
     private async Task CancelPendingTasksAsync(CancellationToken cancellationToken)
@@ -406,7 +455,12 @@ public sealed class TransferQueueViewModel : ViewModelBase
         Tasks.Clear();
         foreach (var task in _currentSnapshots)
         {
-            Tasks.Add(TransferTaskRowViewModel.From(task, ExecuteTaskActionCommand, ShowTaskDetailsCommand, _localization));
+            Tasks.Add(TransferTaskRowViewModel.From(
+                task,
+                ExecuteTaskActionCommand,
+                AbandonTaskCommand,
+                ShowTaskDetailsCommand,
+                _localization));
         }
         RaiseTaskCollectionStateChanged();
     }
@@ -428,6 +482,8 @@ public sealed record TransferTaskRowViewModel(
     string Action,
     bool CanExecuteAction,
     ICommand ActionCommand,
+    bool CanAbandon,
+    ICommand AbandonCommand,
     ICommand DetailsCommand)
 {
     public bool IsProgressTextVisible => !IsProgressBarVisible;
@@ -435,6 +491,7 @@ public sealed record TransferTaskRowViewModel(
     public static TransferTaskRowViewModel From(
         TransferStateSnapshot snapshot,
         ICommand actionCommand,
+        ICommand abandonCommand,
         ICommand detailsCommand,
         IAtomBoxLocalizedText localization)
     {
@@ -458,6 +515,8 @@ public sealed record TransferTaskRowViewModel(
             FormatAction(task.Status, localization),
             CanExecuteActionFor(task.Status, snapshot.CanRetry),
             actionCommand,
+            task.Status == TransferStatus.Interrupted,
+            abandonCommand,
             detailsCommand);
     }
 

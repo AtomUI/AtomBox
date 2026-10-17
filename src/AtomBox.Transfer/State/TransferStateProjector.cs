@@ -116,6 +116,45 @@ public sealed class TransferStateProjector : ITransferStateSynchronizer
         }
     }
 
+    internal void PublishPersistedProgress(TransferProgressUpdate update)
+    {
+        ArgumentNullException.ThrowIfNull(update);
+
+        _projectionGate.Wait();
+        try
+        {
+            _state.Update(current =>
+            {
+                if (current.Status is not (TransferProjectionStatus.Ready or TransferProjectionStatus.Faulted))
+                {
+                    return current;
+                }
+
+                var tasks = current.Tasks.ToList();
+                var existingIndex = tasks.FindIndex(snapshot => snapshot.Task.Id == update.TaskId);
+                if (existingIndex < 0)
+                {
+                    return current;
+                }
+
+                var existing = tasks[existingIndex];
+                if (existing.Task.Revision != update.ExecutionRevision ||
+                    existing.Task.Status is not (TransferStatus.Running or TransferStatus.Canceling) ||
+                    existing.Progress?.BytesTransferred > update.Progress.BytesTransferred)
+                {
+                    return current;
+                }
+
+                tasks[existingIndex] = new TransferStateSnapshot(existing.Task, update.Progress);
+                return TransferQueueState.Ready(OrderQueue(tasks));
+            });
+        }
+        finally
+        {
+            _projectionGate.Release();
+        }
+    }
+
     private static bool IsQueueTask(TransferTask task)
     {
         return task.Status is TransferStatus.Pending or

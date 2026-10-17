@@ -33,8 +33,12 @@ AtomBox Desktop 已完成 Host、Module、Routing、Presentation 和 Localizatio
 - City 设计先行提交：`38aff27 docs:define-mvvm-migration-contracts`。
 - City 通用能力实现：`41e75dd feat:activation-scoped-mvvm-orchestration`。
 - City owner-bound Command 生命周期通知补充：`c333994 fix:notify-owner-bound-command-lifecycle`。
-- AtomBox Desktop 已迁移 City `ViewModelBase`、ActivationScope、CommandFactory 和 Presentation Root/Child composition；本文件 21 项决定未发生方案漂移。
-- City 子模块当前固定到 `c333994`。上述 City 提交仍位于本地 `develop`，相对 `origin/develop` ahead 3；未获得 City 精确远端目标授权前不把“本地已提交”误记为“远端已同步”。
+- City Effective Cancellation Token 统一合同：`63f0a86 feat:unify-effective-cancellation-token-contracts`。
+- City UI 可观察通知统一调度与失败隔离：`263aefb fix(mvvm): unify UI notification dispatch and failure isolation`。
+- City Presentation UI 命令安全入口：`34ce19f feat(presentation): add UI command factory safe default`。
+- AtomBox Desktop 已迁移 City `ViewModelBase`、ActivationScope、Presentation `IUiCommandFactory` 和 Root/Child composition；AtomBox 的 `DesktopCommandFactory` 只保留命令名称、owner 类型和统一异常处理策略，不再直接调用底层 `Mvvm.CommandFactory` 或自行注入 dispatcher/diagnostics。
+- City 子模块当前固定到 `34ce19f`，与远端 `origin/develop` 一致。
+- 绑定到 UI 的命令通知统一由 City `IUiCommandFactory` 注入的 `IUiDispatcher.InvokeAsync` 调度；AtomBox 不得根据 `CheckAccess()` 自建通知分支。测试 dispatcher 必须保证返回的 operation 在回调真正完成后才完成，并传播取消与异常。
 - 自动门禁已通过；真实 UI 点击烟测按约定由用户人工完成，因此文档保持 `Manual UI Validation Pending`。
 
 ## 非目标
@@ -258,15 +262,15 @@ AtomBox Desktop 已完成 Host、Module、Routing、Presentation 和 Localizatio
 
 **AtomBox：** 多个 Desktop 异步方法没有把命令或激活取消向 Application、Transfer 和 Provider 调用链传递。
 
-**City：** 命令和 ActivationScope 已提供 token、取消分类和状态，只需在第 13、14 项完善后被正确消费。
+**City：** 命令、ViewModel activation 和 Presentation outlet 在框架边界把调用方、ActivationScope、应用关闭和框架期限组合成唯一 Effective Token；业务回调只接收并向下传递这一个标准库 `CancellationToken`。
 
 **问题：** 页面已经离开时，底层 I/O 仍可能继续并回写过期 UI；另一方面，已提交的持久传输不应因页面关闭而被误取消。
 
-**已决方案：** Desktop 异步方法接收并向下传递 .NET `CancellationToken`。页面加载跟随 ActivationScope；持久传输成功提交后把所有权转交应用级调度器，业务取消和页面生命周期取消明确区分。
+**已决方案：** Desktop 异步方法接收并原样向下传递 City 回调给出的 .NET `CancellationToken`，不得在业务回调中再次读取或链接 `CurrentActivationScope.CancellationToken`。由 Avalonia 事件进入的菜单、面包屑和搜索操作统一通过 owner-bound City Command 取得 Effective Token。页面加载跟随 ActivationScope；持久传输成功提交后把所有权转交应用级调度器，业务取消和页面生命周期取消明确区分。AtomBox 自己的 latest-wins/supersession 属于额外业务取消来源，仍由创建该来源的代码负责链接和释放。
 
 **实施归属：** AtomBox；非 Desktop 模块只增加标准库 token，不引用 City。
 
-**验收：** Provider 调用观察取消；停用后不提交 UI；已提交传输离开页面后继续运行。
+**验收：** Desktop 业务代码不直接读取 `CurrentActivationScope.CancellationToken`；Provider 调用观察 Effective Token；停用后不提交 UI；已提交传输离开页面后继续运行。
 
 ### 16. Command 异常处理
 
@@ -366,11 +370,14 @@ City 架构决策：
 
 - [ADR 0010：ActivationScope 采用结构化并发并约束 Command 执行所有权](../../../external/AtomUI.City/docs/decisions/0010-activation-scoped-structured-concurrency.md)
 - [ADR 0011：Presentation 提供逻辑 Root/Child，MVVM 保持角色无关](../../../external/AtomUI.City/docs/decisions/0011-presentation-root-child-ownership.md)
+- [ADR 0012：统一 Effective Cancellation Token 合同](../../../external/AtomUI.City/docs/decisions/0012-effective-cancellation-token-contract.md)
+- [ADR 0013：UI 可观察通知的统一调度与失败隔离](../../../external/AtomUI.City/docs/decisions/0013-ui-observable-notification-dispatch.md)
+- [ADR 0014：Presentation UI 命令工厂双入口](../../../external/AtomUI.City/docs/decisions/0014-presentation-ui-command-factory.md)
 
 ## 实际实施顺序
 
 1. 已在 City 完成 `AUC-MVVM-007` 至 `010` 和 `AUC-PRESENTATION-017` 的文档、实现、测试与 public API review。
-2. 已提交 City 代码并把 AtomBox 子模块固定到 `c333994`；City 远端同步仍等待精确仓库授权。
+2. 已提交并同步 City 代码，把 AtomBox 子模块更新到 `34ce19f`，并采用 Presentation `IUiCommandFactory` 安全入口。
 3. 已为 AtomBox Desktop 增加 City.Mvvm 直接引用，并迁移基类、生命周期和 Command。
 4. 已按页面迁移首次加载、导航参数、订阅、定时器、账号变化队列和取消传播。
 5. 已把 MainWindow 组合为 Root、StatusBar 组合为 owned child，并删除 AtomBox 自建基类和 Command。

@@ -25,6 +25,7 @@ public sealed class TransferStateSnapshotTests
         await store.SaveAsync(TransferTaskFactory.Create(TransferStatus.Succeeded));
         await store.SaveAsync(TransferTaskFactory.Create(TransferStatus.Failed));
         await store.SaveAsync(TransferTaskFactory.Create(TransferStatus.Canceled));
+        await store.SaveAsync(TransferTaskFactory.Create(TransferStatus.Abandoned));
 
         var result = await store.ListQueueAsync();
 
@@ -89,10 +90,11 @@ public sealed class TransferStateSnapshotTests
         await store.SaveAsync(TransferTaskFactory.Create(TransferStatus.Succeeded));
         await store.SaveAsync(TransferTaskFactory.Create(TransferStatus.Failed));
         await store.SaveAsync(TransferTaskFactory.Create(TransferStatus.Canceled));
+        await store.SaveAsync(TransferTaskFactory.Create(TransferStatus.Abandoned));
 
         var result = await store.ListHistoryAsync(0, 100);
 
-        Assert.Equal(3, result.GetValueOrThrow().Count);
+        Assert.Equal(4, result.GetValueOrThrow().Count);
     }
 
     [Fact]
@@ -164,14 +166,14 @@ public sealed class TransferStateSnapshotTests
     }
 
     [Fact]
-    public async Task ListHistory_InterruptedAppearsInHistory()
+    public async Task ListHistory_InterruptedDoesNotAppearUntilUserMakesADecision()
     {
         var store = new MemoryTransferStore();
         await store.SaveAsync(TransferTaskFactory.Create(TransferStatus.Interrupted));
 
         var result = await store.ListHistoryAsync(0, 100);
 
-        Assert.Single(result.GetValueOrThrow());
+        Assert.Empty(result.GetValueOrThrow());
     }
 
     [Fact]

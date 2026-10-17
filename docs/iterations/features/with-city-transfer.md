@@ -30,7 +30,7 @@ Desktop 不再为队列和状态栏每秒读取持久化文件，而是通过 Ci
 - `Ready`：包含当前队列的不可变快照。
 - `Faulted`：初始查询失败，仅暴露结构化、脱敏的存储错误摘要。
 
-队列成员判定与现有 `ITransferStateStore.ListQueueAsync` 保持一致：`Pending` / `Running` / `Paused` / `Interrupted` / `Canceling` 在队列中，`Succeeded` / `Failed` / `Canceled` 移出队列。读取暂时失败时保留最后可信快照并标记 stale，不得把故障错误投影成空队列。
+队列成员判定与现有 `ITransferStateStore.ListQueueAsync` 保持一致：`Pending` / `Running` / `Paused` / `Interrupted` / `Canceling` 在队列中，`Succeeded` / `Failed` / `Canceled` / `Abandoned` 移出队列。`Interrupted` 等待用户选择重试或放弃，`Abandoned` 才进入历史。读取暂时失败时保留最后可信快照并标记 stale，不得把故障错误投影成空队列。
 
 发布顺序必须是：
 

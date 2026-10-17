@@ -9,5 +9,6 @@ public enum TransferStatus
     Succeeded = 4,
     Failed = 5,
     Canceled = 6,
-    Canceling = 7
+    Canceling = 7,
+    Abandoned = 8
 }

@@ -136,14 +136,16 @@ public sealed partial class RemoteBrowserView : UserControl, IViewDataContextAwa
             return;
         }
 
-        await viewModel.NavigateBreadcrumbAsync(e.BreadcrumbItem.NavigateContext).ConfigureAwait(true);
+        await viewModel.NavigateBreadcrumbCommand
+            .ExecuteAsync(e.BreadcrumbItem.NavigateContext)
+            .ConfigureAwait(true);
     }
 
     private async void HandleSearchButtonClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is RemoteBrowserViewModel viewModel)
         {
-            await viewModel.ApplySearchAsync().ConfigureAwait(true);
+            await viewModel.ApplySearchCommand.ExecuteAsync(null).ConfigureAwait(true);
         }
 
         e.Handled = true;
@@ -156,7 +158,7 @@ public sealed partial class RemoteBrowserView : UserControl, IViewDataContextAwa
             return;
         }
 
-        await viewModel.ApplySearchAsync().ConfigureAwait(true);
+        await viewModel.ApplySearchCommand.ExecuteAsync(null).ConfigureAwait(true);
         e.Handled = true;
     }
 
@@ -164,7 +166,7 @@ public sealed partial class RemoteBrowserView : UserControl, IViewDataContextAwa
     {
         if (DataContext is RemoteBrowserViewModel viewModel)
         {
-            await viewModel.RestoreListWhenSearchClearedAsync().ConfigureAwait(true);
+            await viewModel.RestoreListWhenSearchClearedCommand.ExecuteAsync(null).ConfigureAwait(true);
         }
     }
 

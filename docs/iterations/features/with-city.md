@@ -61,7 +61,7 @@ AtomBox.Providers / Infrastructure / Core
 - 原有 `IPageViewModelFactory` 和 `CurrentViewModel` 双重页面状态已删除；
 - 页面实例、DI scope、View 解绑和旧页面释放由 City Outlet entry 所有；
 - Desktop ViewModel 统一继承 City `ViewModelBase`，页面初始化、订阅、循环和取消进入 ActivationScope；
-- Desktop Command 统一使用 City CommandFactory 和 CommunityToolkit 公共接口，AtomBox 自建 Command 已删除；
+- Desktop Command 统一经 City Presentation `IUiCommandFactory` 创建并暴露 CommunityToolkit 公共接口；AtomBox 自建 Command 状态机已删除，`DesktopCommandFactory` 仅保留应用级命名与异常策略适配；
 - MainWindow 是 WindowSession 的逻辑 Root，StatusBar 是显式 owned child；路由页面仍由 RouteOutlet 独立拥有；
 - 定时刷新和账号变化刷新分别使用 `StartUniqueAsync`、`PeriodicTimer` 和容量 1 的 Channel，停用时取消并 drain；
 - 菜单选中键仍由 AtomBox 维护，因为它是 NavMenu 的应用展示状态，不是第二套路由状态。

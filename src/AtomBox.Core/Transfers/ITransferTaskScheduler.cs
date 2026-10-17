@@ -16,4 +16,13 @@ public interface ITransferTaskScheduler
     Task<OperationResult> RetryAsync(
         TransferTaskId taskId,
         CancellationToken cancellationToken = default);
+
+    Task<OperationResult> AbandonAsync(
+        TransferTaskId taskId,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(OperationResult.Failure(
+            AtomBox.Core.Errors.StorageError.NotSupported(
+                "Abandoning interrupted transfer tasks is not supported by this scheduler.")));
+    }
 }

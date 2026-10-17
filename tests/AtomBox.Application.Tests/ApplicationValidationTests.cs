@@ -661,7 +661,7 @@ public sealed class ApplicationValidationTests
                 ? OperationResult<IReadOnlyList<TransferStateSnapshot>>.Failure(tasks.Error!)
                 : OperationResult<IReadOnlyList<TransferStateSnapshot>>.Success(
                     tasks.GetValueOrThrow()
-                        .Where(task => task.Status is TransferStatus.Succeeded or TransferStatus.Failed or TransferStatus.Canceled)
+                        .Where(task => task.Status is TransferStatus.Succeeded or TransferStatus.Failed or TransferStatus.Canceled or TransferStatus.Abandoned)
                         .Skip(skip)
                         .Take(take)
                         .Select(task => new TransferStateSnapshot(task, GetProgress(task.Id)))

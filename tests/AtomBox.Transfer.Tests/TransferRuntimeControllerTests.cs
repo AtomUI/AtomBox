@@ -76,6 +76,32 @@ public sealed class TransferRuntimeControllerTests
     }
 
     [Fact]
+    public async Task PersistedRunningProgress_IsPublishedToLiveState()
+    {
+        var provider = new ProgressBlockingProvider();
+        var context = CreateContext(new FixedProviderFactory(provider));
+        await context.Runtime.StartAsync(CancellationToken.None);
+        var task = TransferTaskFactory.Create(TransferStatus.Pending);
+        await context.Runtime.SubmitAsync(task);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+        await provider.ProgressReported.Task.WaitAsync(timeout.Token);
+        var snapshot = await WaitForQueueTaskAsync(
+            context.State,
+            task.Id,
+            item => item.Progress?.SpeedBytesPerSecond == ProgressBlockingProvider.ReportedSpeed,
+            timeout.Token);
+
+        Assert.Equal(TransferStatus.Running, snapshot.Task.Status);
+        Assert.Equal(ProgressBlockingProvider.ReportedBytes, snapshot.Progress?.BytesTransferred);
+        Assert.Equal(ProgressBlockingProvider.ReportedSpeed, snapshot.Progress?.SpeedBytesPerSecond);
+
+        provider.Release.TrySetResult(true);
+        await context.Store.WaitForStatusAsync(task.Id, TransferStatus.Succeeded, timeout.Token);
+        await context.Runtime.StopAsync(timeout.Token);
+    }
+
+    [Fact]
     public async Task OneTaskFailure_DoesNotFaultRuntimeOrBlockNextTask()
     {
         var factory = new SequencedProviderFactory(
@@ -194,6 +220,75 @@ public sealed class TransferRuntimeControllerTests
     }
 
     [Fact]
+    public async Task AbandonInterruptedTask_MovesTaskFromQueueToHistory()
+    {
+        var providerFactory = new FixedProviderFactory(new FakeProvider());
+        var context = CreateContext(providerFactory);
+        var interrupted = TransferTaskFactory.Create(
+            TransferStatus.Interrupted,
+            "The previous execution ended without a confirmed remote result.",
+            StorageErrorCategory.Unknown,
+            isRetryable: true);
+        await context.Store.SaveAsync(interrupted);
+        await context.Runtime.StartAsync(CancellationToken.None);
+
+        Assert.Contains(context.State.Queue.Value.Tasks, snapshot => snapshot.Task.Id == interrupted.Id);
+
+        var result = await context.Runtime.AbandonAsync(interrupted.Id);
+        var persisted = (await context.Store.GetByIdAsync(interrupted.Id)).GetValueOrThrow();
+        var history = (await context.Store.ListHistoryAsync(0, 10)).GetValueOrThrow();
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(TransferStatus.Abandoned, persisted.Status);
+        Assert.False(persisted.IsRetryable);
+        Assert.DoesNotContain(context.State.Queue.Value.Tasks, snapshot => snapshot.Task.Id == interrupted.Id);
+        Assert.Contains(history, snapshot => snapshot.Task.Id == interrupted.Id);
+        Assert.Equal(0, providerFactory.CreateCalls);
+        await context.Runtime.StopAsync();
+    }
+
+    [Fact]
+    public async Task RetryAndAbandonInterruptedTask_AreMutuallyExclusive()
+    {
+        var context = CreateContext(new FakeProviderFactory());
+        var interrupted = TransferTaskFactory.Create(
+            TransferStatus.Interrupted,
+            "The previous execution ended without a confirmed remote result.",
+            StorageErrorCategory.Unknown,
+            isRetryable: true);
+        await context.Store.SaveAsync(interrupted);
+
+        var results = await Task.WhenAll(
+            context.Runtime.RetryAsync(interrupted.Id),
+            context.Runtime.AbandonAsync(interrupted.Id));
+        var persisted = (await context.Store.GetByIdAsync(interrupted.Id)).GetValueOrThrow();
+
+        Assert.Single(results, result => result.IsSuccess);
+        Assert.Single(results, result => result.IsFailure);
+        Assert.Contains(persisted.Status, new[] { TransferStatus.Pending, TransferStatus.Abandoned });
+    }
+
+    [Fact]
+    public async Task AbandonNonInterruptedTask_ReturnsConflictWithoutChangingTask()
+    {
+        var context = CreateContext(new FakeProviderFactory());
+        var failed = TransferTaskFactory.Create(
+            TransferStatus.Failed,
+            "failed",
+            StorageErrorCategory.Unknown,
+            isRetryable: true);
+        await context.Store.SaveAsync(failed);
+
+        var result = await context.Runtime.AbandonAsync(failed.Id);
+        var persisted = (await context.Store.GetByIdAsync(failed.Id)).GetValueOrThrow();
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCategory.Conflict, result.Error?.Category);
+        Assert.Equal(TransferStatus.Failed, persisted.Status);
+        Assert.Equal(failed.Revision, persisted.Revision);
+    }
+
+    [Fact]
     public async Task QueueRefreshFailure_PreservesLastSuccessfulSnapshotAsStale()
     {
         var store = new MemoryTransferStore();
@@ -270,6 +365,31 @@ public sealed class TransferRuntimeControllerTests
             if (predicate(change.NewValue))
             {
                 completion.TrySetResult(change.NewValue);
+            }
+        });
+        return await completion.Task.WaitAsync(cancellationToken);
+    }
+
+    private static async Task<TransferStateSnapshot> WaitForQueueTaskAsync(
+        AtomBoxTransferState state,
+        TransferTaskId taskId,
+        Func<TransferStateSnapshot, bool> predicate,
+        CancellationToken cancellationToken)
+    {
+        var existing = state.Queue.Value.Tasks.FirstOrDefault(item => item.Task.Id == taskId);
+        if (existing is not null && predicate(existing))
+        {
+            return existing;
+        }
+
+        var completion = new TaskCompletionSource<TransferStateSnapshot>(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+        using var subscription = state.Queue.Observe(change =>
+        {
+            var candidate = change.NewValue.Tasks.FirstOrDefault(item => item.Task.Id == taskId);
+            if (candidate is not null && predicate(candidate))
+            {
+                completion.TrySetResult(candidate);
             }
         });
         return await completion.Task.WaitAsync(cancellationToken);
@@ -387,6 +507,39 @@ public sealed class TransferRuntimeControllerTests
         {
             Started.TrySetResult(true);
             await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            return OperationResult.Success();
+        }
+    }
+
+    private sealed class ProgressBlockingProvider : BlockingProviderBase
+    {
+        public const long ReportedBytes = 512;
+        public const double ReportedSpeed = 4096;
+
+        public TaskCompletionSource<bool> ProgressReported { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<bool> Release { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override TransferExecutionCapabilities TransferCapabilities { get; } = new(
+            TransferIoExecutionKind.Asynchronous,
+            TransferIoExecutionKind.Asynchronous,
+            supportsCooperativeCancellation: true,
+            supportsActiveAbort: false,
+            supportsProgress: true);
+
+        public override async Task<OperationResult> UploadAsync(
+            RemotePath path,
+            Stream content,
+            long? contentLength,
+            IProgress<TransferProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            Started.TrySetResult(true);
+            progress?.Report(new TransferProgress(ReportedBytes, 1024, ReportedSpeed));
+            ProgressReported.TrySetResult(true);
+            await Release.Task.WaitAsync(cancellationToken);
             return OperationResult.Success();
         }
     }

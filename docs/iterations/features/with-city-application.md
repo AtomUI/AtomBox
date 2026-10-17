@@ -177,7 +177,7 @@ City `state-testing.md` 与 `detailed-design.md` 把 `StateTestStore`、状态�
 ### 当前调用边界
 
 - Application 没有 ViewModel、属性变化通知、Command、Interaction、`ValidationScope` 或 CommunityToolkit.Mvvm 类型；项目引用仅为 Core、City.State 和 DI abstractions。
-- Desktop ViewModel 使用 City `CommandFactory`、`OperationScope` 和 Activation owner 管理用户动作，再把标准 `CancellationToken` 传给 Application 服务并消费 `OperationResult`。
+- Desktop ViewModel 使用 City Presentation `IUiCommandFactory`（经 AtomBox 薄适配）、`OperationScope` 和 Activation owner 管理用户动作，再把标准 `CancellationToken` 传给 Application 服务并消费 `OperationResult`。
 - Application 请求和结果是普通不可变业务合同；`IProgress<UploadPreparationProgress>` 是标准 .NET 进度端口，不依赖 UI 或 ViewModel。
 
 ### 相似概念但不同责任

@@ -326,7 +326,7 @@ public sealed record TransferHistoryRowViewModel(
             FormatResultTagColor(task.Status),
             task.UpdatedAt.LocalDateTime.ToString("yyyy-MM-dd HH:mm"),
             task.StatusReason,
-            !string.IsNullOrWhiteSpace(task.StatusReason) || task.Status is TransferStatus.Failed or TransferStatus.Interrupted,
+            !string.IsNullOrWhiteSpace(task.StatusReason) || task.Status is TransferStatus.Failed or TransferStatus.Interrupted or TransferStatus.Abandoned,
             detailsCommand);
     }
 
@@ -347,6 +347,7 @@ public sealed record TransferHistoryRowViewModel(
             TransferStatus.Failed => localization.GetString("Transfer", "Failed"),
             TransferStatus.Canceled => localization.GetString("Transfer", "Canceled"),
             TransferStatus.Interrupted => localization.GetString("Transfer", "Interrupted"),
+            TransferStatus.Abandoned => localization.GetString("Transfer", "Abandoned"),
             _ => status.ToString()
         };
     }
@@ -359,6 +360,7 @@ public sealed record TransferHistoryRowViewModel(
             TransferStatus.Failed => "Error",
             TransferStatus.Interrupted => "Warning",
             TransferStatus.Canceled => "Grey",
+            TransferStatus.Abandoned => "Grey",
             _ => "Info"
         };
     }

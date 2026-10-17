@@ -192,13 +192,16 @@ public sealed class TransferStateStoreContractTests : IDisposable
     }
 
     [Fact]
-    public async Task ListHistory_IncludesInterruptedAsHistorical()
+    public async Task ListHistory_KeepsInterruptedInQueueAndIncludesAbandonedAsHistorical()
     {
-        var task = CreateTask(TransferStatus.Interrupted);
-        await _taskStore.SaveAsync(task);
+        var interrupted = CreateTask(TransferStatus.Interrupted);
+        var abandoned = CreateTask(TransferStatus.Abandoned);
+        await _taskStore.SaveAsync(interrupted);
+        await _taskStore.SaveAsync(abandoned);
 
         var history = await _stateStore.ListHistoryAsync(0, 50);
-        Assert.Contains(history.GetValueOrThrow(), s => s.Task.Id == task.Id);
+        Assert.DoesNotContain(history.GetValueOrThrow(), s => s.Task.Id == interrupted.Id);
+        Assert.Contains(history.GetValueOrThrow(), s => s.Task.Id == abandoned.Id);
     }
 
     public void Dispose()

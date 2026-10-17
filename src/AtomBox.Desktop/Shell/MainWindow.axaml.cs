@@ -222,7 +222,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
         {
             if (!ShouldSkipNavigationForMenuClick(args.NavMenuItem, itemKey, _viewModel.CurrentMenuKey))
             {
-                await _viewModel.NavigateByMenuKeyAsync(itemKey).ConfigureAwait(true);
+                await _viewModel.NavigateByMenuKeyCommand.ExecuteAsync(itemKey).ConfigureAwait(true);
             }
             ScheduleNavigationTooltips();
         }

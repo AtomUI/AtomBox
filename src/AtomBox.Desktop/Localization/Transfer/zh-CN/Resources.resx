@@ -21,6 +21,7 @@
   <data name="Failed" xml:space="preserve"><value>失败</value></data>
   <data name="Canceled" xml:space="preserve"><value>取消</value></data>
   <data name="Interrupted" xml:space="preserve"><value>已中断</value></data>
+  <data name="Abandoned" xml:space="preserve"><value>已放弃</value></data>
   <data name="Title" xml:space="preserve"><value>历史记录</value></data>
   <data name="LoadingHistory" xml:space="preserve"><value>正在加载历史记录...</value></data>
   <data name="HistoryLoadFailed" xml:space="preserve"><value>历史记录加载失败。</value></data>
@@ -38,6 +39,10 @@
   <data name="NoQueueTasksLong" xml:space="preserve"><value>暂无传输任务。从远程浏览页上传或下载文件后，任务会显示在这里。</value></data>
   <data name="UnsupportedTaskAction" xml:space="preserve"><value>当前任务状态暂不支持该操作。</value></data>
   <data name="TaskActionFailed" xml:space="preserve"><value>任务操作失败。</value></data>
+  <data name="AbandonTaskTitle" xml:space="preserve"><value>放弃中断任务</value></data>
+  <data name="AbandonTaskMessage" xml:space="preserve"><value>确定放弃传输任务“{0}”吗？&#xA;&#xA;AtomBox 只会停止重试并将其移入历史，不会删除、回滚或覆盖远端数据。远端最终结果仍然未知。</value></data>
+  <data name="AbandonTaskFailed" xml:space="preserve"><value>放弃任务失败，任务状态可能已经发生变化。</value></data>
+  <data name="TaskAbandoned" xml:space="preserve"><value>任务已放弃并移入历史记录。</value></data>
   <data name="NoPendingTasks" xml:space="preserve"><value>当前没有等待中的任务。</value></data>
   <data name="CancelTaskFailed" xml:space="preserve"><value>取消任务失败。</value></data>
   <data name="NoRetryableTasks" xml:space="preserve"><value>当前没有可重试的任务。</value></data>

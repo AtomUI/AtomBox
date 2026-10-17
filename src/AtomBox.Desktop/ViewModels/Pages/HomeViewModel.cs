@@ -230,6 +230,7 @@ public sealed record HomeRecentTransferViewModel(
             TransferStatus.Failed => localization.GetString("Transfer", "Failed"),
             TransferStatus.Canceled => localization.GetString("Transfer", "Canceled"),
             TransferStatus.Interrupted => localization.GetString("Transfer", "Interrupted"),
+            TransferStatus.Abandoned => localization.GetString("Transfer", "Abandoned"),
             _ => status.ToString()
         };
     }
@@ -242,6 +243,7 @@ public sealed record HomeRecentTransferViewModel(
             TransferStatus.Failed => "Error",
             TransferStatus.Interrupted => "Warning",
             TransferStatus.Canceled => "Grey",
+            TransferStatus.Abandoned => "Grey",
             _ => "Info"
         };
     }

@@ -221,6 +221,19 @@ public sealed class TransferAppService
         return _scheduler.RetryAsync(request.TaskId, cancellationToken);
     }
 
+    public Task<OperationResult> AbandonAsync(
+        AbandonTransferTaskRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        if (request.TaskId.IsEmpty)
+        {
+            return Task.FromResult(OperationResult.Failure(
+                StorageError.Validation("Transfer task id is required.")));
+        }
+
+        return _scheduler.AbandonAsync(request.TaskId, cancellationToken);
+    }
+
     public async Task<OperationResult> ClearHistoryAsync(
         ClearTransferHistoryRequest request,
         CancellationToken cancellationToken = default)

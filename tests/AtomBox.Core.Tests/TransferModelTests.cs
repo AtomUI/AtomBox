@@ -11,7 +11,7 @@ public sealed class TransferModelTests
     private static readonly TransferOptions DefaultOptions = new(TransferOverwritePolicy.Overwrite);
 
     [Fact]
-    public void TransferStatus_NumericValues_AreStableAndCancelingIsAppended()
+    public void TransferStatus_NumericValues_AreStableAndNewStatesAreAppended()
     {
         Assert.Equal(0, (int)TransferStatus.Pending);
         Assert.Equal(1, (int)TransferStatus.Running);
@@ -21,6 +21,7 @@ public sealed class TransferModelTests
         Assert.Equal(5, (int)TransferStatus.Failed);
         Assert.Equal(6, (int)TransferStatus.Canceled);
         Assert.Equal(7, (int)TransferStatus.Canceling);
+        Assert.Equal(8, (int)TransferStatus.Abandoned);
     }
 
     [Fact]
@@ -117,6 +118,8 @@ public sealed class TransferModelTests
         Assert.Equal(4, (int)TransferStatus.Succeeded);
         Assert.Equal(5, (int)TransferStatus.Failed);
         Assert.Equal(6, (int)TransferStatus.Canceled);
+        Assert.Equal(7, (int)TransferStatus.Canceling);
+        Assert.Equal(8, (int)TransferStatus.Abandoned);
     }
 
     [Fact]
@@ -309,6 +312,16 @@ public sealed class TransferModelTests
     }
 
     [Fact]
+    public void CanAbandon_RequiresInterruptedStatus()
+    {
+        Assert.False(CreateTask(TransferStatus.Pending).CanAbandon());
+        Assert.False(CreateTask(TransferStatus.Running).CanAbandon());
+        Assert.False(CreateTask(TransferStatus.Failed).CanAbandon());
+        Assert.True(CreateTask(TransferStatus.Interrupted).CanAbandon());
+        Assert.False(CreateTask(TransferStatus.Abandoned).CanAbandon());
+    }
+
+    [Fact]
     public void Pending_To_Running()
     {
         var task = CreateTask(TransferStatus.Pending);
@@ -424,6 +437,7 @@ public sealed class TransferModelTests
         Assert.True(CreateTask(TransferStatus.Failed).CanRetry());
         Assert.True(CreateTask(TransferStatus.Interrupted).CanRetry());
         Assert.False(CreateTask(TransferStatus.Canceled).CanRetry());
+        Assert.False(CreateTask(TransferStatus.Abandoned).CanRetry());
     }
 
     [Fact]
@@ -436,6 +450,7 @@ public sealed class TransferModelTests
         Assert.False(CreateTask(TransferStatus.Failed).CanCancel());
         Assert.False(CreateTask(TransferStatus.Interrupted).CanCancel());
         Assert.False(CreateTask(TransferStatus.Canceled).CanCancel());
+        Assert.False(CreateTask(TransferStatus.Abandoned).CanCancel());
     }
 
     [Fact]

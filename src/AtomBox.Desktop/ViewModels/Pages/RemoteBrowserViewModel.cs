@@ -101,6 +101,19 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         _title = Localization.GetString("RemoteBrowser", "Title");
         _statusMessage = Localization.GetString("RemoteBrowser", "SelectTypeOrConnection");
         RefreshCommand = commands.CreateAsync(this, nameof(RefreshCommand), RefreshAsync);
+        NavigateBreadcrumbCommand = commands.CreateAsync<object>(
+            this,
+            nameof(NavigateBreadcrumbCommand),
+            NavigateBreadcrumbAsync,
+            parameter => parameter is RemotePath);
+        ApplySearchCommand = commands.CreateAsync(
+            this,
+            nameof(ApplySearchCommand),
+            ApplySearchAsync);
+        RestoreListWhenSearchClearedCommand = commands.CreateAsync(
+            this,
+            nameof(RestoreListWhenSearchClearedCommand),
+            RestoreListWhenSearchClearedAsync);
         RetryLoadCommand = commands.CreateAsync(
             this,
             nameof(RetryLoadCommand),
@@ -433,6 +446,12 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
     }
 
     public IAsyncRelayCommand RefreshCommand { get; }
+
+    public IAsyncRelayCommand<object> NavigateBreadcrumbCommand { get; }
+
+    public IAsyncRelayCommand ApplySearchCommand { get; }
+
+    public IAsyncRelayCommand RestoreListWhenSearchClearedCommand { get; }
 
     public IAsyncRelayCommand RetryLoadCommand { get; }
 
@@ -1298,7 +1317,9 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         return true;
     }
 
-    public Task NavigateBreadcrumbAsync(object? navigateContext)
+    private Task NavigateBreadcrumbAsync(
+        object? navigateContext,
+        CancellationToken cancellationToken)
     {
         if (navigateContext is not RemotePath path)
         {
@@ -1310,10 +1331,10 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         ClearSearch();
         SyncSelectedBucketForPath(_remotePath);
 
-        return LoadItemsAsync(GetActivationCancellationToken());
+        return LoadItemsAsync(cancellationToken);
     }
 
-    public Task ApplySearchAsync()
+    private Task ApplySearchAsync(CancellationToken cancellationToken)
     {
         if (!IsSearchVisible || IsLoading)
         {
@@ -1322,10 +1343,10 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
         _appliedSearchText = SearchText.Trim();
         ResetPaging();
-        return LoadItemsAsync(GetActivationCancellationToken());
+        return LoadItemsAsync(cancellationToken);
     }
 
-    public Task RestoreListWhenSearchClearedAsync()
+    private Task RestoreListWhenSearchClearedAsync(CancellationToken cancellationToken)
     {
         if (!IsSearchVisible)
         {
@@ -1351,7 +1372,7 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
 
         _appliedSearchText = string.Empty;
         ResetPaging();
-        return LoadItemsAsync(GetActivationCancellationToken());
+        return LoadItemsAsync(cancellationToken);
     }
 
     private async Task RestoreListWhenSearchClearedCoreAsync(CancellationToken cancellationToken)
@@ -1367,11 +1388,6 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         ResetPaging();
         await RunWithLoadingAsync(
             () => LoadItemsCoreAsync(cancellationToken)).ConfigureAwait(true);
-    }
-
-    private CancellationToken GetActivationCancellationToken()
-    {
-        return CurrentActivationScope?.CancellationToken ?? CancellationToken.None;
     }
 
     private void SetAllFilesSelected(bool isSelected)

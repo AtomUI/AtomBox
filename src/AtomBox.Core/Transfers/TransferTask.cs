@@ -203,6 +203,11 @@ public sealed record TransferTask
         return Status is TransferStatus.Failed or TransferStatus.Interrupted;
     }
 
+    public bool CanAbandon()
+    {
+        return Status == TransferStatus.Interrupted;
+    }
+
     private static void ValidateFingerprintMetadata(
         string? hashAlgorithm,
         string? hashValue,

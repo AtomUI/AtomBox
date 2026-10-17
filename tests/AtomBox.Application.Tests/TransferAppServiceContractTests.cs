@@ -524,6 +524,42 @@ public sealed class TransferAppServiceContractTests
     }
 
     [Fact]
+    public async Task AbandonAsync_EmptyTaskId_ReturnsValidationFailure()
+    {
+        var service = new TransferAppService(
+            new CountingScheduler(), new EmptyStateStore(), new EmptyTaskStore());
+
+        var result = await service.AbandonAsync(new AbandonTransferTaskRequest(default));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCategory.Validation, result.Error?.Category);
+    }
+
+    [Fact]
+    public async Task AbandonAsync_ValidTaskId_RoutesToScheduler()
+    {
+        var scheduler = new CountingScheduler();
+        var service = new TransferAppService(
+            scheduler, new EmptyStateStore(), new EmptyTaskStore());
+
+        var result = await service.AbandonAsync(new AbandonTransferTaskRequest(TransferTaskId.New()));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal(1, scheduler.AbandonCalls);
+    }
+
+    [Fact]
+    public async Task AbandonAsync_SchedulerFailure_PropagatesError()
+    {
+        var service = new TransferAppService(
+            new FailOnAbandonScheduler(), new EmptyStateStore(), new EmptyTaskStore());
+
+        var result = await service.AbandonAsync(new AbandonTransferTaskRequest(TransferTaskId.New()));
+
+        Assert.True(result.IsFailure);
+    }
+
+    [Fact]
     public async Task ClearHistoryAsync_EmptyHistory_ReturnsSuccess()
     {
         var taskStore = new CountingTaskStore();
@@ -601,6 +637,7 @@ public sealed class TransferAppServiceContractTests
         public int SubmitCalls { get; set; }
         public int CancelCalls { get; set; }
         public int RetryCalls { get; set; }
+        public int AbandonCalls { get; set; }
         public List<TransferTask> SubmittedTasks { get; } = [];
 
         public Task<OperationResult> SubmitAsync(TransferTask task, CancellationToken cancellationToken = default)
@@ -619,6 +656,12 @@ public sealed class TransferAppServiceContractTests
         public Task<OperationResult> RetryAsync(TransferTaskId taskId, CancellationToken cancellationToken = default)
         {
             RetryCalls++;
+            return Task.FromResult(OperationResult.Success());
+        }
+
+        public Task<OperationResult> AbandonAsync(TransferTaskId taskId, CancellationToken cancellationToken = default)
+        {
+            AbandonCalls++;
             return Task.FromResult(OperationResult.Success());
         }
 
@@ -761,6 +804,22 @@ public sealed class TransferAppServiceContractTests
             => Task.FromResult(OperationResult.Failure(
                 new StorageError(StorageErrorCode.Unknown, "retry failed", StorageErrorCategory.Unknown)));
 
+    }
+
+    private sealed class FailOnAbandonScheduler : ITransferTaskScheduler
+    {
+        public Task<OperationResult> SubmitAsync(TransferTask task, CancellationToken cancellationToken = default)
+            => Task.FromResult(OperationResult.Success());
+
+        public Task<OperationResult> CancelAsync(TransferTaskId taskId, CancellationToken cancellationToken = default)
+            => Task.FromResult(OperationResult.Success());
+
+        public Task<OperationResult> RetryAsync(TransferTaskId taskId, CancellationToken cancellationToken = default)
+            => Task.FromResult(OperationResult.Success());
+
+        public Task<OperationResult> AbandonAsync(TransferTaskId taskId, CancellationToken cancellationToken = default)
+            => Task.FromResult(OperationResult.Failure(
+                new StorageError(StorageErrorCode.Unknown, "abandon failed", StorageErrorCategory.Unknown)));
     }
 
     private sealed class EmptyStateStore : ITransferStateStore

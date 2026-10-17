@@ -182,7 +182,7 @@ City 维度：
 | 范围 | 文档 | 状态 |
 | --- | --- | --- |
 | Desktop：Core / Routing / Presentation / Localization / Build / Generators | [AtomBox × AtomUI.City 迁移审计](with-city.md) | 自动化完成，人工 UI 验证待完成。 |
-| Desktop：Mvvm / Presentation 生命周期扩展 | [AtomBox × AtomUI.City MVVM 迁移](with-city-mvvm.md) | 21 项已实施，人工 UI 验证待完成。 |
+| Desktop：Mvvm / Presentation 生命周期扩展 | [AtomBox × AtomUI.City MVVM 迁移](with-city-mvvm.md) | 21 项已实施；已对齐 City `34ce19f` Effective Cancellation Token、UI 通知调度和 `IUiCommandFactory` 合同，人工 UI 验证待完成。 |
 | Desktop：EventBus | [AtomBox × AtomUI.City 迁移审计](with-city.md) | 决策完成：不采用；保留直接 UI 通知，业务事实继续由上游 State 提供。 |
 | Desktop：Security | [AtomBox × AtomUI.City 迁移审计](with-city.md) | 决策完成：不采用；外部存储连接凭据不等于 City 当前应用主体。 |
 | Desktop：PluginSystem | [AtomBox × AtomUI.City 迁移审计](with-city.md) | 决策完成：不采用；当前没有插件产品合同，未来 Provider 插件运行时也不归 Desktop 所有。 |

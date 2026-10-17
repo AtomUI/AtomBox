@@ -132,7 +132,13 @@ public sealed class MvvmMigrationTests
     {
         var dispatcher = new QueueingUiDispatcher();
         var owner = new TestCommandViewModel();
-        var factory = new DesktopCommandFactory(new NoopCommandExceptionHandler(), dispatcher);
+        var services = new ServiceCollection();
+        services.AddSingleton<CityUiDispatcher>(dispatcher);
+        services.AddPresentation();
+        await using var serviceProvider = services.BuildServiceProvider();
+        var factory = new DesktopCommandFactory(
+            new NoopCommandExceptionHandler(),
+            serviceProvider.GetRequiredService<IUiCommandFactory>());
         var command = factory.CreateAsync(owner, "refresh", _ => Task.CompletedTask);
         var notifications = 0;
         command.CanExecuteChanged += (_, _) => notifications++;
@@ -460,14 +466,52 @@ public sealed class MvvmMigrationTests
         public ValueTask InvokeAsync(Action callback, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            callback();
-            return ValueTask.CompletedTask;
+            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _queue.Enqueue(() =>
+            {
+                try
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    callback();
+                    completion.TrySetResult();
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    completion.TrySetCanceled(cancellationToken);
+                }
+                catch (Exception exception)
+                {
+                    completion.TrySetException(exception);
+                }
+
+                return ValueTask.CompletedTask;
+            });
+            return new ValueTask(completion.Task);
         }
 
         public ValueTask<T> InvokeAsync<T>(Func<T> callback, CancellationToken cancellationToken)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            return ValueTask.FromResult(callback());
+            var completion = new TaskCompletionSource<T>(TaskCreationOptions.RunContinuationsAsynchronously);
+            _queue.Enqueue(() =>
+            {
+                try
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    completion.TrySetResult(callback());
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    completion.TrySetCanceled(cancellationToken);
+                }
+                catch (Exception exception)
+                {
+                    completion.TrySetException(exception);
+                }
+
+                return ValueTask.CompletedTask;
+            });
+            return new ValueTask<T>(completion.Task);
         }
 
         public ValueTask PostAsync(
@@ -475,8 +519,25 @@ public sealed class MvvmMigrationTests
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            _queue.Enqueue(() => callback(cancellationToken));
-            return ValueTask.CompletedTask;
+            var completion = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            _queue.Enqueue(async () =>
+            {
+                try
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    await callback(cancellationToken).ConfigureAwait(false);
+                    completion.TrySetResult();
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    completion.TrySetCanceled(cancellationToken);
+                }
+                catch (Exception exception)
+                {
+                    completion.TrySetException(exception);
+                }
+            });
+            return new ValueTask(completion.Task);
         }
 
         public void Drain()

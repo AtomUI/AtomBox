@@ -115,7 +115,7 @@ Round 2 需要：
 | `TransferProgress_NegativeSpeed_Throws` | speedBytesPerSecond \< 0 抛 ArgumentOutOfRangeException |
 | `TransferProgress_Percent_ComputesCorrectly` | (25, 100) → 25%；TotalBytes=null → null |
 | `TransferProgress_Percent_ClampsTo100` | (150, 100) → 100 |
-| `TransferStatus_Values_AreStable` | 枚举值顺序不变（后端持久化依赖数值）：Pending=0, Running=1, Paused=2, Interrupted=3, Succeeded=4, Failed=5, Canceled=6 |
+| `TransferStatus_Values_AreStable` | 既有枚举值不变，新状态仅追加：Pending=0, Running=1, Paused=2, Interrupted=3, Succeeded=4, Failed=5, Canceled=6, Canceling=7, Abandoned=8 |
 
 ### 5.2 状态机规则
 
@@ -132,6 +132,7 @@ Round 2 需要：
 | `Failed_To_Pending` | Retry 重置，清除 StatusReason / ErrorCategory / IsRetryable |
 | `Interrupted_CanRetry_CanCancel_State` | CanRetry=true，CanCancel=false |
 | `Interrupted_To_Pending` | 手动恢复成功 |
+| `Interrupted_To_Abandoned` | 用户放弃后成为不可重试历史终态 |
 | `Paused_To_Pending` | 恢复执行 |
 | `Succeeded_Retry_Rejected` | CanRetry=false，WithStatus(Pending) 或 Retry 拒绝 |
 | `Succeeded_Cancel_Rejected` | CanCancel=false，WithStatus(Canceled) 拒绝 |
@@ -258,7 +259,7 @@ Round 2 需要：
 | Case | 期望 |
 | --- | --- |
 | `ListQueue_ReturnsPendingAndRunningTasks` | 包含 Pending + Running 状态的任务+进度 |
-| `ListQueue_ExcludesTerminalStates` | Succeeded / Failed / Canceled / Interrupted 不出现 |
+| `ListQueue_IncludesUnresolvedInterrupted` | Pending / Running / Canceling / Paused / Interrupted 在活动队列，Abandoned 不出现 |
 | `ListQueue_Empty_ReturnsEmptyList` | 无任务时返回空 |
 | `ListQueue_TaskWithProgress_ProgressPopulated` | Progress 字段正确填充 |
 | `ListQueue_SnapshotCanRetry_MatchesTask` | Task.IsRetryable + Task.CanRetry() 一致 |
@@ -268,7 +269,7 @@ Round 2 需要：
 
 | Case | 期望 |
 | --- | --- |
-| `ListHistory_IncludesAllTerminalStates` | Succeeded / Failed / Canceled / Interrupted 出现在历史 |
+| `ListHistory_IncludesAllTerminalStates` | Succeeded / Failed / Canceled / Abandoned 出现在历史；未决 Interrupted 不出现 |
 | `ListHistory_Empty_ReturnsEmptyList` | 无终端任务时返回空 |
 | `ListHistory_Pagination_SkipZeroTakeDefault` | skip=0, take=50 返回前 50 条 |
 | `ListHistory_Pagination_SkipPage` | skip=50, take=50 返回 51-100 条 |

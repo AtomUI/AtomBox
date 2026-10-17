@@ -89,8 +89,8 @@ public sealed class TransferRuntimeController : ITransferTaskScheduler
     }
 
     public Task StartAsync(
-        CancellationToken applicationLifetime,
-        CancellationToken startupCancellationToken = default)
+        CancellationToken ownerCancellationToken,
+        CancellationToken cancellationToken = default)
     {
         Task startTask;
         lock (_lifecycleGate)
@@ -98,8 +98,8 @@ public sealed class TransferRuntimeController : ITransferTaskScheduler
             startTask = _lifecycle switch
             {
                 TransferRuntimeLifecycleState.Created => StartOnceLocked(
-                    applicationLifetime,
-                    startupCancellationToken),
+                    ownerCancellationToken,
+                    cancellationToken),
                 TransferRuntimeLifecycleState.Starting => _startTask!,
                 TransferRuntimeLifecycleState.Running => Task.CompletedTask,
                 TransferRuntimeLifecycleState.Faulted => _startTask ?? Task.FromException(
@@ -109,12 +109,12 @@ public sealed class TransferRuntimeController : ITransferTaskScheduler
             };
         }
 
-        return startupCancellationToken.CanBeCanceled
-            ? startTask.WaitAsync(startupCancellationToken)
+        return cancellationToken.CanBeCanceled
+            ? startTask.WaitAsync(cancellationToken)
             : startTask;
     }
 
-    public Task StopAsync(CancellationToken shutdownCancellationToken = default)
+    public Task StopAsync(CancellationToken cancellationToken = default)
     {
         lock (_lifecycleGate)
         {
@@ -139,7 +139,7 @@ public sealed class TransferRuntimeController : ITransferTaskScheduler
             _lifecycle = TransferRuntimeLifecycleState.Stopping;
             _acceptingSubmissions = false;
             PublishSnapshotNoThrowLocked();
-            _stopTask = StopCoreAsync(shutdownCancellationToken);
+            _stopTask = StopCoreAsync(cancellationToken);
             return _stopTask;
         }
     }
@@ -286,6 +286,45 @@ public sealed class TransferRuntimeController : ITransferTaskScheduler
         return OperationResult.Failure(update.Error!);
     }
 
+    public async Task<OperationResult> AbandonAsync(
+        TransferTaskId taskId,
+        CancellationToken cancellationToken = default)
+    {
+        var taskResult = await _taskStore.GetByIdAsync(taskId, cancellationToken).ConfigureAwait(false);
+        if (taskResult.IsFailure)
+        {
+            return OperationResult.Failure(taskResult.Error!);
+        }
+
+        var task = taskResult.GetValueOrThrow();
+        if (!task.CanAbandon())
+        {
+            return OperationResult.Failure(new StorageError(
+                StorageErrorCode.Conflict,
+                "Only interrupted transfer tasks can be abandoned.",
+                StorageErrorCategory.Conflict));
+        }
+
+        var abandoned = task.WithStatus(
+            TransferStatus.Abandoned,
+            _timeProvider.GetUtcNow(),
+            "用户已放弃重试此中断任务；远端最终状态仍然未知。",
+            StorageErrorCategory.Unknown,
+            isRetryable: false);
+        var update = await _taskStore.CompareExchangeAsync(
+            abandoned,
+            task.Revision,
+            TransferStatus.Interrupted,
+            cancellationToken).ConfigureAwait(false);
+        if (update.IsFailure)
+        {
+            return OperationResult.Failure(update.Error!);
+        }
+
+        _projector.PublishPersisted(abandoned, progress: null);
+        return OperationResult.Success();
+    }
+
     internal Task<OperationResult> WakeAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
@@ -294,25 +333,25 @@ public sealed class TransferRuntimeController : ITransferTaskScheduler
     }
 
     private Task StartOnceLocked(
-        CancellationToken applicationLifetime,
-        CancellationToken startupCancellationToken)
+        CancellationToken ownerCancellationToken,
+        CancellationToken cancellationToken)
     {
         _lifecycle = TransferRuntimeLifecycleState.Starting;
         _health = TransferRuntimeHealthState.Healthy;
         _acceptingSubmissions = false;
         PublishSnapshotNoThrowLocked();
-        _startTask = StartCoreAsync(applicationLifetime, startupCancellationToken);
+        _startTask = StartCoreAsync(ownerCancellationToken, cancellationToken);
         return _startTask;
     }
 
     private async Task StartCoreAsync(
-        CancellationToken applicationLifetime,
-        CancellationToken startupCancellationToken)
+        CancellationToken ownerCancellationToken,
+        CancellationToken cancellationToken)
     {
         try
         {
-            _runtimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(applicationLifetime);
-            var tasksResult = await _taskStore.ListAsync(startupCancellationToken).ConfigureAwait(false);
+            _runtimeCancellation = CancellationTokenSource.CreateLinkedTokenSource(ownerCancellationToken);
+            var tasksResult = await _taskStore.ListAsync(cancellationToken).ConfigureAwait(false);
             if (tasksResult.IsFailure)
             {
                 throw new TransferRuntimeStartupException(tasksResult.Error!);
@@ -331,14 +370,14 @@ public sealed class TransferRuntimeController : ITransferTaskScheduler
                     interrupted,
                     task.Revision,
                     task.Status,
-                    startupCancellationToken).ConfigureAwait(false);
+                    cancellationToken).ConfigureAwait(false);
                 if (recovery.IsFailure && recovery.Error?.Category != StorageErrorCategory.Conflict)
                 {
                     throw new TransferRuntimeStartupException(recovery.Error!);
                 }
             }
 
-            var refreshResult = await _projector.RefreshAsync(startupCancellationToken).ConfigureAwait(false);
+            var refreshResult = await _projector.RefreshAsync(cancellationToken).ConfigureAwait(false);
             if (refreshResult.IsFailure)
             {
                 throw new TransferRuntimeStartupException(refreshResult.Error!);
@@ -867,6 +906,7 @@ public sealed class TransferRuntimeController : ITransferTaskScheduler
 
         foreach (var capture in captured)
         {
+            _projector.PublishPersistedProgress(capture.Update);
             capture.Entry.MarkProgressFlushed(capture.Update.Sequence);
         }
 
@@ -889,6 +929,7 @@ public sealed class TransferRuntimeController : ITransferTaskScheduler
             throw new TransferRuntimePersistenceException(result.Error!);
         }
 
+        _projector.PublishPersistedProgress(captured.Update);
         entry.MarkProgressFlushed(captured.Update.Sequence);
     }
 

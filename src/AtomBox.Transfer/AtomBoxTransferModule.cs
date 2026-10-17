@@ -16,7 +16,7 @@ public sealed class AtomBoxTransferModule : ModuleBase
 
     public override async ValueTask OnPostApplicationInitializationAsync(
         ApplicationInitializationContext context,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
 
@@ -28,7 +28,7 @@ public sealed class AtomBoxTransferModule : ModuleBase
 
     public override async ValueTask OnApplicationShutdownAsync(
         ApplicationShutdownContext context,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
 

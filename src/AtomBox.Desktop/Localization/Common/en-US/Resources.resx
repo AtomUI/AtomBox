@@ -11,6 +11,7 @@
   <data name="Rename" xml:space="preserve"><value>Rename</value></data>
   <data name="Delete" xml:space="preserve"><value>Delete</value></data>
   <data name="Retry" xml:space="preserve"><value>Retry</value></data>
+  <data name="Abandon" xml:space="preserve"><value>Abandon</value></data>
   <data name="ViewDetails" xml:space="preserve"><value>View Details</value></data>
   <data name="PreviousPage" xml:space="preserve"><value>Previous</value></data>
   <data name="NextPage" xml:space="preserve"><value>Next</value></data>

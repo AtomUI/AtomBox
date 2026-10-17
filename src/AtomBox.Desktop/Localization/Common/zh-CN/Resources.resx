@@ -11,6 +11,7 @@
   <data name="Rename" xml:space="preserve"><value>重命名</value></data>
   <data name="Delete" xml:space="preserve"><value>删除</value></data>
   <data name="Retry" xml:space="preserve"><value>重试</value></data>
+  <data name="Abandon" xml:space="preserve"><value>放弃</value></data>
   <data name="ViewDetails" xml:space="preserve"><value>查看详情</value></data>
   <data name="PreviousPage" xml:space="preserve"><value>上一页</value></data>
   <data name="NextPage" xml:space="preserve"><value>下一页</value></data>

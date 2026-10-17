@@ -10,6 +10,7 @@ using AtomBox.Desktop.Services;
 using AtomBox.Desktop.ViewModels;
 using AtomUI.City.Mvvm;
 using AtomUI.City.State;
+using CommunityToolkit.Mvvm.Input;
 using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.Shell;
@@ -32,6 +33,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         IAtomBoxApplicationState applicationState,
         IDesktopPreferencesService preferences,
         StatusBarViewModel statusBar,
+        DesktopCommandFactory commands,
         CityUiDispatcher dispatcher)
     {
         _navigationService = navigationService;
@@ -40,6 +42,11 @@ public sealed class MainWindowViewModel : ViewModelBase
         _preferences = preferences;
         _dispatcher = dispatcher;
         StatusBar = statusBar;
+        NavigateByMenuKeyCommand = commands.CreateAsync<string>(
+            this,
+            nameof(NavigateByMenuKeyCommand),
+            NavigateByMenuKeyAsync,
+            concurrencyPolicy: CommandConcurrencyPolicy.Allow);
     }
 
     public string? CurrentMenuKey
@@ -66,17 +73,15 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public ObservableCollection<RemoteAccountNavigationItem> WebDavAccounts { get; } = [];
 
+    public IAsyncRelayCommand<string> NavigateByMenuKeyCommand { get; }
+
     public async Task NavigateByMenuKeyAsync(
         string? itemKey,
         CancellationToken cancellationToken = default)
     {
-        var lifetimeCancellationToken = cancellationToken.CanBeCanceled
-            ? cancellationToken
-            : CurrentActivationScope?.CancellationToken ?? CancellationToken.None;
-
         using var supersession = new CancellationTokenSource();
         using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            lifetimeCancellationToken,
+            cancellationToken,
             supersession.Token);
 
         lock (_menuNavigationGate)
@@ -91,7 +96,7 @@ public sealed class MainWindowViewModel : ViewModelBase
         }
         catch (OperationCanceledException) when (
             supersession.IsCancellationRequested &&
-            !lifetimeCancellationToken.IsCancellationRequested)
+            !cancellationToken.IsCancellationRequested)
         {
             // A newer menu selection superseded this navigation intent.
         }

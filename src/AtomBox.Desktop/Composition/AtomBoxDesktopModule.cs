@@ -34,7 +34,7 @@ public sealed class AtomBoxDesktopModule : ModuleBase
 
     public override async ValueTask OnApplicationInitializationAsync(
         ApplicationInitializationContext context,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(context);
         cancellationToken.ThrowIfCancellationRequested();

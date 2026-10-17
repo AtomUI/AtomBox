@@ -93,6 +93,26 @@ public sealed class TransferStateMigrationTests
         Assert.Equal(progress, snapshot.Progress);
     }
 
+    [Fact]
+    public void LatePersistedProgressCannotResurrectACompletedTask()
+    {
+        var store = new MemoryTransferStore();
+        var (state, projector) = CreateState(store);
+        var running = TransferTaskFactory.Create(TransferStatus.Running);
+        projector.PublishReady([new TransferStateSnapshot(running, null)]);
+        projector.PublishPersisted(
+            running.WithStatus(TransferStatus.Succeeded, DateTimeOffset.UtcNow),
+            progress: null);
+
+        projector.PublishPersistedProgress(new TransferProgressUpdate(
+            running.Id,
+            running.Revision,
+            sequence: 1,
+            new TransferProgress(50, 100, 1024)));
+
+        Assert.Empty(state.Queue.Value.Tasks);
+    }
+
     [Theory]
     [InlineData(TransferStatus.Succeeded)]
     [InlineData(TransferStatus.Failed)]

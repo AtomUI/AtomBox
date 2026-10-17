@@ -62,7 +62,7 @@ public sealed class TransferStateStore : ITransferStateStore
 
         var progressByTask = progressResult.GetValueOrThrow();
         var history = tasksResult.GetValueOrThrow()
-            .Where(task => task.Status is TransferStatus.Succeeded or TransferStatus.Failed or TransferStatus.Canceled or TransferStatus.Interrupted)
+            .Where(task => task.Status is TransferStatus.Succeeded or TransferStatus.Failed or TransferStatus.Canceled or TransferStatus.Abandoned)
             .OrderByDescending(task => task.UpdatedAt)
             .Skip(Math.Max(skip, 0))
             .Take(Math.Max(take, 0))
