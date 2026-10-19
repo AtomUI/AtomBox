@@ -676,6 +676,9 @@ public sealed class DialogService : IDialogService
         private ErrorDialogRequest? _lastTestDetails;
         private bool _isClosed;
         private bool _footerButtonsAttached;
+        private bool _isApplyingSuggestedDisplayName;
+        private bool _hasUserEditedDisplayName;
+        private string? _suggestedDisplayName;
         private IDisposable? _connectionMessageDismissTimer;
 
         public AccountDialogWindow(AccountDialogRequest request, IAtomBoxLocalizedText localization)
@@ -734,7 +737,20 @@ public sealed class DialogService : IDialogService
 
             _displayNameInput.PlaceholderText = "Aliyun OSS - production";
             _displayNameInput.Text = _request.ExistingAccount?.DisplayName;
-            _displayNameInput.TextChanged += (_, _) => ResetConnectionTestState();
+            _displayNameInput.TextChanged += (_, _) =>
+            {
+                if (!_isApplyingSuggestedDisplayName &&
+                    _request.ExistingAccount is null &&
+                    !string.Equals(
+                        _displayNameInput.Text,
+                        _suggestedDisplayName,
+                        StringComparison.Ordinal))
+                {
+                    _hasUserEditedDisplayName = true;
+                }
+
+                ResetConnectionTestState();
+            };
             _ftpAnonymousInput.Content = L("AnonymousAccess");
             _ftpAnonymousInput.IsCheckedChanged += (_, _) =>
             {
@@ -947,9 +963,9 @@ public sealed class DialogService : IDialogService
                 _configFields.Children.Add(Field(field.DisplayName, input));
             }
 
-            if (string.IsNullOrWhiteSpace(_displayNameInput.Text))
+            if (_request.ExistingAccount is null && !_hasUserEditedDisplayName)
             {
-                _displayNameInput.Text = GetProviderDisplayName(provider);
+                ApplySuggestedDisplayName(GetProviderDisplayName(provider));
             }
 
             if (IsFtp(provider))
@@ -988,6 +1004,20 @@ public sealed class DialogService : IDialogService
             }
 
             UpdateCredentialInputState();
+        }
+
+        private void ApplySuggestedDisplayName(string value)
+        {
+            _suggestedDisplayName = value;
+            _isApplyingSuggestedDisplayName = true;
+            try
+            {
+                _displayNameInput.Text = value;
+            }
+            finally
+            {
+                _isApplyingSuggestedDisplayName = false;
+            }
         }
 
         private async Task TestConnectionAsync()

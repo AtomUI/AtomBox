@@ -2337,6 +2337,11 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         var result = await _accountDialogWorkflow
             .AddAccountAsync(category, preferredProviderId, cancellationToken)
             .ConfigureAwait(true);
+        if (result is null)
+        {
+            return;
+        }
+
         if (result.IsFailure)
         {
             StatusMessage = Localization.GetString("RemoteBrowser", "AccountSaveFailed");
@@ -2345,10 +2350,6 @@ public sealed class RemoteBrowserViewModel : ViewModelBase
         }
 
         var account = result.GetValueOrThrow();
-        if (account is null)
-        {
-            return;
-        }
 
         _storageAccountId = account.Id;
         _remotePath = GetInitialPath(account);

@@ -27,7 +27,7 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
         _localization = localization;
     }
 
-    public async Task<OperationResult<StorageAccountSummary?>> AddAccountAsync(
+    public async Task<OperationResult<StorageAccountSummary>?> AddAccountAsync(
         StorageProviderCategory? preferredCategory = null,
         StorageProviderId? preferredProviderId = null,
         CancellationToken cancellationToken = default)
@@ -41,7 +41,7 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
 
         if (dialogResult is null)
         {
-            return OperationResult<StorageAccountSummary?>.Success(null);
+            return null;
         }
 
         var addResult = await _accounts.AddAsync(new AddStorageAccountRequest(
@@ -55,14 +55,14 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
 
         if (addResult.IsFailure)
         {
-            return OperationResult<StorageAccountSummary?>.Failure(addResult.Error!);
+            return OperationResult<StorageAccountSummary>.Failure(addResult.Error!);
         }
 
         var account = addResult.GetValueOrThrow();
-        return OperationResult<StorageAccountSummary?>.Success(account);
+        return OperationResult<StorageAccountSummary>.Success(account);
     }
 
-    public async Task<OperationResult<StorageAccountSummary?>> EditAccountAsync(
+    public async Task<OperationResult<StorageAccountSummary>?> EditAccountAsync(
         StorageAccountSummary account,
         CancellationToken cancellationToken = default)
     {
@@ -78,7 +78,7 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
 
         if (dialogResult is null)
         {
-            return OperationResult<StorageAccountSummary?>.Success(null);
+            return null;
         }
 
         var credentialMaterial = dialogResult.CredentialValues.Count > 0
@@ -95,11 +95,11 @@ public sealed class AccountDialogWorkflow : IAccountDialogWorkflow
 
         if (updateResult.IsFailure)
         {
-            return OperationResult<StorageAccountSummary?>.Failure(updateResult.Error!);
+            return OperationResult<StorageAccountSummary>.Failure(updateResult.Error!);
         }
 
         var updatedAccount = updateResult.GetValueOrThrow();
-        return OperationResult<StorageAccountSummary?>.Success(updatedAccount);
+        return OperationResult<StorageAccountSummary>.Success(updatedAccount);
     }
 
     public async Task<OperationResult> DeleteAccountAsync(

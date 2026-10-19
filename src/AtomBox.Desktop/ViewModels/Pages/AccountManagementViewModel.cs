@@ -152,6 +152,11 @@ public sealed class AccountManagementViewModel : ViewModelBase
     private async Task AddAccountAsync(CancellationToken cancellationToken)
     {
         var result = await _accountDialogWorkflow.AddAccountAsync(cancellationToken: cancellationToken).ConfigureAwait(true);
+        if (result is null)
+        {
+            return;
+        }
+
         if (result.IsFailure)
         {
             SetStatus(new("Account", "AccountSaveFailed"));
@@ -159,10 +164,6 @@ public sealed class AccountManagementViewModel : ViewModelBase
         }
 
         var account = result.GetValueOrThrow();
-        if (account is null)
-        {
-            return;
-        }
 
         SelectedAccountId = account.Id;
         SelectRequestedAccount();
@@ -186,6 +187,11 @@ public sealed class AccountManagementViewModel : ViewModelBase
         var result = await _accountDialogWorkflow
             .EditAccountAsync(SelectedAccount.Account, cancellationToken)
             .ConfigureAwait(true);
+        if (result is null)
+        {
+            return;
+        }
+
         if (result.IsFailure)
         {
             SetStatus(new("Account", "AccountSaveFailed"));
@@ -193,10 +199,6 @@ public sealed class AccountManagementViewModel : ViewModelBase
         }
 
         var account = result.GetValueOrThrow();
-        if (account is null)
-        {
-            return;
-        }
 
         SelectedAccountId = account.Id;
         SelectRequestedAccount();

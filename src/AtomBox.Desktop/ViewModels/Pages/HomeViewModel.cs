@@ -20,7 +20,6 @@ public sealed class HomeViewModel : ViewModelBase
     private readonly IAtomBoxApplicationState _applicationState;
     private readonly IAtomBoxTransferState _transferState;
     private readonly TransferAppService _transfers;
-    private readonly INavigationService _navigation;
     private readonly IAtomBoxLocalizedText _localization;
     private readonly CityUiDispatcher _dispatcher;
     private LocalizedText _accountSummary = new("Shell", "AccountCount", 0);
@@ -34,7 +33,7 @@ public sealed class HomeViewModel : ViewModelBase
         IAtomBoxApplicationState applicationState,
         IAtomBoxTransferState transferState,
         TransferAppService transfers,
-        INavigationService navigation,
+        IShellNavigationController shellNavigation,
         IAtomBoxLocalizedText localization,
         DesktopCommandFactory commands,
         CityUiDispatcher dispatcher)
@@ -42,21 +41,26 @@ public sealed class HomeViewModel : ViewModelBase
         _applicationState = applicationState;
         _transferState = transferState;
         _transfers = transfers;
-        _navigation = navigation;
         _localization = localization;
         _dispatcher = dispatcher;
         OpenRemoteStorageCommand = commands.CreateAsync(
-            this,
+            shellNavigation,
             nameof(OpenRemoteStorageCommand),
-            cancellationToken => NavigateAsync(NavigationTarget.RemoteBrowser, cancellationToken));
+            cancellationToken => shellNavigation.NavigateByMenuKeyAsync(
+                NavigationMenuKeys.RemoteStorage,
+                cancellationToken));
         OpenTransferQueueCommand = commands.CreateAsync(
-            this,
+            shellNavigation,
             nameof(OpenTransferQueueCommand),
-            cancellationToken => NavigateAsync(NavigationTarget.TransferQueue, cancellationToken));
+            cancellationToken => shellNavigation.NavigateByMenuKeyAsync(
+                NavigationMenuKeys.TransferQueue,
+                cancellationToken));
         OpenAccountManagementCommand = commands.CreateAsync(
-            this,
+            shellNavigation,
             nameof(OpenAccountManagementCommand),
-            cancellationToken => NavigateAsync(NavigationTarget.AccountManagement, cancellationToken));
+            cancellationToken => shellNavigation.NavigateByMenuKeyAsync(
+                NavigationMenuKeys.AccountManagement,
+                cancellationToken));
     }
 
     public string Title => "AtomBox";
@@ -170,16 +174,6 @@ public sealed class HomeViewModel : ViewModelBase
 
         IsRecentHistoryVisible = RecentTransfers.Count > 0;
         IsRecentHistoryEmpty = RecentTransfers.Count == 0;
-    }
-
-    private Task NavigateAsync(NavigationTarget target, CancellationToken cancellationToken)
-    {
-        return target == NavigationTarget.RemoteBrowser
-            ? _navigation.NavigateAsync(
-                NavigationTarget.RemoteBrowser,
-                new RemoteBrowserNavigationParameter(NavigationResourceGroup.All),
-                cancellationToken)
-            : _navigation.NavigateAsync(target, cancellationToken: cancellationToken);
     }
 
     private void SetAccountSummary(LocalizedText value) { _accountSummary = value; OnPropertyChanged(nameof(AccountSummary)); }

@@ -17,6 +17,8 @@ public static class ServiceCollectionExtensions
         ArgumentNullException.ThrowIfNull(services);
 
         services.AddSingleton<MainWindowViewModel>();
+        services.AddSingleton<IShellNavigationController>(serviceProvider =>
+            serviceProvider.GetRequiredService<MainWindowViewModel>());
         services.AddSingleton<StatusBarViewModel>();
         services.AddTransient<MainWindow>();
 

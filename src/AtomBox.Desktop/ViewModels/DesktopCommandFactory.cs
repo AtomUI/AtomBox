@@ -21,7 +21,7 @@ public sealed class DesktopCommandFactory
     }
 
     public IAsyncRelayCommand CreateAsync(
-        ViewModelBase owner,
+        IActivationScopeOwner owner,
         string commandName,
         Func<CancellationToken, Task> execute,
         Func<bool>? canExecute = null,
@@ -37,7 +37,7 @@ public sealed class DesktopCommandFactory
     }
 
     public IAsyncRelayCommand<T> CreateAsync<T>(
-        ViewModelBase owner,
+        IActivationScopeOwner owner,
         string commandName,
         Func<T?, CancellationToken, Task> execute,
         Predicate<T?>? canExecute = null,

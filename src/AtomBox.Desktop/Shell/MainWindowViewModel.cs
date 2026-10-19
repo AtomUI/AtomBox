@@ -15,7 +15,7 @@ using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.Shell;
 
-public sealed class MainWindowViewModel : ViewModelBase
+public sealed class MainWindowViewModel : ViewModelBase, IShellNavigationController
 {
     private readonly INavigationService _navigationService;
     private readonly IAccountDialogWorkflow _accountDialogWorkflow;
@@ -238,10 +238,12 @@ public sealed class MainWindowViewModel : ViewModelBase
         var result = await _accountDialogWorkflow
             .AddAccountAsync(category, cancellationToken: cancellationToken)
             .ConfigureAwait(true);
-        if (result.IsFailure || result.GetValueOrThrow() is not { } account)
+        if (result is null || result.IsFailure)
         {
             return;
         }
+
+        var account = result.GetValueOrThrow();
 
         await NavigateAsync(
             NavigationTarget.RemoteBrowser,

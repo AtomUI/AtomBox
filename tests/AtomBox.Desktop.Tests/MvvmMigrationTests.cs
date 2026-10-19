@@ -93,15 +93,17 @@ public sealed class MvvmMigrationTests
     }
 
     [Fact]
-    public async Task HomeCommandAndLocalizationSubscriptionFollowActivation()
+    public async Task HomeNavigationCommandsFollowShellActivationWhileLocalizationFollowsPageActivation()
     {
         await using var context = await DesktopTestContext.CreateAsync();
         var localization = new TestLocalizedText();
         var dispatcher = new ImmediateUiDispatcher();
+        var shellNavigation = new TestShellNavigationController();
         var viewModel = ActivatorUtilities.CreateInstance<HomeViewModel>(
             context.Services,
             localization,
-            dispatcher);
+            dispatcher,
+            shellNavigation);
         var subtitleChanges = 0;
         viewModel.PropertyChanged += (_, args) =>
         {
@@ -112,19 +114,28 @@ public sealed class MvvmMigrationTests
         };
 
         Assert.False(viewModel.OpenRemoteStorageCommand.CanExecute(null));
-        var scope = new ActivationScope();
-        await viewModel.ActivateAsync(scope);
+        var pageScope = new ActivationScope();
+        await viewModel.ActivateAsync(pageScope);
+        Assert.False(viewModel.OpenRemoteStorageCommand.CanExecute(null));
+
+        var shellScope = new ActivationScope();
+        await shellNavigation.ActivateAsync(shellScope);
         Assert.True(viewModel.OpenRemoteStorageCommand.CanExecute(null));
+        await viewModel.OpenRemoteStorageCommand.ExecuteAsync(null);
+        Assert.Equal(NavigationMenuKeys.RemoteStorage, shellNavigation.LastMenuKey);
 
         localization.Publish();
         Assert.Equal(1, subtitleChanges);
 
         await viewModel.DeactivateAsync();
-        Assert.False(viewModel.OpenRemoteStorageCommand.CanExecute(null));
+        Assert.True(viewModel.OpenRemoteStorageCommand.CanExecute(null));
         localization.Publish();
         Assert.Equal(1, subtitleChanges);
 
+        await shellNavigation.DeactivateAsync();
+        Assert.False(viewModel.OpenRemoteStorageCommand.CanExecute(null));
         await viewModel.DisposeAsync();
+        await shellNavigation.DisposeAsync();
     }
 
     [Fact]
@@ -592,6 +603,20 @@ public sealed class MvvmMigrationTests
 
     public sealed class TestCommandViewModel : ViewModelBase;
 
+    public sealed class TestShellNavigationController : ViewModelBase, IShellNavigationController
+    {
+        public string? LastMenuKey { get; private set; }
+
+        public Task NavigateByMenuKeyAsync(
+            string? itemKey,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            LastMenuKey = itemKey;
+            return Task.CompletedTask;
+        }
+    }
+
     private sealed class TestLocalizedText : IAtomBoxLocalizedText
     {
         private long _revision;
@@ -689,16 +714,17 @@ public sealed class MvvmMigrationTests
 
     private sealed class TestAccountDialogWorkflow : IAccountDialogWorkflow
     {
-        public Task<OperationResult<StorageAccountSummary?>> AddAccountAsync(
+        public Task<OperationResult<StorageAccountSummary>?> AddAccountAsync(
             StorageProviderCategory? preferredCategory = null,
             StorageProviderId? preferredProviderId = null,
             CancellationToken cancellationToken = default) =>
-            Task.FromResult(OperationResult<StorageAccountSummary?>.Success(null));
+            Task.FromResult<OperationResult<StorageAccountSummary>?>(null);
 
-        public Task<OperationResult<StorageAccountSummary?>> EditAccountAsync(
+        public Task<OperationResult<StorageAccountSummary>?> EditAccountAsync(
             StorageAccountSummary account,
             CancellationToken cancellationToken = default) =>
-            Task.FromResult(OperationResult<StorageAccountSummary?>.Success(account));
+            Task.FromResult<OperationResult<StorageAccountSummary>?>(
+                OperationResult<StorageAccountSummary>.Success(account));
 
         public Task<OperationResult> DeleteAccountAsync(
             StorageAccountSummary account,

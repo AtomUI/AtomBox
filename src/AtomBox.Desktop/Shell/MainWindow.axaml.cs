@@ -30,6 +30,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
     private const double NavigationMaxPaneWidth = 420;
     private const double NavigationBaseChromeWidth = 112;
     private const double NavigationDisplayUnitWidth = 7.5;
+    private const int NavigationSelectionReplayMargin = 4;
     private static readonly Uri TrayIconUri = new("avares://AtomBox.Desktop/Assets/logo.ico");
     private readonly MainWindowViewModel? _viewModel;
     private readonly IDesktopPreferencesService? _preferences;
@@ -49,6 +50,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
     private Border? _navigationPane;
     private readonly Dictionary<string, NavMenuNode> _navigationNodesByKey = new(StringComparer.Ordinal);
     private string? _pendingNavigationMenuKey;
+    private int _navigationSelectionRevision;
 
     public MainWindow()
     {
@@ -526,6 +528,7 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
 
     private void SyncNavigationSelection(string? itemKey)
     {
+        var revision = unchecked(++_navigationSelectionRevision);
         if (_navMenu is null || string.IsNullOrWhiteSpace(itemKey))
         {
             _pendingNavigationMenuKey = null;
@@ -540,7 +543,93 @@ public sealed partial class MainWindow : AtomUI.Desktop.Controls.Window
 
         _pendingNavigationMenuKey = null;
         _navMenu.SelectedItem = node;
+        var replayPasses = CountNavigationPathNodes(node) + NavigationSelectionReplayMargin;
+        ScheduleNavigationSelectionReplay(node, revision, replayPasses);
         ScheduleNavigationTooltips();
+    }
+
+    private void ScheduleNavigationSelectionReplay(
+        NavMenuNode node,
+        int revision,
+        int remainingPasses)
+    {
+        if (remainingPasses <= 0)
+        {
+            return;
+        }
+
+        Dispatcher.UIThread.Post(
+            () => ReplayNavigationSelection(node, revision, remainingPasses),
+            DispatcherPriority.Loaded);
+    }
+
+    private void ReplayNavigationSelection(
+        NavMenuNode node,
+        int revision,
+        int remainingPasses)
+    {
+        if (_navMenu is null || revision != _navigationSelectionRevision)
+        {
+            return;
+        }
+
+        var visualItems = _navMenu.GetVisualDescendants().OfType<INavMenuItem>().ToArray();
+        foreach (var ancestor in EnumerateNavigationAncestors(node))
+        {
+            var ancestorItem = visualItems.FirstOrDefault(
+                item => ReferenceEquals(item.Node, ancestor));
+            if (ancestorItem is null)
+            {
+                ScheduleNavigationSelectionReplay(node, revision, remainingPasses - 1);
+                return;
+            }
+
+            if (!ancestorItem.IsSubMenuOpen)
+            {
+                ancestorItem.Open();
+                ScheduleNavigationSelectionReplay(node, revision, remainingPasses - 1);
+                return;
+            }
+        }
+
+        var targetItem = visualItems.FirstOrDefault(item => ReferenceEquals(item.Node, node));
+        if (targetItem is null)
+        {
+            ScheduleNavigationSelectionReplay(node, revision, remainingPasses - 1);
+            return;
+        }
+
+        // The menu can receive SelectedItem before an inline child container exists.
+        // Reapply the same logical selection after its ancestors have been realized so
+        // AtomUI can update both the leaf highlight and the selected ancestor path.
+        _navMenu.SelectedItem = null;
+        _navMenu.SelectedItem = node;
+    }
+
+    private static IEnumerable<INavMenuNode> EnumerateNavigationAncestors(INavMenuNode node)
+    {
+        var ancestors = new Stack<INavMenuNode>();
+        var current = node.ParentNode as INavMenuNode;
+        while (current is not null)
+        {
+            ancestors.Push(current);
+            current = current.ParentNode as INavMenuNode;
+        }
+
+        return ancestors;
+    }
+
+    private static int CountNavigationPathNodes(INavMenuNode node)
+    {
+        var count = 1;
+        var current = node.ParentNode as INavMenuNode;
+        while (current is not null)
+        {
+            count++;
+            current = current.ParentNode as INavMenuNode;
+        }
+
+        return count;
     }
 
     private void ApplyNavigationMinimumWidth()

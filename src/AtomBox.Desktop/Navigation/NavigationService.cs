@@ -119,9 +119,14 @@ public sealed class NavigationService : INavigationService, IAsyncDisposable
 
             var navigationParameter = DecodeParameter(target, routeResult.Parameters);
             await CommitRouteAsync(outlet, routeResult.Route, navigationParameter, cancellationToken).ConfigureAwait(true);
+
+            // A successful outlet commit is the navigation transaction's point of no return.
+            // The departing page may be deactivated by that commit, which can cancel the
+            // command token that initiated navigation. Publishing the committed menu key
+            // must therefore not be suppressed by that now-stale caller token.
             await _dispatcher.InvokeAsync(
                 () => CurrentMenuKey = ResolveMenuKey(target, navigationParameter),
-                cancellationToken)
+                CancellationToken.None)
                 .ConfigureAwait(true);
         }
         finally
@@ -199,8 +204,14 @@ public sealed class NavigationService : INavigationService, IAsyncDisposable
                 viewModelLease,
                 routeId: route.RouteId,
                 reuseKey: route.ViewModelTarget.ReuseKey);
+
+            // This is the transaction boundary: cancellation is honored while the
+            // route is being prepared, but once the outlet starts replacing content
+            // it must finish atomically. Replacing the old view deactivates its view
+            // model and can cancel the very command token that initiated navigation.
+            cancellationToken.ThrowIfCancellationRequested();
             ownershipTransferred = true;
-            var commitResult = await outlet.CommitAsync(plan, cancellationToken).ConfigureAwait(true);
+            var commitResult = await outlet.CommitAsync(plan, CancellationToken.None).ConfigureAwait(true);
             if (!commitResult.Succeeded)
             {
                 throw new InvalidOperationException(
