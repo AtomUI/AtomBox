@@ -25,7 +25,6 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IMessageService, MessageService>();
         services.AddSingleton<ICommandExceptionHandler, DesktopCommandExceptionHandler>();
         services.AddSingleton<DesktopCommandFactory>();
-        services.AddSingleton<IUiDispatcher, AvaloniaUiDispatcher>();
         services.AddSingleton<IFilePickerService, AvaloniaFilePickerService>();
 
         services.AddTransient<RemoteBrowserViewModel>();

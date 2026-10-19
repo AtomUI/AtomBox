@@ -73,8 +73,6 @@ src/AtomBox.Desktop/
   Services/
     IMessageService.cs
     MessageService.cs
-    IUiDispatcher.cs
-    AvaloniaUiDispatcher.cs
 
   Views/
     RemoteBrowser/
@@ -101,7 +99,7 @@ src/AtomBox.Desktop/
 | `Navigation/` | 管理应用内当前位置、导航目标、导航参数、菜单项 ViewModel 和页面 ViewModel 显式工厂。 |
 | `ViewFactory/` | 根据 ViewModel 显式创建对应 View。 |
 | `Dialogs/` | 统一弹窗入口和弹窗 ViewModel。 |
-| `Services/` | UI 专用服务，例如消息提示、UI 线程调度。 |
+| `Services/` | AtomBox 自有的 UI 专用服务，例如消息提示；UI 线程调度统一使用 City 提供的 `AtomUI.City.Core.Threading.IUiDispatcher`，Desktop 不再重复定义。 |
 | `Views/` | 具体页面 View。 |
 | `ViewModels/` | 页面 ViewModel、行 ViewModel、命令基础类型。 |
 | `Resources/` | 样式、主题、资源字典、字体资源引用。 |
