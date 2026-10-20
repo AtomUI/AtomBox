@@ -19,5 +19,7 @@
     <ProjectReference Include="..\..\src\AtomBox.Core\AtomBox.Core.csproj" />
     <ProjectReference Include="..\..\src\AtomBox.Providers\AtomBox.Providers.csproj" />
     <ProjectReference Include="..\..\src\AtomBox.Transfer\AtomBox.Transfer.csproj" />
+    <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Core\AtomUI.City.Core.csproj" />
+    <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.State\AtomUI.City.State.csproj" />
   </ItemGroup>
 </Project>

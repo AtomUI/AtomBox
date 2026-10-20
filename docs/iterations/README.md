@@ -12,10 +12,11 @@
 
 ## 阅读顺序
 
-1. 需要了解候选需求池时，读 `backlog.md`。
-2. 需要了解某个版本计划时，进入 `releases/` 阅读对应版本文档。
-3. 需要实现某个具体增强功能时，进入 `features/` 阅读功能设计文档。
-4. 需要追溯长期技术取舍时，进入 `decisions/` 阅读决策记录。
+1. 任何 AtomUI.City 相关审计或迁移，必须先读 [`features/with-city-migration-matrix.md`](features/with-city-migration-matrix.md)；它是迁移范围、顺序、状态和证据的首要依据。
+2. 需要了解候选需求池时，读 `backlog.md`。
+3. 需要了解某个版本计划时，进入 `releases/` 阅读对应版本文档。
+4. 需要实现某个具体增强功能时，进入 `features/` 阅读功能设计文档。
+5. 需要追溯长期技术取舍时，进入 `decisions/` 阅读决策记录。
 
 ## 目录职责
 
@@ -77,6 +78,7 @@
 
 ## 维护规则
 
+- City 相关工作必须先更新迁移主矩阵，再建立或修改专项 feature 文档，最后才能进入代码施工。
 - `backlog.md` 不写大段设计，避免成为无法维护的需求散文。
 - 每个可独立实现的增强功能都应有一份 `features/*.md`。
 - 每个正式发版版本都应有一份 `releases/vX.Y.Z.md`。

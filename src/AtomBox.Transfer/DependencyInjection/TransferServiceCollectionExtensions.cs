@@ -1,10 +1,13 @@
 using AtomBox.Core.Accounts;
 using AtomBox.Core.Providers;
 using AtomBox.Core.Transfers;
-using AtomBox.Transfer.Queue;
 using AtomBox.Transfer.Scheduling;
+using AtomBox.Transfer.State;
 using AtomBox.Transfer.Workers;
+using AtomUI.City.Core.Diagnostics;
+using AtomUI.City.State;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace AtomBox.Transfer.DependencyInjection;
 
@@ -14,23 +17,22 @@ public static class TransferServiceCollectionExtensions
     {
         ArgumentNullException.ThrowIfNull(services);
 
-        services.AddSingleton<TransferQueue>();
-        services.AddSingleton<TransferCancellationRegistry>();
-        services.AddSingleton<ITransferCancellationState>(provider =>
-            provider.GetRequiredService<TransferCancellationRegistry>());
-        services.AddTransient<TransferWorker>();
-        services.AddSingleton<Func<TransferWorker>>(provider =>
-        {
-            var accounts = provider.GetRequiredService<IStorageAccountRepository>();
-            var providerFactory = provider.GetRequiredService<IStorageProviderFactory>();
-            var localFiles = provider.GetRequiredService<ILocalTransferFileStore>();
-            var stateStore = provider.GetRequiredService<ITransferStateStore>();
-            var cancellationState = provider.GetRequiredService<ITransferCancellationState>();
-
-            return () => new TransferWorker(accounts, providerFactory, localFiles, stateStore, cancellationState);
-        });
-        services.AddSingleton<ITransferTaskScheduler, TransferTaskScheduler>();
-        services.AddSingleton<TransferRuntimeInitializer>();
+        services.AddState();
+        services.AddSingleton<AtomBoxTransferState>();
+        services.AddSingleton<IAtomBoxTransferState>(provider =>
+            provider.GetRequiredService<AtomBoxTransferState>());
+        services.AddSingleton<TransferStateProjector>();
+        services.AddSingleton<ITransferStateSynchronizer>(provider =>
+            provider.GetRequiredService<TransferStateProjector>());
+        services.AddTransient<TransferOperationExecutor>();
+        services.AddSingleton<Func<TransferOperationExecutor>>(provider =>
+            () => provider.GetRequiredService<TransferOperationExecutor>());
+        services.AddSingleton<TransferRuntimeOptions>();
+        services.TryAddSingleton<ITransferRuntimeDiagnostics>(provider =>
+            new CityTransferRuntimeDiagnostics(provider.GetService<IHostDiagnostics>()));
+        services.AddSingleton<TransferRuntimeController>();
+        services.AddSingleton<ITransferTaskScheduler>(provider =>
+            provider.GetRequiredService<TransferRuntimeController>());
 
         return services;
     }

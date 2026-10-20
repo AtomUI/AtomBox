@@ -32,7 +32,7 @@ public sealed record ProviderDescriptor
         DisplayName = displayName.Trim();
         Description = description.Trim();
         Capabilities = capabilities;
-        ConfigFields = configFields;
+        ConfigFields = Array.AsReadOnly(configFields.ToArray());
     }
 
     public StorageProviderId Id { get; }

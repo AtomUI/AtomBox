@@ -7,14 +7,12 @@ namespace AtomBox.Desktop.Dialogs;
 
 public interface IAccountDialogWorkflow
 {
-    event EventHandler? AccountsChanged;
-
-    Task<OperationResult<StorageAccountSummary?>> AddAccountAsync(
+    Task<OperationResult<StorageAccountSummary>?> AddAccountAsync(
         StorageProviderCategory? preferredCategory = null,
         StorageProviderId? preferredProviderId = null,
         CancellationToken cancellationToken = default);
 
-    Task<OperationResult<StorageAccountSummary?>> EditAccountAsync(
+    Task<OperationResult<StorageAccountSummary>?> EditAccountAsync(
         StorageAccountSummary account,
         CancellationToken cancellationToken = default);
 

@@ -1,9 +1,12 @@
+using AtomBox.Desktop.ViewModels.Pages;
+using AtomUI.City.Presentation;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 
 namespace AtomBox.Desktop.Views.Home;
 
-public sealed partial class HomeView : UserControl
+[ViewFor(typeof(HomeViewModel))]
+public sealed partial class HomeView : UserControl, IViewDataContextAware
 {
     public HomeView()
     {

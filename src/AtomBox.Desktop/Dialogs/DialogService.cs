@@ -47,9 +47,9 @@ namespace AtomBox.Desktop.Dialogs;
 
 public sealed class DialogService : IDialogService
 {
-    private readonly ILocalizationService _localization;
+    private readonly IAtomBoxLocalizedText _localization;
 
-    public DialogService(ILocalizationService localization)
+    public DialogService(IAtomBoxLocalizedText localization)
     {
         _localization = localization;
     }
@@ -417,7 +417,7 @@ public sealed class DialogService : IDialogService
     private static async Task ShowErrorDetailsOverlayAsync(
         ErrorDialogRequest request,
         TopLevel mainWindow,
-        ILocalizationService localization)
+        IAtomBoxLocalizedText localization)
     {
         try
         {
@@ -455,9 +455,9 @@ public sealed class DialogService : IDialogService
 
     private sealed class ErrorDetailsDialogContent : UserControl
     {
-        private readonly ILocalizationService _localization;
+        private readonly IAtomBoxLocalizedText _localization;
 
-        public ErrorDetailsDialogContent(ErrorDialogRequest request, ILocalizationService localization)
+        public ErrorDetailsDialogContent(ErrorDialogRequest request, IAtomBoxLocalizedText localization)
         {
             _localization = localization;
             Content = new StackPanel
@@ -652,7 +652,7 @@ public sealed class DialogService : IDialogService
     private sealed class AccountDialogWindow : UserControl
     {
         private readonly AccountDialogRequest _request;
-        private readonly ILocalizationService _localization;
+        private readonly IAtomBoxLocalizedText _localization;
         private readonly AtomComboBox _categoryInput = new();
         private readonly AtomComboBox _providerInput = new();
         private readonly AtomComboBox _sftpAuthModeInput = new();
@@ -676,9 +676,12 @@ public sealed class DialogService : IDialogService
         private ErrorDialogRequest? _lastTestDetails;
         private bool _isClosed;
         private bool _footerButtonsAttached;
+        private bool _isApplyingSuggestedDisplayName;
+        private bool _hasUserEditedDisplayName;
+        private string? _suggestedDisplayName;
         private IDisposable? _connectionMessageDismissTimer;
 
-        public AccountDialogWindow(AccountDialogRequest request, ILocalizationService localization)
+        public AccountDialogWindow(AccountDialogRequest request, IAtomBoxLocalizedText localization)
         {
             _request = request;
             _localization = localization;
@@ -734,7 +737,20 @@ public sealed class DialogService : IDialogService
 
             _displayNameInput.PlaceholderText = "Aliyun OSS - production";
             _displayNameInput.Text = _request.ExistingAccount?.DisplayName;
-            _displayNameInput.TextChanged += (_, _) => ResetConnectionTestState();
+            _displayNameInput.TextChanged += (_, _) =>
+            {
+                if (!_isApplyingSuggestedDisplayName &&
+                    _request.ExistingAccount is null &&
+                    !string.Equals(
+                        _displayNameInput.Text,
+                        _suggestedDisplayName,
+                        StringComparison.Ordinal))
+                {
+                    _hasUserEditedDisplayName = true;
+                }
+
+                ResetConnectionTestState();
+            };
             _ftpAnonymousInput.Content = L("AnonymousAccess");
             _ftpAnonymousInput.IsCheckedChanged += (_, _) =>
             {
@@ -947,9 +963,9 @@ public sealed class DialogService : IDialogService
                 _configFields.Children.Add(Field(field.DisplayName, input));
             }
 
-            if (string.IsNullOrWhiteSpace(_displayNameInput.Text))
+            if (_request.ExistingAccount is null && !_hasUserEditedDisplayName)
             {
-                _displayNameInput.Text = GetProviderDisplayName(provider);
+                ApplySuggestedDisplayName(GetProviderDisplayName(provider));
             }
 
             if (IsFtp(provider))
@@ -988,6 +1004,20 @@ public sealed class DialogService : IDialogService
             }
 
             UpdateCredentialInputState();
+        }
+
+        private void ApplySuggestedDisplayName(string value)
+        {
+            _suggestedDisplayName = value;
+            _isApplyingSuggestedDisplayName = true;
+            try
+            {
+                _displayNameInput.Text = value;
+            }
+            finally
+            {
+                _isApplyingSuggestedDisplayName = false;
+            }
         }
 
         private async Task TestConnectionAsync()

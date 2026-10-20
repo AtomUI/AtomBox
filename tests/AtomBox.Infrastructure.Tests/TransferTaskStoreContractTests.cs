@@ -39,6 +39,53 @@ public sealed class TransferTaskStoreContractTests : IDisposable
     }
 
     [Fact]
+    public async Task CompareExchange_ConcurrentClaim_AllowsExactlyOneWinner()
+    {
+        var pending = CreateTask(TransferStatus.Pending);
+        await _store.SaveAsync(pending);
+        var running = pending.WithStatus(TransferStatus.Running, pending.UpdatedAt.AddSeconds(1));
+
+        var attempts = Enumerable.Range(0, 8)
+            .Select(_ => _store.CompareExchangeAsync(
+                running,
+                pending.Revision,
+                TransferStatus.Pending))
+            .ToArray();
+
+        var results = await Task.WhenAll(attempts);
+
+        Assert.Single(results, result => result.IsSuccess);
+        Assert.Equal(7, results.Count(result => result.IsFailure));
+        Assert.All(
+            results.Where(result => result.IsFailure),
+            result => Assert.Equal(StorageErrorCategory.Conflict, result.Error?.Category));
+        var saved = (await _store.GetByIdAsync(pending.Id)).GetValueOrThrow();
+        Assert.Equal(TransferStatus.Running, saved.Status);
+        Assert.Equal(1, saved.Revision);
+    }
+
+    [Fact]
+    public async Task CompareExchange_RejectsWrongExpectedStatusOrRevision()
+    {
+        var pending = CreateTask(TransferStatus.Pending);
+        await _store.SaveAsync(pending);
+        var running = pending.WithStatus(TransferStatus.Running, pending.UpdatedAt.AddSeconds(1));
+
+        var wrongStatus = await _store.CompareExchangeAsync(
+            running,
+            pending.Revision,
+            TransferStatus.Running);
+        var wrongRevision = await _store.CompareExchangeAsync(
+            running,
+            pending.Revision + 1,
+            TransferStatus.Pending);
+
+        Assert.Equal(StorageErrorCategory.Conflict, wrongStatus.Error?.Category);
+        Assert.Equal(StorageErrorCategory.Validation, wrongRevision.Error?.Category);
+        Assert.Equal(TransferStatus.Pending, (await _store.GetByIdAsync(pending.Id)).GetValueOrThrow().Status);
+    }
+
+    [Fact]
     public async Task Save_ReplaceExisting_UpdatesInPlace()
     {
         var task = CreateTask(TransferStatus.Pending);
@@ -81,23 +128,33 @@ public sealed class TransferTaskStoreContractTests : IDisposable
         await _store.SaveAsync(task1);
         await _store.SaveAsync(task2);
 
-        var updates = Enumerable.Range(0, 20)
-            .Select(index =>
+        async Task AdvanceAsync(TransferTask task)
+        {
+            var current = task;
+            for (var index = 0; index < 10; index++)
             {
-                var task = index % 2 == 0 ? task1 : task2;
-                var updated = task.WithStatus(
-                    index % 4 == 0 ? TransferStatus.Succeeded : TransferStatus.Running,
+                var updated = current.WithStatus(
+                    TransferStatus.Running,
                     now.AddSeconds(index + 1));
-                return _store.SaveAsync(updated);
-            })
-            .ToArray();
+                var result = await _store.CompareExchangeAsync(
+                    updated,
+                    current.Revision,
+                    current.Status);
+                Assert.True(result.IsSuccess);
+                current = result.GetValueOrThrow();
+            }
+        }
 
-        await Task.WhenAll(updates);
+        await Task.WhenAll(AdvanceAsync(task1), AdvanceAsync(task2));
 
         var listResult = await _store.ListAsync();
         Assert.True(listResult.IsSuccess);
         Assert.Equal(2, listResult.GetValueOrThrow().Count);
-        Assert.All(listResult.GetValueOrThrow(), task => Assert.Equal(now.AddSeconds(task.Id == task1.Id ? 19 : 20), task.UpdatedAt));
+        Assert.All(listResult.GetValueOrThrow(), task =>
+        {
+            Assert.Equal(10, task.Revision);
+            Assert.Equal(now.AddSeconds(10), task.UpdatedAt);
+        });
     }
 
     [Fact]

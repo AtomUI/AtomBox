@@ -28,6 +28,13 @@ public sealed class AliyunOssProvider : IStorageProvider
 
     public StorageCapabilitySet Capabilities { get; }
 
+    public TransferExecutionCapabilities TransferCapabilities { get; } = new(
+        TransferIoExecutionKind.Blocking,
+        TransferIoExecutionKind.Blocking,
+        supportsCooperativeCancellation: true,
+        supportsActiveAbort: false,
+        supportsProgress: true);
+
     public Task<OperationResult<IReadOnlyList<RemoteItem>>> ListAsync(
         RemotePath path,
         CancellationToken cancellationToken = default)
@@ -166,21 +173,44 @@ public sealed class AliyunOssProvider : IStorageProvider
             if (Capabilities.Supports(StorageCapability.MultipartUpload) &&
                 ObjectStorageUploadPolicy.ShouldUseMultipart(contentLength))
             {
+                var cancellationStream = new ProgressReadStream(
+                    content,
+                    contentLength,
+                    progress: null,
+                    cancellationToken);
                 _client.PutObjectMultipart(
                     ossPath.BucketName,
                     ossPath.KeyPrefix,
-                    content,
+                    cancellationStream,
                     contentLength!.Value,
-                    (completed, total) => progress?.Report(new TransferProgress(completed, total, null)));
+                    (completed, total) => progress?.Report(new TransferProgress(completed, total, null)),
+                    cancellationToken);
             }
             else
             {
-                var progressStream = new ProgressReadStream(content, contentLength, progress);
-                _client.PutObject(ossPath.BucketName, ossPath.KeyPrefix, progressStream);
+                var progressStream = new ProgressReadStream(
+                    content,
+                    contentLength,
+                    progress,
+                    cancellationToken);
+                _client.PutObject(
+                    ossPath.BucketName,
+                    ossPath.KeyPrefix,
+                    progressStream,
+                    cancellationToken);
                 progress?.Report(new TransferProgress(contentLength ?? progressStream.BytesRead, contentLength ?? progressStream.BytesRead, null));
             }
 
+            cancellationToken.ThrowIfCancellationRequested();
             return Task.FromResult(OperationResult.Success());
+        }
+        catch (Exception exception) when (cancellationToken.IsCancellationRequested)
+        {
+            return Task.FromResult(OperationResult.Failure(ProviderErrorMapper.FromException(
+                new OperationCanceledException(
+                    "Aliyun OSS upload was canceled.",
+                    exception,
+                    cancellationToken))));
         }
         catch (Exception exception)
         {

@@ -1,0 +1,61 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="RecentTransfers" xml:space="preserve"><value>Recent Transfers</value></data>
+  <data name="RecentFive" xml:space="preserve"><value>Latest 5</value></data>
+  <data name="NoQueueTasks" xml:space="preserve"><value>No transfer tasks.</value></data>
+  <data name="NoHistory" xml:space="preserve"><value>No transfer history. Completed, failed, canceled, or interrupted tasks appear here.</value></data>
+  <data name="NoRecentTransfers" xml:space="preserve"><value>No recent transfers.</value></data>
+  <data name="CurrentPage" xml:space="preserve"><value>Page {0}</value></data>
+  <data name="RunningPendingSummary" xml:space="preserve"><value>{0} in progress · {1} pending</value></data>
+  <data name="QueueUnavailable" xml:space="preserve"><value>Queue unavailable</value></data>
+  <data name="HistoryUnavailable" xml:space="preserve"><value>History unavailable</value></data>
+  <data name="RecentlyCompleted" xml:space="preserve"><value>{0} recently completed</value></data>
+  <data name="Unnamed" xml:space="preserve"><value>(unnamed)</value></data>
+  <data name="Upload" xml:space="preserve"><value>Upload</value></data>
+  <data name="Download" xml:space="preserve"><value>Download</value></data>
+  <data name="Succeeded" xml:space="preserve"><value>Succeeded</value></data>
+  <data name="Failed" xml:space="preserve"><value>Failed</value></data>
+  <data name="Canceled" xml:space="preserve"><value>Canceled</value></data>
+  <data name="Interrupted" xml:space="preserve"><value>Interrupted</value></data>
+  <data name="Abandoned" xml:space="preserve"><value>Abandoned</value></data>
+  <data name="Title" xml:space="preserve"><value>Transfer History</value></data>
+  <data name="LoadingHistory" xml:space="preserve"><value>Loading transfer history...</value></data>
+  <data name="HistoryLoadFailed" xml:space="preserve"><value>Failed to load transfer history.</value></data>
+  <data name="HistoryPageCount" xml:space="preserve"><value>{0} history records on this page.</value></data>
+  <data name="ClearHistoryTitle" xml:space="preserve"><value>Clear Transfer History</value></data>
+  <data name="ClearHistoryMessage" xml:space="preserve"><value>Clear transfer history?&#xA;&#xA;Finished tasks in the current history view will be removed. This cannot be undone.</value></data>
+  <data name="Clear" xml:space="preserve"><value>Clear</value></data>
+  <data name="ClearHistoryFailed" xml:space="preserve"><value>Failed to clear transfer history.</value></data>
+  <data name="HistoryCleared" xml:space="preserve"><value>Transfer history cleared.</value></data>
+  <data name="HistoryDetails" xml:space="preserve"><value>Transfer History Details</value></data>
+  <data name="QueueTitle" xml:space="preserve"><value>Transfer Queue</value></data>
+  <data name="LoadingQueue" xml:space="preserve"><value>Loading transfer queue...</value></data>
+  <data name="QueueLoadFailed" xml:space="preserve"><value>Failed to load transfer queue.</value></data>
+  <data name="QueueCount" xml:space="preserve"><value>{0} tasks in the queue.</value></data>
+  <data name="NoQueueTasksLong" xml:space="preserve"><value>No transfer tasks. Upload or download files from Remote Storage to create tasks.</value></data>
+  <data name="UnsupportedTaskAction" xml:space="preserve"><value>This action is not available for the current task state.</value></data>
+  <data name="TaskActionFailed" xml:space="preserve"><value>Task action failed.</value></data>
+  <data name="AbandonTaskTitle" xml:space="preserve"><value>Abandon interrupted task</value></data>
+  <data name="AbandonTaskMessage" xml:space="preserve"><value>Abandon the transfer task “{0}”?&#xA;&#xA;AtomBox will only stop retrying it and move it to history. It will not delete, roll back, or overwrite remote data. The final remote outcome remains unknown.</value></data>
+  <data name="AbandonTaskFailed" xml:space="preserve"><value>Failed to abandon the task. Its state may already have changed.</value></data>
+  <data name="TaskAbandoned" xml:space="preserve"><value>The task was abandoned and moved to history.</value></data>
+  <data name="NoPendingTasks" xml:space="preserve"><value>There are no pending tasks.</value></data>
+  <data name="CancelTaskFailed" xml:space="preserve"><value>Failed to cancel the task.</value></data>
+  <data name="NoRetryableTasks" xml:space="preserve"><value>There are no retryable tasks.</value></data>
+  <data name="RetryTaskFailed" xml:space="preserve"><value>Failed to retry the task.</value></data>
+  <data name="TaskDetails" xml:space="preserve"><value>Transfer Task Details</value></data>
+  <data name="Pending" xml:space="preserve"><value>Pending</value></data>
+  <data name="Running" xml:space="preserve"><value>In Progress</value></data>
+  <data name="Canceling" xml:space="preserve"><value>Canceling</value></data>
+  <data name="QueueStale" xml:space="preserve"><value>Queue refresh failed. Showing the last successfully loaded data.</value></data>
+  <data name="RuntimeDegraded" xml:space="preserve"><value>The transfer service is temporarily degraded. New tasks are paused while it retries.</value></data>
+  <data name="RuntimeFaulted" xml:space="preserve"><value>The transfer service has failed and cannot accept new tasks.</value></data>
+  <data name="Paused" xml:space="preserve"><value>Paused</value></data>
+  <data name="PausedPercent" xml:space="preserve"><value>Paused {0:0}%</value></data>
+  <data name="TaskCompletedSingle" xml:space="preserve"><value>{0} {1} completed</value></data>
+  <data name="TaskCompletedMultiple" xml:space="preserve"><value>{0} files {1} completed</value></data>
+</root>

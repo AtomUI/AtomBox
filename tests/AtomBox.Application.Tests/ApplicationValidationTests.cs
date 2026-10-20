@@ -221,7 +221,6 @@ public sealed class ApplicationValidationTests
         Assert.True(result.IsFailure);
         Assert.Equal(StorageErrorCategory.Validation, result.Error?.Category);
         Assert.Equal(0, scheduler.SubmitCalls);
-        Assert.Equal(0, scheduler.WakeCalls);
     }
 
     [Fact]
@@ -238,14 +237,13 @@ public sealed class ApplicationValidationTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal(1, scheduler.SubmitCalls);
-        Assert.Equal(1, scheduler.WakeCalls);
         var task = Assert.Single(result.GetValueOrThrow().Tasks);
         Assert.Equal(TransferDirection.Download, task.Direction);
         Assert.Equal(TransferStatus.Pending, task.Status);
     }
 
     [Fact]
-    public async Task CreateBatchUploadTasks_SubmitsAllTargetsBeforeSingleWake()
+    public async Task CreateBatchUploadTasks_SubmitsAllTargetsToRuntime()
     {
         var scheduler = new CountingTransferTaskScheduler();
         var service = new TransferAppService(scheduler, new EmptyTransferStateStore(), new EmptyTransferTaskStore());
@@ -260,14 +258,13 @@ public sealed class ApplicationValidationTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal(2, scheduler.SubmitCalls);
-        Assert.Equal(1, scheduler.WakeCalls);
         Assert.Equal(
             [new RemotePath("bucket/a.txt"), new RemotePath("bucket/b.txt")],
             scheduler.SubmittedTasks.Select(task => task.RemotePath).ToArray());
     }
 
     [Fact]
-    public async Task CreateDownloadTasks_ExposesCompletedTaskInHistoryAfterWake()
+    public async Task CreateDownloadTasks_ReturnsAfterPendingTaskIsAccepted()
     {
         var taskStore = new MemoryTransferTaskStore();
         var stateStore = new MemoryTransferStateStore(taskStore);
@@ -279,18 +276,17 @@ public sealed class ApplicationValidationTests
             [new RemotePath("bucket/file.txt")],
             new LocalPath(@"C:\Downloads\file.txt"),
             TransferOverwritePolicy.Ask));
-        var historyResult = await service.GetHistoryAsync(new GetTransferHistoryRequest());
+        var queueResult = await service.GetQueueAsync(new GetTransferQueueRequest());
 
         Assert.True(createResult.IsSuccess);
-        Assert.True(historyResult.IsSuccess);
-        var historyTask = Assert.Single(historyResult.GetValueOrThrow().Tasks);
-        Assert.Equal(createResult.GetValueOrThrow().Tasks.Single().Id, historyTask.Task.Id);
-        Assert.Equal(TransferStatus.Succeeded, historyTask.Task.Status);
-        Assert.Equal(100, historyTask.Progress?.Percent);
+        Assert.True(queueResult.IsSuccess);
+        var queuedTask = Assert.Single(queueResult.GetValueOrThrow().Tasks);
+        Assert.Equal(createResult.GetValueOrThrow().Tasks.Single().Id, queuedTask.Task.Id);
+        Assert.Equal(TransferStatus.Pending, queuedTask.Task.Status);
     }
 
     [Fact]
-    public async Task CreateUploadTasks_ExposesCompletedTaskInHistoryAfterWake()
+    public async Task CreateUploadTasks_ReturnsAfterPendingTaskIsAccepted()
     {
         var taskStore = new MemoryTransferTaskStore();
         var stateStore = new MemoryTransferStateStore(taskStore);
@@ -302,15 +298,14 @@ public sealed class ApplicationValidationTests
             [new LocalPath(@"C:\Uploads\file.txt")],
             new RemotePath("bucket/file.txt"),
             TransferOverwritePolicy.Ask));
-        var historyResult = await service.GetHistoryAsync(new GetTransferHistoryRequest());
+        var queueResult = await service.GetQueueAsync(new GetTransferQueueRequest());
 
         Assert.True(createResult.IsSuccess);
-        Assert.True(historyResult.IsSuccess);
-        var historyTask = Assert.Single(historyResult.GetValueOrThrow().Tasks);
-        Assert.Equal(createResult.GetValueOrThrow().Tasks.Single().Id, historyTask.Task.Id);
-        Assert.Equal(TransferDirection.Upload, historyTask.Task.Direction);
-        Assert.Equal(TransferStatus.Succeeded, historyTask.Task.Status);
-        Assert.Equal(100, historyTask.Progress?.Percent);
+        Assert.True(queueResult.IsSuccess);
+        var queuedTask = Assert.Single(queueResult.GetValueOrThrow().Tasks);
+        Assert.Equal(createResult.GetValueOrThrow().Tasks.Single().Id, queuedTask.Task.Id);
+        Assert.Equal(TransferDirection.Upload, queuedTask.Task.Direction);
+        Assert.Equal(TransferStatus.Pending, queuedTask.Task.Status);
     }
 
     [Fact]
@@ -335,7 +330,6 @@ public sealed class ApplicationValidationTests
 
         Assert.True(result.IsSuccess);
         Assert.Equal(1, scheduler.RetryCalls);
-        Assert.Equal(1, scheduler.WakeCalls);
     }
 
     [Fact]
@@ -507,7 +501,6 @@ public sealed class ApplicationValidationTests
 
         public int RetryCalls { get; private set; }
 
-        public int WakeCalls { get; private set; }
 
         public Task<OperationResult> SubmitAsync(TransferTask task, CancellationToken cancellationToken = default)
         {
@@ -528,22 +521,16 @@ public sealed class ApplicationValidationTests
             return Task.FromResult(OperationResult.Success());
         }
 
-        public Task<OperationResult> WakeAsync(CancellationToken cancellationToken = default)
-        {
-            WakeCalls++;
-            return Task.FromResult(OperationResult.Success());
-        }
     }
 
     private sealed class CompletingTransferTaskScheduler : ITransferTaskScheduler
     {
         private readonly ITransferTaskStore _tasks;
-        private readonly ITransferStateStore _state;
 
         public CompletingTransferTaskScheduler(ITransferTaskStore tasks, ITransferStateStore state)
         {
             _tasks = tasks;
-            _state = state;
+            _ = state;
         }
 
         public Task<OperationResult> SubmitAsync(
@@ -567,28 +554,6 @@ public sealed class ApplicationValidationTests
             return Task.FromResult(OperationResult.Success());
         }
 
-        public async Task<OperationResult> WakeAsync(CancellationToken cancellationToken = default)
-        {
-            var tasksResult = await _tasks.ListAsync(cancellationToken).ConfigureAwait(false);
-            if (tasksResult.IsFailure)
-            {
-                return OperationResult.Failure(tasksResult.Error!);
-            }
-
-            foreach (var task in tasksResult.GetValueOrThrow().Where(task => task.Status == TransferStatus.Pending))
-            {
-                var completeResult = await _state.UpdateStatusAsync(
-                    task.WithStatus(TransferStatus.Succeeded, DateTimeOffset.UtcNow),
-                    new TransferProgress(1, 1, null),
-                    cancellationToken).ConfigureAwait(false);
-                if (completeResult.IsFailure)
-                {
-                    return completeResult;
-                }
-            }
-
-            return OperationResult.Success();
-        }
     }
 
     private sealed class EmptyTransferStateStore : ITransferStateStore
@@ -696,7 +661,7 @@ public sealed class ApplicationValidationTests
                 ? OperationResult<IReadOnlyList<TransferStateSnapshot>>.Failure(tasks.Error!)
                 : OperationResult<IReadOnlyList<TransferStateSnapshot>>.Success(
                     tasks.GetValueOrThrow()
-                        .Where(task => task.Status is TransferStatus.Succeeded or TransferStatus.Failed or TransferStatus.Canceled)
+                        .Where(task => task.Status is TransferStatus.Succeeded or TransferStatus.Failed or TransferStatus.Canceled or TransferStatus.Abandoned)
                         .Skip(skip)
                         .Take(take)
                         .Select(task => new TransferStateSnapshot(task, GetProgress(task.Id)))

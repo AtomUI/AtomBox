@@ -206,3 +206,19 @@ Planned improvements:
 - Cross-provider synchronization.
 - Recursive folder upload and download.
 - File previews and content-based thumbnails.
+
+## Development
+
+AtomBox pins AtomUI.City as a Git submodule. Clone with submodules enabled:
+
+```bash
+git clone --recurse-submodules <repository-url>
+```
+
+For an existing checkout, initialize the pinned framework source before restoring:
+
+```bash
+git submodule update --init --recursive
+dotnet build AtomBox.slnx -c Release
+dotnet test AtomBox.slnx -c Release --no-build --no-restore
+```

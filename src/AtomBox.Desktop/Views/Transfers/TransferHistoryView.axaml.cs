@@ -5,11 +5,13 @@ using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using Avalonia.Controls.Primitives;
 using AtomBox.Desktop.ViewModels.Pages;
+using AtomUI.City.Presentation;
 using AtomToolTip = AtomUI.Desktop.Controls.ToolTip;
 
 namespace AtomBox.Desktop.Views.Transfers;
 
-public sealed partial class TransferHistoryView : UserControl
+[ViewFor(typeof(TransferHistoryViewModel))]
+public sealed partial class TransferHistoryView : UserControl, IViewDataContextAware
 {
     private const int PathTooltipDisplayLengthThreshold = 6;
     private static readonly IBrush RowBackground = SolidColorBrush.Parse("#FFFFFF");

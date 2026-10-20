@@ -82,4 +82,6 @@ public sealed record CancelTransferTaskRequest(TransferTaskId TaskId);
 
 public sealed record RetryTransferTaskRequest(TransferTaskId TaskId);
 
+public sealed record AbandonTransferTaskRequest(TransferTaskId TaskId);
+
 public sealed record ClearTransferHistoryRequest;

@@ -66,6 +66,14 @@ internal sealed class SshNetSftpClientAdapter : ISftpClientAdapter
         }
     }
 
+    public async Task ConnectAsync(CancellationToken cancellationToken = default)
+    {
+        if (!_client.IsConnected)
+        {
+            await _client.ConnectAsync(cancellationToken).ConfigureAwait(false);
+        }
+    }
+
     public IReadOnlyList<SftpRemoteEntry> ListDirectory(string path)
     {
         return _client.ListDirectory(path)
@@ -83,9 +91,35 @@ internal sealed class SshNetSftpClientAdapter : ISftpClientAdapter
         return _client.Exists(path) && _client.GetAttributes(path).IsRegularFile;
     }
 
+    public async Task<bool> FileExistsAsync(
+        string path,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await _client.ExistsAsync(path, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        var attributes = await _client.GetAttributesAsync(path, cancellationToken).ConfigureAwait(false);
+        return attributes.IsRegularFile;
+    }
+
     public bool DirectoryExists(string path)
     {
         return _client.Exists(path) && _client.GetAttributes(path).IsDirectory;
+    }
+
+    public async Task<bool> DirectoryExistsAsync(
+        string path,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await _client.ExistsAsync(path, cancellationToken).ConfigureAwait(false))
+        {
+            return false;
+        }
+
+        var attributes = await _client.GetAttributesAsync(path, cancellationToken).ConfigureAwait(false);
+        return attributes.IsDirectory;
     }
 
     public void CreateDirectory(string path)
@@ -93,6 +127,16 @@ internal sealed class SshNetSftpClientAdapter : ISftpClientAdapter
         if (!_client.Exists(path))
         {
             _client.CreateDirectory(path);
+        }
+    }
+
+    public async Task CreateDirectoryAsync(
+        string path,
+        CancellationToken cancellationToken = default)
+    {
+        if (!await _client.ExistsAsync(path, cancellationToken).ConfigureAwait(false))
+        {
+            await _client.CreateDirectoryAsync(path, cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -111,14 +155,39 @@ internal sealed class SshNetSftpClientAdapter : ISftpClientAdapter
         _client.RenameFile(sourcePath, destinationPath);
     }
 
-    public void UploadFile(Stream content, string path, Action<ulong>? progress = null)
+    public Task UploadFileAsync(
+        Stream content,
+        string path,
+        Action<ulong>? progress = null,
+        CancellationToken cancellationToken = default)
     {
-        _client.UploadFile(content, path, canOverride: true, uploadCallback: progress);
+        IProgress<UploadFileProgressReport>? progressAdapter = progress is null
+            ? null
+            : new InlineProgress<UploadFileProgressReport>(
+                report => progress(report.TotalBytesUploaded));
+        return _client.UploadFileAsync(
+            content,
+            path,
+            canOverride: true,
+            uploadProgress: progressAdapter,
+            cancellationToken: cancellationToken);
     }
 
-    public void DownloadFile(string path, Stream destination, Action<ulong>? progress = null)
+    public Task DownloadFileAsync(
+        string path,
+        Stream destination,
+        Action<ulong>? progress = null,
+        CancellationToken cancellationToken = default)
     {
-        _client.DownloadFile(path, destination, downloadCallback: progress);
+        IProgress<DownloadFileProgressReport>? progressAdapter = progress is null
+            ? null
+            : new InlineProgress<DownloadFileProgressReport>(
+                report => progress(report.TotalBytesDownloaded));
+        return _client.DownloadFileAsync(
+            path,
+            destination,
+            downloadProgress: progressAdapter,
+            cancellationToken: cancellationToken);
     }
 
     public void Dispose()
@@ -181,5 +250,13 @@ internal sealed class SshNetSftpClientAdapter : ISftpClientAdapter
             .Replace("-", string.Empty, StringComparison.Ordinal)
             .Replace(" ", string.Empty, StringComparison.Ordinal)
             .Trim();
+    }
+
+    private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value)
+        {
+            report(value);
+        }
     }
 }

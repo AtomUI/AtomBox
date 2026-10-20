@@ -1,4 +1,8 @@
-﻿# Phase 12 Transfer 测试矩阵
+﻿# Phase 12 Transfer 测试矩阵（历史基线）
+
+> 本文记录 2026-06 第一版同步调度器的历史测试基线，不再作为当前 Transfer Runtime 重构的验收标准。
+>
+> 自 2026-10-16 起，新的权威验收基线为 [`phase-12-transfer-runtime-testing.md`](phase-12-transfer-runtime-testing.md)。凡本文涉及 7 状态模型、同步式 `WakeAsync`、`TransferRuntimeInitializer` 或“启动恢复后置”的内容，均已被新基线取代。
 
 > 文档状态： 第一版发布基线冻结
 >
@@ -111,7 +115,7 @@ Round 2 需要：
 | `TransferProgress_NegativeSpeed_Throws` | speedBytesPerSecond \< 0 抛 ArgumentOutOfRangeException |
 | `TransferProgress_Percent_ComputesCorrectly` | (25, 100) → 25%；TotalBytes=null → null |
 | `TransferProgress_Percent_ClampsTo100` | (150, 100) → 100 |
-| `TransferStatus_Values_AreStable` | 枚举值顺序不变（后端持久化依赖数值）：Pending=0, Running=1, Paused=2, Interrupted=3, Succeeded=4, Failed=5, Canceled=6 |
+| `TransferStatus_Values_AreStable` | 既有枚举值不变，新状态仅追加：Pending=0, Running=1, Paused=2, Interrupted=3, Succeeded=4, Failed=5, Canceled=6, Canceling=7, Abandoned=8 |
 
 ### 5.2 状态机规则
 
@@ -128,6 +132,7 @@ Round 2 需要：
 | `Failed_To_Pending` | Retry 重置，清除 StatusReason / ErrorCategory / IsRetryable |
 | `Interrupted_CanRetry_CanCancel_State` | CanRetry=true，CanCancel=false |
 | `Interrupted_To_Pending` | 手动恢复成功 |
+| `Interrupted_To_Abandoned` | 用户放弃后成为不可重试历史终态 |
 | `Paused_To_Pending` | 恢复执行 |
 | `Succeeded_Retry_Rejected` | CanRetry=false，WithStatus(Pending) 或 Retry 拒绝 |
 | `Succeeded_Cancel_Rejected` | CanCancel=false，WithStatus(Canceled) 拒绝 |
@@ -254,7 +259,7 @@ Round 2 需要：
 | Case | 期望 |
 | --- | --- |
 | `ListQueue_ReturnsPendingAndRunningTasks` | 包含 Pending + Running 状态的任务+进度 |
-| `ListQueue_ExcludesTerminalStates` | Succeeded / Failed / Canceled / Interrupted 不出现 |
+| `ListQueue_IncludesUnresolvedInterrupted` | Pending / Running / Canceling / Paused / Interrupted 在活动队列，Abandoned 不出现 |
 | `ListQueue_Empty_ReturnsEmptyList` | 无任务时返回空 |
 | `ListQueue_TaskWithProgress_ProgressPopulated` | Progress 字段正确填充 |
 | `ListQueue_SnapshotCanRetry_MatchesTask` | Task.IsRetryable + Task.CanRetry() 一致 |
@@ -264,7 +269,7 @@ Round 2 需要：
 
 | Case | 期望 |
 | --- | --- |
-| `ListHistory_IncludesAllTerminalStates` | Succeeded / Failed / Canceled / Interrupted 出现在历史 |
+| `ListHistory_IncludesAllTerminalStates` | Succeeded / Failed / Canceled / Abandoned 出现在历史；未决 Interrupted 不出现 |
 | `ListHistory_Empty_ReturnsEmptyList` | 无终端任务时返回空 |
 | `ListHistory_Pagination_SkipZeroTakeDefault` | skip=0, take=50 返回前 50 条 |
 | `ListHistory_Pagination_SkipPage` | skip=50, take=50 返回 51-100 条 |
@@ -286,14 +291,16 @@ Round 2 需要：
 
 ### 11.2 TransferSpeedMeter
 
-（当前为占位符，测试覆盖待实现后补充）
-
 | Case | 期望 |
 | --- | --- |
-| `SpeedMeter_ComputesBytesPerSecond` | (bytes delta) / (time delta) 计算正确 |
-| `SpeedMeter_InitialState_ReturnsNullOrZero` | 尚未接收到数据时无有效速度 |
-| `SpeedMeter_MultipleSamples_Averages` | 多次采样后速度平滑或滚动窗口合理 |
-| `SpeedMeter_Disposed_StopsAcceptingData` | Dispose 后 Report 被忽略或抛出 |
+| `Apply_InitialSample_HasNoSpeed` | 尚未形成完整采样窗口时不伪造速度 |
+| `Apply_FullWindow_ComputesBytesPerSecond` | 在完整窗口上按 `(bytes delta) / (time delta)` 计算 |
+| `Apply_DefaultClock_UsesMonotonicTimeProviderTimestamp` | 生产默认路径使用可注入的单调时间戳，不依赖系统墙上时钟 |
+| `Apply_BurstCallbacks_DoNotCreateInstantaneousSpike` | 高频突发回调不使用微秒级相邻时间差产生虚高速度 |
+| `Apply_ShortInterval_CarriesLastStableSpeed` | 窗口内沿用最近一次可信速度 |
+| `Apply_MultipleWindows_UsesExponentialSmoothing` | 多窗口速度使用 EWMA 平滑 |
+| `Apply_ReportedSpeed_PreservesProviderMeasurement` | Provider 显式提供速度时保持该测量值 |
+| `Apply_BytesRegression_ResetsMeasurementWindow` | 字节倒退时重置独立测速器基线；Runtime 同时在调用前拒绝乱序回调 |
 
 ## 12. DI 注册校验测试矩阵
 

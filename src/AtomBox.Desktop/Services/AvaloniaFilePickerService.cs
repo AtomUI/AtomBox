@@ -7,9 +7,9 @@ namespace AtomBox.Desktop.Services;
 
 public sealed class AvaloniaFilePickerService : IFilePickerService
 {
-    private readonly ILocalizationService _localization;
+    private readonly IAtomBoxLocalizedText _localization;
 
-    public AvaloniaFilePickerService(ILocalizationService localization)
+    public AvaloniaFilePickerService(IAtomBoxLocalizedText localization)
     {
         _localization = localization;
     }

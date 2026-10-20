@@ -12,6 +12,8 @@
 
 AI 或开发者在修改代码前，必须先阅读本文件，判断改动属于哪个模块，再阅读对应模块文档。不要凭文件名乱放代码，那是架构腐烂的开始。
 
+如果改动涉及 AtomUI.City，还必须先阅读 [AtomBox × AtomUI.City 迁移主矩阵](../iterations/features/with-city-migration-matrix.md)。必须先确定“AtomBox 模块 × City 能力”单元并完成审计，不能把“可利用 City”直接等同于“给业务模块增加 City 引用”。
+
 ## 文档冻结状态
 
 当前架构与模块设计文档处于阶段性冻结状态。

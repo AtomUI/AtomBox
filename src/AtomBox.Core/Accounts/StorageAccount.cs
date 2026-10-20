@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using System.Text.Json.Serialization;
 using AtomBox.Core.ValueObjects;
 
@@ -149,28 +150,26 @@ public sealed record StorageAccount
     private static IReadOnlyDictionary<string, string> NormalizeProviderConfig(
         IReadOnlyDictionary<string, string>? providerConfig)
     {
-        if (providerConfig is null || providerConfig.Count == 0)
-        {
-            return new Dictionary<string, string>(StringComparer.Ordinal);
-        }
-
         var normalized = new Dictionary<string, string>(StringComparer.Ordinal);
-        foreach (var (key, value) in providerConfig)
+        if (providerConfig is not null)
         {
-            if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(value))
+            foreach (var (key, value) in providerConfig)
             {
-                continue;
-            }
+                if (string.IsNullOrWhiteSpace(key) || string.IsNullOrWhiteSpace(value))
+                {
+                    continue;
+                }
 
-            var normalizedKey = key.Trim();
-            if (normalizedKey is "endpoint" or "region")
-            {
-                continue;
-            }
+                var normalizedKey = key.Trim();
+                if (normalizedKey is "endpoint" or "region")
+                {
+                    continue;
+                }
 
-            normalized[normalizedKey] = value.Trim();
+                normalized[normalizedKey] = value.Trim();
+            }
         }
 
-        return normalized;
+        return normalized.ToFrozenDictionary(StringComparer.Ordinal);
     }
 }

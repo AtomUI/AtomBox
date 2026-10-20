@@ -1,5 +1,7 @@
 # AtomBox Desktop DI 设计
 
+> 当前实现说明（2026-10-13）：本文的第一版 `IPageViewModelFactory`、手写 `IViewFactory` 和页面创建流程已被 City Routing/Presentation 的 `IViewModelFactory`、generated ViewRegistry、ViewFactory/ViewBinder 与 RouteOutlet entry 取代。现行组合根和生命周期以 [City 迁移审计](../../iterations/features/with-city.md) 与 [MVVM 迁移记录](../../iterations/features/with-city-mvvm.md) 为准；本文其余内容仅保留第一版设计历史。
+
 > 文档状态：阶段性冻结
 >
 > 冻结时间：2026-06-14
@@ -14,40 +16,41 @@
 
 ## 1. 基本原则
 
-Desktop 使用 `Microsoft.Extensions.DependencyInjection` 作为第一版 DI 容器。
+Desktop 使用 AtomUI.City Host 管理基于 `Microsoft.Extensions.DependencyInjection` 的唯一 Root Provider。
 
 DI 是实现手段，不是设计起点。对象是否注册为 Singleton、Transient 或由工厂手动创建，必须服从它的生命周期语义、资源占用和状态归属，不能因为容器写起来方便就乱塞。
 
 ## 2. 组合根
 
-`AtomBox.Desktop` 是唯一组合根。
+`AtomBox.Desktop` 是唯一生产组合边界；容器构建和所有权属于 City `ApplicationHost`。
 
 组合根负责：
 
-- 创建 `ServiceCollection`。
+- 创建 City builder 并选择 `PresentationModule`、`AtomBoxDesktopModule`。
 - 注册 Application 服务。
 - 注册 Transfer 运行时。
 - 注册 Providers。
 - 注册 Infrastructure。
 - 注册 Desktop 内部服务。
-- 创建 `ServiceProvider`。
+- 通过 `UseDefaultServiceProvider` 配置 DI 校验，由 City 创建 Root Provider。
 - 创建主窗口。
 
 推荐文件：
 
 ```text
 Composition/
-  DesktopCompositionRoot.cs
+  AtomBoxDesktopModule.cs
+  DesktopBootstrap.cs
   ServiceCollectionExtensions.cs
 ```
 
-`App.axaml.cs` 只允许调用组合根，不允许散落模块注册细节。
+`Program.cs` 负责 Host 与 Avalonia 双生命周期；`App.axaml.cs` 只执行 UI 初始化和 Desktop bootstrap，不允许散落模块注册细节。
 
 ## 3. ServiceProvider 边界
 
-`IServiceProvider` 只能存在于以下位置：
+生产 Root `IServiceProvider` 只能由 City Host 创建。解析边界只允许存在于：
 
-- `DesktopCompositionRoot`。
+- `Program` / `DesktopBootstrap` 等 Desktop 组合边界。
 - 测试中用于装配对象的测试组合根。
 
 测试组合根是组合根的测试形态，不是普通业务对象例外。
@@ -181,7 +184,7 @@ services.AddAtomBoxDesktop()
 
 这些扩展方法只负责注册本模块服务，不能创建主窗口，不能启动 UI，不能连接远程 provider。
 
-Desktop 组合根负责调用这些注册方法并最终创建 `ServiceProvider`。
+`AtomBoxDesktopModule` 负责调用这些注册方法；City Host 最终创建并拥有 `ServiceProvider`。
 
 Core 第一版不提供 `AddAtomBoxCore()`。Core 暂时只定义类型、端口、模型、值对象和领域规则，不与 DI 发生直接关系。如果未来 Core 出现确实需要容器管理的纯 Core 无状态服务，再补充 Core 注册入口。
 

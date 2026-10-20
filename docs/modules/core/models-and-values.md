@@ -295,6 +295,8 @@ Interrupted
 Succeeded
 Failed
 Canceled
+Canceling
+Abandoned
 ```
 
 `TransferProgress` 是进度快照，不是 worker。

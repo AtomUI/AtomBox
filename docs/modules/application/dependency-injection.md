@@ -30,6 +30,9 @@ services.AddAtomBoxApplication()
 - `RemoteBrowserAppService`
 - `TransferAppService`
 - `SettingsAppService`
+- `IAtomBoxApplicationState` 与 Application State 初始化器
+
+`AddAtomBoxApplication()` 通过 City `AddState()` 注册所需基础服务，并用 `IApplicationStateWriterFactory` 为 `AtomBox.Application` 创建 OwnerWrite writer。它不创建 ServiceProvider，也不把 writer 暴露给 Desktop。
 
 该方法不能：
 
@@ -50,6 +53,9 @@ Application Service 是应用级无状态服务，第一版推荐注册为 Singl
 | `RemoteBrowserAppService` | Singleton | 远程浏览短用例编排，不缓存 provider。 |
 | `TransferAppService` | Singleton | 传输任务用例入口，不持有 worker。 |
 | `SettingsAppService` | Singleton | 设置读取和保存用例编排，不直接持久化。 |
+| `AtomBoxApplicationState` | Singleton | 注册并持有账号、设置运行时 State；只向外暴露只读合同。 |
+| `ApplicationStateProjector` | Singleton | 从 Repository 重建并发布运行时投影。 |
+| `AtomBoxApplicationStateInitializer` | Singleton | 应用启动时初始化账号和设置投影。 |
 
 这些服务虽然是 Singleton，但内部依赖的 repository、store、factory 不能因此长期占用文件句柄、数据库连接、网络连接或 secret material。
 
@@ -63,6 +69,8 @@ Application Service 只依赖 Core 中定义的端口：
 - `ITransferTaskScheduler`
 - `ITransferTaskStore`
 - `ITransferStateStore`
+
+Application 还可以直接依赖 `AtomUI.City.State` 的框架合同，仅限运行时状态注册、只读观察和受权写入；City 类型不得进入 Core 或持久化实现。
 
 Application 不能依赖：
 

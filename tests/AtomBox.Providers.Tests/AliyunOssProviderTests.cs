@@ -8,6 +8,7 @@ using AtomBox.Core.RemoteItems;
 using AtomBox.Core.Transfers;
 using AtomBox.Core.ValueObjects;
 using AtomBox.Providers.Common;
+using AtomBox.Providers.ObjectStorage;
 using AtomBox.Providers.ObjectStorage.AliyunOss;
 
 namespace AtomBox.Providers.Tests;
@@ -241,6 +242,77 @@ public sealed class AliyunOssProviderTests
     }
 
     [Fact]
+    public async Task TransferCapabilities_ReportCooperativeCancellation()
+    {
+        await using var provider = CreateProvider(new FakeAliyunOssClient());
+
+        Assert.True(provider.TransferCapabilities.SupportsCooperativeCancellation);
+        Assert.False(provider.TransferCapabilities.SupportsActiveAbort);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UploadAsync_ObservesCancellationDuringTransfer(bool useMultipart)
+    {
+        var client = new FakeAliyunOssClient
+        {
+            BlockUploadUntilCanceled = true
+        };
+        var capabilities = useMultipart
+            ? new StorageCapabilitySet(StorageCapability.MultipartUpload)
+            : StorageCapabilitySet.Empty;
+        await using var provider = CreateProvider(client, capabilities);
+        await using var content = new MemoryStream([1, 2, 3, 4]);
+        using var cancellation = new CancellationTokenSource();
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+        var upload = Task.Run(() => provider.UploadAsync(
+            new RemotePath("bucket-a/folder/file.txt", RemotePathKind.ObjectPath),
+            content,
+            useMultipart ? ObjectStorageUploadPolicy.MultipartThreshold : content.Length,
+            cancellationToken: cancellation.Token));
+        await client.UploadStarted.Task.WaitAsync(timeout.Token);
+
+        cancellation.Cancel();
+        var result = await upload.WaitAsync(timeout.Token);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCode.OperationCanceled, result.Error?.Code);
+        Assert.Equal(StorageErrorCategory.Canceled, result.Error?.Category);
+        Assert.Equal(useMultipart, client.MultipartUploadUsed);
+    }
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task UploadAsync_DoesNotReportSuccess_WhenCancellationRacesWithSdkCompletion(
+        bool useMultipart)
+    {
+        using var cancellation = new CancellationTokenSource();
+        var client = new FakeAliyunOssClient
+        {
+            BeforeUploadReturns = cancellation.Cancel
+        };
+        var capabilities = useMultipart
+            ? new StorageCapabilitySet(StorageCapability.MultipartUpload)
+            : StorageCapabilitySet.Empty;
+        await using var provider = CreateProvider(client, capabilities);
+        await using var content = new MemoryStream([1, 2, 3, 4]);
+
+        var result = await provider.UploadAsync(
+            new RemotePath("bucket-a/folder/file.txt", RemotePathKind.ObjectPath),
+            content,
+            useMultipart ? ObjectStorageUploadPolicy.MultipartThreshold : content.Length,
+            cancellationToken: cancellation.Token);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCode.OperationCanceled, result.Error?.Code);
+        Assert.Equal(StorageErrorCategory.Canceled, result.Error?.Category);
+        Assert.Equal(useMultipart, client.MultipartUploadUsed);
+    }
+
+    [Fact]
     public async Task UploadAsync_ReturnsConflict_WhenObjectAlreadyExists()
     {
         var client = new FakeAliyunOssClient
@@ -331,7 +403,9 @@ public sealed class AliyunOssProviderTests
         Assert.True(lease.WasDisposed);
     }
 
-    private static AliyunOssProvider CreateProvider(FakeAliyunOssClient client)
+    private static AliyunOssProvider CreateProvider(
+        FakeAliyunOssClient client,
+        StorageCapabilitySet? capabilities = null)
     {
         return new AliyunOssProvider(
             client,
@@ -342,7 +416,7 @@ public sealed class AliyunOssProviderTests
                     ["accessKeyId"] = "ak-test",
                     ["accessKeySecret"] = "secret-test"
                 })),
-            StorageCapabilitySet.Empty);
+            capabilities ?? StorageCapabilitySet.Empty);
     }
 
     private static StorageAccount CreateAccount()
@@ -380,6 +454,15 @@ public sealed class AliyunOssProviderTests
 
         public byte[] PutPayload { get; private set; } = [];
 
+        public bool BlockUploadUntilCanceled { get; init; }
+
+        public Action? BeforeUploadReturns { get; init; }
+
+        public bool MultipartUploadUsed { get; private set; }
+
+        public TaskCompletionSource<bool> UploadStarted { get; } = new(
+            TaskCreationOptions.RunContinuationsAsynchronously);
+
         public string? GetBucketName { get; private set; }
 
         public string? GetKey { get; private set; }
@@ -413,18 +496,41 @@ public sealed class AliyunOssProviderTests
         {
         }
 
-        public void PutObject(string bucketName, string key, Stream content)
+        public void PutObject(
+            string bucketName,
+            string key,
+            Stream content,
+            CancellationToken cancellationToken = default)
         {
             PutBucketName = bucketName;
             PutKey = key;
+            if (BlockUploadUntilCanceled)
+            {
+                UploadStarted.TrySetResult(true);
+                var buffer = new byte[1];
+                while (true)
+                {
+                    _ = content.Read(buffer, 0, buffer.Length);
+                    Thread.Sleep(1);
+                }
+            }
+
             using var copy = new MemoryStream();
             content.CopyTo(copy);
             PutPayload = copy.ToArray();
+            BeforeUploadReturns?.Invoke();
         }
 
-        public void PutObjectMultipart(string bucketName, string key, Stream content, long contentLength, Action<long, long>? progress = null)
+        public void PutObjectMultipart(
+            string bucketName,
+            string key,
+            Stream content,
+            long contentLength,
+            Action<long, long>? progress = null,
+            CancellationToken cancellationToken = default)
         {
-            PutObject(bucketName, key, content);
+            MultipartUploadUsed = true;
+            PutObject(bucketName, key, content, cancellationToken);
             progress?.Invoke(contentLength, contentLength);
         }
 

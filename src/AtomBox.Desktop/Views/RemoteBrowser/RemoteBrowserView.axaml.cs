@@ -4,11 +4,13 @@ using Avalonia.Interactivity;
 using Avalonia.Markup.Xaml;
 using Avalonia.Media;
 using AtomBox.Desktop.ViewModels.Pages;
+using AtomUI.City.Presentation;
 using AtomUI.Desktop.Controls;
 
 namespace AtomBox.Desktop.Views.RemoteBrowser;
 
-public sealed partial class RemoteBrowserView : UserControl
+[ViewFor(typeof(RemoteBrowserViewModel))]
+public sealed partial class RemoteBrowserView : UserControl, IViewDataContextAware
 {
     private static readonly IBrush RowBackground = SolidColorBrush.Parse("#FFFFFF");
     private static readonly IBrush RowPointerOverBackground = SolidColorBrush.Parse("#EAF2FF");
@@ -134,14 +136,16 @@ public sealed partial class RemoteBrowserView : UserControl
             return;
         }
 
-        await viewModel.NavigateBreadcrumbAsync(e.BreadcrumbItem.NavigateContext).ConfigureAwait(true);
+        await viewModel.NavigateBreadcrumbCommand
+            .ExecuteAsync(e.BreadcrumbItem.NavigateContext)
+            .ConfigureAwait(true);
     }
 
     private async void HandleSearchButtonClick(object? sender, RoutedEventArgs e)
     {
         if (DataContext is RemoteBrowserViewModel viewModel)
         {
-            await viewModel.ApplySearchAsync().ConfigureAwait(true);
+            await viewModel.ApplySearchCommand.ExecuteAsync(null).ConfigureAwait(true);
         }
 
         e.Handled = true;
@@ -154,7 +158,7 @@ public sealed partial class RemoteBrowserView : UserControl
             return;
         }
 
-        await viewModel.ApplySearchAsync().ConfigureAwait(true);
+        await viewModel.ApplySearchCommand.ExecuteAsync(null).ConfigureAwait(true);
         e.Handled = true;
     }
 
@@ -162,7 +166,7 @@ public sealed partial class RemoteBrowserView : UserControl
     {
         if (DataContext is RemoteBrowserViewModel viewModel)
         {
-            await viewModel.RestoreListWhenSearchClearedAsync().ConfigureAwait(true);
+            await viewModel.RestoreListWhenSearchClearedCommand.ExecuteAsync(null).ConfigureAwait(true);
         }
     }
 

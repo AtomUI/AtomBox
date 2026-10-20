@@ -20,6 +20,13 @@ public sealed class FakeStorageProvider : IStorageProvider
 
     public StorageCapabilitySet Capabilities => _descriptor.Capabilities;
 
+    public TransferExecutionCapabilities TransferCapabilities { get; } = new(
+        TransferIoExecutionKind.Asynchronous,
+        TransferIoExecutionKind.Asynchronous,
+        supportsCooperativeCancellation: true,
+        supportsActiveAbort: false,
+        supportsProgress: true);
+
     public Task<OperationResult<IReadOnlyList<RemoteItem>>> ListAsync(
         RemotePath path,
         CancellationToken cancellationToken = default)

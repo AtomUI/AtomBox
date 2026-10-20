@@ -143,11 +143,11 @@ Credential Store 必须支持 `CredentialLease` 或等价运行时占用机制�
 
 ### 3.4 Transfer Runtime
 
-`TransferManager` / `ITransferTaskScheduler` 是应用级运行时服务。
+`TransferRuntimeController` / `ITransferTaskScheduler` 是应用级运行时服务，由 `AtomBoxTransferModule` 随 City Host 启停。
 
 Transfer Runtime 拥有任务队列、并发调度、取消、重试、进度聚合和任务状态更新。`Paused` / `Interrupted` 状态用于关闭、中断和后续恢复设计，第一版不承诺对外暂停/恢复调度能力。`TransferQueue` 是 Transfer Runtime 的内部状态，不直接暴露给 UI 或 Application。
 
-`TransferWorker` 是单个执行批次生命周期对象，由 Transfer Runtime 创建和释放。`TransferProgressReporter`、`TransferSpeedMeter` 等对象属于任务执行期，输出进度快照，不作为应用级单例。
+`TransferOperationExecutor` 是单任务执行期对象，由 Transfer Runtime 创建和释放。进度汇聚器、`TransferSpeedMeter` 等对象属于执行租约，不作为应用级单例。
 
 一个 Transfer 执行批次可以包含一个任务，也可以包含同账号、同方向、同目标、同策略的一组可合并任务。批次内部可以复用 provider 或 provider session；批次之间第一版不共享 provider 实例。
 
@@ -187,23 +187,26 @@ ViewModel 可以长期存在于 UI 会话中，但只持有展示状态、筛选
 
 ### 4.1 启动顺序
 
-Desktop 是唯一组合根。
+Desktop 是唯一生产组合边界，AtomUI.City `ApplicationHost` 是唯一 Root Provider 所有者。
 
-应用启动顺序必须区分“服务注册”和“运行时初始化”。注册阶段只描述依赖关系，不能执行重 IO、不能连接远程服务、不能启动后台业务流程。初始化阶段在 `IServiceProvider` 构建后，由 Desktop 组合根显式协调。
+应用启动顺序必须区分“服务注册”和“运行时初始化”。`AtomBoxDesktopModule.ConfigureServices` 只描述依赖关系，不能执行重 IO、不能连接远程服务、不能启动后台业务流程。初始化阶段由 City Host 在构建唯一 Provider 后执行模块生命周期。
 
 应用启动顺序如下：
 
 ```text
-Desktop 启动
-  -> 注册 Infrastructure 服务
-  -> 注册 Providers
-  -> 注册 Transfer Runtime
-  -> 注册 Application Services
-  -> BuildServiceProvider
-  -> 初始化 / 校验 Infrastructure
-  -> 初始化 Transfer Runtime
-  -> 创建 Presentation Shell
-  -> 进入 UI 主循环
+Program.Main
+  -> ApplicationHost.CreateBuilder
+  -> UseDefaultServiceProvider(ValidateOnBuild + ValidateScopes)
+  -> UseModule<PresentationModule>
+  -> UseModule<AtomBoxDesktopModule>
+  -> City Build（创建唯一 Root Provider）
+  -> City StartAsync
+     -> 初始化 / 校验 Infrastructure
+     -> AtomBoxTransferModule 在 Post 初始化阶段启动 Transfer Runtime
+  -> Avalonia UI 主循环
+     -> Presentation runtime attach
+     -> 注册主窗口 session
+  -> City StopAsync / Dispose
 ```
 
 Core 没有运行时初始化。Core 只提供类型、端口、模型和领域规则。
@@ -212,7 +215,7 @@ Providers 注册 provider 描述、能力和 factory 实现，但不在启动阶
 
 ### 4.2 Transfer 启动策略
 
-Transfer Runtime 在应用启动时初始化，并读取未完成任务或队列状态；这些状态只能通过 Core 端口和 Application 查询用例形成不可变快照后供 UI 展示。
+Transfer Runtime 在应用启动时初始化，先处理上次运行留下的未完成任务，再通过 Core 存储端口重建 City.State 不可变队列投影。Desktop 只读观察该投影；历史分页继续由 Application 通过 Core 查询端口组织。
 
 第一版不自动恢复执行历史未完成任务。未完成任务应展示为 Paused、Interrupted 或 recoverable 状态，由用户手动恢复。
 
@@ -280,8 +283,8 @@ DI 注册必须服从生命周期设计，而不是倒过来决定生命周期�
 
 `IServiceProvider` 是 DI 容器的解析入口，不是普通业务依赖。AtomBox 全局禁止把 `IServiceProvider` 注入普通业务对象、ViewModel、Provider、Transfer worker、Repository、Row ViewModel、参数对象或结果对象。
 
-Application、Transfer、Providers、Infrastructure 可以暴露 `IServiceCollection` 注册扩展，供 Desktop 生产组合根调用。这些注册扩展只描述服务注册关系，不等于模块可以持有或使用 `IServiceProvider`。
+Application、Transfer、Providers、Infrastructure 可以暴露 `IServiceCollection` 注册扩展，供 `AtomBoxDesktopModule` 调用。这些注册扩展只描述服务注册关系，不等于模块可以持有或使用 `IServiceProvider`。
 
-只有生产组合根或测试组合根可以直接创建和持有 `IServiceProvider`。生产组合根属于 Desktop，不属于 Application。测试组合根是组合根的测试形态，不是普通业务对象例外。如果某些运行时对象需要按目标创建其他对象，必须优先使用显式工厂接口、具体工厂类或 `Func<T>` 委托，由组合根完成装配后传入。不要把 `IServiceProvider` 当成万能对象工厂到处传递。
+只有 City Host 可以创建生产 Root Provider；Desktop 的 `Program` / `DesktopBootstrap` 只在组合边界通过 `IApplicationHost.Services` 解析入口对象。测试组合根是组合根的测试形态，不是普通业务对象例外。如果某些运行时对象需要按目标创建其他对象，必须优先使用显式工厂接口、具体工厂类或 `Func<T>` 委托，由组合边界完成装配后传入。不要把 `IServiceProvider` 当成万能对象工厂到处传递。
 
 Core 第一版不提供 DI 注册入口。Core 只提供类型、端口、模型、值对象和领域规则；如果未来 Core 出现确实需要容器管理的纯 Core 无状态服务，再补充 Core 注册设计。

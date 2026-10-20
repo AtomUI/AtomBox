@@ -1,8 +1,6 @@
-using AtomBox.Desktop.ViewModels;
-
 namespace AtomBox.Desktop.Navigation;
 
-public sealed class NavigationItemViewModel : ViewModelBase
+public sealed class NavigationItemViewModel
 {
     public NavigationItemViewModel(string title, NavigationTarget? target = null, object? parameter = null)
     {

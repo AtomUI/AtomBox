@@ -1,7 +1,5 @@
-using System.Collections;
-using System.Globalization;
-using System.Reflection;
-using System.Resources;
+using AtomUI.City.Generated;
+using AtomUI.City.Localization;
 
 namespace AtomBox.Desktop.Tests;
 
@@ -9,36 +7,35 @@ public sealed class LocalizationResourceTests
 {
     private static readonly string[] Catalogs =
     [
-        "CommonStrings",
-        "ShellStrings",
-        "AccountStrings",
-        "RemoteBrowserStrings",
-        "TransferStrings",
-        "SettingsStrings"
+        "Common",
+        "Shell",
+        "Account",
+        "RemoteBrowser",
+        "Transfer",
+        "Settings"
     ];
 
     [Theory]
     [MemberData(nameof(GetCatalogs))]
-    public void EnglishAndChineseResources_HaveTheSameKeys(string catalog)
+    public async Task EnglishAndChineseLocPacksHaveTheSameNonEmptyKeys(string catalog)
     {
-        var manager = CreateManager(catalog);
-        var english = ReadKeys(manager, CultureInfo.InvariantCulture);
-        var chinese = ReadKeys(manager, CultureInfo.GetCultureInfo("zh-CN"));
+        var provider = new AssemblyLanguagePackageProvider();
+        var descriptors = provider.Discover(typeof(AtomBox.Desktop.App).Assembly);
+        var expectedKeys = GeneratedLocalizationManifest.ResourceKeys
+            .Where(key => key.StartsWith($"{catalog}.", StringComparison.Ordinal))
+            .Order(StringComparer.Ordinal)
+            .ToArray();
 
-        Assert.Equal(english, chinese);
-    }
+        Assert.NotEmpty(expectedKeys);
+        using var english = await LoadAsync(provider, descriptors, $"{catalog}.en-US");
+        using var chinese = await LoadAsync(provider, descriptors, $"{catalog}.zh-CN");
 
-    [Theory]
-    [MemberData(nameof(GetCatalogs))]
-    public void EnglishBaseResources_DoNotContainEmptyValues(string catalog)
-    {
-        var manager = CreateManager(catalog);
-        var resources = manager.GetResourceSet(CultureInfo.InvariantCulture, true, true);
-
-        Assert.NotNull(resources);
-        foreach (DictionaryEntry item in resources)
+        foreach (var key in expectedKeys)
         {
-            Assert.False(string.IsNullOrWhiteSpace(item.Value?.ToString()), item.Key?.ToString());
+            Assert.True(english.TryGetString(key, out var englishValue), key);
+            Assert.False(string.IsNullOrWhiteSpace(englishValue), key);
+            Assert.True(chinese.TryGetString(key, out var chineseValue), key);
+            Assert.False(string.IsNullOrWhiteSpace(chineseValue), key);
         }
     }
 
@@ -47,20 +44,14 @@ public sealed class LocalizationResourceTests
         return Catalogs.Select(catalog => new object[] { catalog });
     }
 
-    private static ResourceManager CreateManager(string catalog)
+    private static async Task<LanguagePackage> LoadAsync(
+        AssemblyLanguagePackageProvider provider,
+        IReadOnlyList<LanguagePackageDescriptor> descriptors,
+        string packageId)
     {
-        return new ResourceManager(
-            $"AtomBox.Desktop.Localization.Resources.{catalog}",
-            typeof(AtomBox.Desktop.App).Assembly);
-    }
-
-    private static string[] ReadKeys(ResourceManager manager, CultureInfo culture)
-    {
-        var resources = manager.GetResourceSet(culture, true, true);
-        Assert.NotNull(resources);
-        return resources.Cast<DictionaryEntry>()
-            .Select(item => item.Key.ToString()!)
-            .Order(StringComparer.Ordinal)
-            .ToArray();
+        var descriptor = Assert.Single(descriptors, item => item.PackageId == packageId);
+        var result = await provider.LoadAsync(descriptor);
+        Assert.True(result.Succeeded, result.Error?.Message);
+        return Assert.IsType<LanguagePackage>(result.Package);
     }
 }

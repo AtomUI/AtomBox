@@ -1,11 +1,7 @@
-using System.Globalization;
 using System.Diagnostics;
 using System.Text;
 using AtomBox.Desktop.Composition;
 using AtomBox.Desktop.Localization;
-using AtomBox.Desktop.Services;
-using AtomBox.Infrastructure.Configuration;
-using AtomBox.Desktop.Shell;
 using AtomUI;
 using AtomUI.Desktop.Controls;
 using AtomUI.Theme;
@@ -13,30 +9,25 @@ using Avalonia;
 using Avalonia.Controls.ApplicationLifetimes;
 using Avalonia.Markup.Xaml;
 using Avalonia.Threading;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AtomBox.Desktop;
 
 public sealed partial class App : Avalonia.Application
 {
-    private DesktopCompositionRoot? _compositionRoot;
-    private ILocalizationService? _localization;
-    private IDesktopPreferencesService? _preferences;
     private static bool s_exceptionHandlersRegistered;
 
     public override void Initialize()
     {
         RegisterExceptionHandlers();
 
-        var paths = new AtomBoxStoragePaths();
-        var preference = DesktopLanguageBootstrapper.ReadPreference(paths);
-        var culture = DesktopLanguageBootstrapper.Apply(preference, CultureInfo.InstalledUICulture);
-        _preferences = new DesktopPreferencesService(paths);
-        _localization = new LocalizationService(_preferences, preference, culture);
-        LocalizationHost.Initialize(_localization);
+        var localization = DesktopBootstrap.Host.Services
+            .GetRequiredService<IAtomBoxLocalizedText>();
+        LocalizationHost.Initialize(localization);
 
         this.UseAtomUI(builder =>
         {
-            builder.WithDefaultCultureInfo(culture);
+            builder.WithDefaultCultureInfo(localization.CurrentCulture);
             builder.WithDefaultTheme(IThemeManager.DEFAULT_THEME_ID);
             builder.UseAlibabaSansFont();
             builder.UseDesktopControls();
@@ -47,20 +38,19 @@ public sealed partial class App : Avalonia.Application
 
     public override void OnFrameworkInitializationCompleted()
     {
-        if (ApplicationLifetime is IClassicDesktopStyleApplicationLifetime desktop)
+        if (ApplicationLifetime is not IClassicDesktopStyleApplicationLifetime desktop)
         {
-            try
-            {
-                _compositionRoot = DesktopCompositionRoot.Create(
-                    _localization ?? throw new InvalidOperationException("Localization is not initialized."),
-                    _preferences ?? throw new InvalidOperationException("Desktop preferences are not initialized."));
-                desktop.MainWindow = _compositionRoot.CreateMainWindow();
-                desktop.Exit += (_, _) => _compositionRoot.Dispose();
-            }
-            catch (Exception ex)
-            {
-                desktop.MainWindow = new StartupErrorWindow(ex);
-            }
+            throw new InvalidOperationException(
+                "AtomBox requires the Avalonia classic desktop lifetime.");
+        }
+
+        try
+        {
+            DesktopBootstrap.Initialize(desktop);
+        }
+        catch (Exception exception)
+        {
+            DesktopBootstrap.ShowStartupError(desktop, exception);
         }
 
         base.OnFrameworkInitializationCompleted();

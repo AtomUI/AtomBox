@@ -65,7 +65,7 @@ src/AtomBox.Transfer/
 
 ## 5. 首批核心对象范围
 
-第一阶段 Transfer 只定义支撑基础上传下载队列的运行时对象，不提前实现复杂断点续传和跨 provider 同步。
+第一阶段 Transfer 只定义支撑基础上传下载队列的运行时对象，不提供断点续传和跨 provider 同步。失败、中断或用户重试均从任务起点重新执行；已保存进度只用于展示和诊断，不作为恢复依据。
 
 队列与调度：
 
@@ -93,39 +93,42 @@ src/AtomBox.Transfer/
 
 Core 端口实现：
 
-- `TransferTaskScheduler`
+- `TransferRuntimeController`
 - `TransferStateStoreCoordinator`
 
 这些对象属于任务调度语言，不是具体 provider 实现，也不是 UI 展示对象。
 
 ## 6. 设计约束
 
-- Transfer 只能依赖 Core；不能依赖 Application、Desktop、具体 Provider 实现或 Infrastructure 实现。
+- Transfer 只能依赖 Core 和已经通过迁移矩阵正式决策的 City 基础能力。当前已采用 `AtomUI.City.State`，并批准使用 `AtomUI.City.Core.Module` 承载应用级 Runtime 生命周期；Transfer 不能依赖 Application、Desktop、具体 Provider 实现或 Infrastructure 实现。
 - Transfer 调用 provider 抽象执行实际读写，但不直接引用 provider 实现类。
 - Transfer 使用 Core 中定义的 `ITransferTaskStore`、`ITransferStateStore`、`IStorageAccountRepository`、`IStorageProviderFactory` 等端口，但不定义这些跨模块端口。
 - Transfer 不保存敏感凭据，不读取配置文件，不访问数据库。
 - Transfer 不读取、不解析、不缓存 secret material；凭据解析和 secret material 使用必须封装在 provider factory / provider 操作链路内部。
-- Transfer 不处理 UI 状态。第一版不暴露传输状态发布端口，传输状态进入 UI 的正式路径是：Transfer Runtime 更新状态存储，Application 通过 Core 查询端口组织不可变快照，Presentation 消费 Application 结果。
+- Transfer 不处理 UI 状态。Transfer Runtime 在持久化成功后，使用 City.State 维护一份应用级、瞬时、不可变的队列投影；对外只暴露只读 State。Application 仍通过 Core 端口组织命令和历史分页，Desktop 只观察 State 并转换为 UI 投影。
 - Transfer 不接收、保存或传播长期 provider 实例，provider 生命周期由 Transfer 执行批次临时创建和释放。
 - Provider 可以暴露可选能力；Transfer 只能基于 Core 能力模型决定任务级调度、重试和并发策略，具体协议分片、SDK 调用细节仍由 Provider 内部负责。
 - Transfer 不负责账号管理和连接测试，这些是 Application 用例。
 - 传输任务状态必须基于 Core 的统一模型，不能在 Transfer 内部发明另一套状态语言。
+- City.State 投影不是持久化事实源；应用启动时必须从 `ITransferStateStore` 重建，持久化失败时不得先行发布。
 
 ## 7. 生命周期约束
 
 Transfer Runtime 是应用级运行时服务，拥有任务队列、并发调度、取消、重试、进度聚合和任务状态更新。当前第一版通过设置项中的最大并发数控制同时上传/下载任务数量。`Paused` / `Interrupted` 状态用于关闭、中断和后续恢复设计，第一版不承诺对外暂停/恢复调度能力。
 
-- `TransferManager` / `ITransferTaskScheduler` 可以作为应用级长期服务存在。
-- `TransferQueue` 是 Transfer 内部状态，不直接暴露给 UI 或 Application。
-- `TransferWorker` 是单个执行批次生命周期对象，由 Transfer Runtime 创建和释放。
+- `TransferRuntimeController` / `ITransferTaskScheduler` 是应用级长期服务，由 `AtomBoxTransferModule` 随 City Host 启停。
+- 持久化任务库是队列事实源；容量 1 的内部信号只负责唤醒扫描，不承载任务事实，也不对外公开 `WakeAsync`。
+- `TransferOperationExecutor` 是单任务执行期对象，由 Runtime 创建和释放；旧 `TransferTaskScheduler`、`TransferQueue` 与公开 `WakeAsync` 已退出生产路径。
 - `TransferProgressReporter`、`TransferSpeedMeter` 属于任务执行期对象，输出进度快照，不作为应用级单例。
 - 传输执行开始时，Transfer 通过 Core 端口读取账号，并形成本次执行的内存快照。
-- `TransferWorker` 的执行批次是传输 provider 的主要生命周期边界；同账号、同方向、同目标、同策略的一组可合并任务可以在批次内复用 provider 或 provider session。
+- `TransferOperationExecutor` 的执行过程是传输 provider 的生命周期边界；当前每个任务独立创建并释放 provider。
 - Transfer 不能按单个分片、单个 HTTP 请求、单个 SDK 方法调用创建 provider；这会把 provider 生命周期切得过碎，是错误设计。
 - 不同用户提交批次第一版不跨批次共享 provider 实例。未来如果需要跨批次复用，必须先设计 `ProviderSessionPool` 或 `ProviderClientPool`。
 - 任务重启或恢复时，Transfer 通过 `StorageAccountId` 重新读取当前账号和当前 `CredentialRef`。
-- TransferWorker 执行期间如占用某个 `CredentialRef`，必须通过 `CredentialLease` 或等价机制声明占用；TransferTask 持久化数据仍然不能保存 secret material。
-- Transfer 启动时可以读取未完成任务或队列状态，供 Application 后续查询并组织不可变快照；第一版不自动恢复执行历史未完成任务。
+- Transfer 执行期间如占用某个 `CredentialRef`，必须通过 `CredentialLease` 或等价机制声明占用；TransferTask 持久化数据仍然不能保存 secret material。
+- Transfer 启动时读取未完成任务并重建队列投影；已经可靠受理但尚未领取的 `Pending` 自动调度，上次运行遗留的 `Running` 转换为 `Interrupted`，`Paused` / `Interrupted` 不自动执行，只能由用户显式重试并从任务起点重新开始。
 - 应用关闭时，Transfer 必须停止接收新任务，请求 worker 停止，把运行中任务保存为 Interrupted 或等价可解释状态，并 flush 关键传输状态。
 
 Transfer 停止必须有有限超时。无法及时停止的 worker，应把任务标记为 Interrupted，然后允许应用继续退出。
+
+有限超时保证的是 Runtime/Host 不再无限等待，不表示 .NET 可以强制终止第三方 SDK 的 Task。超时执行体必须被逻辑隔离并禁止迟到状态覆盖；应用完成必要落盘后继续退出，最终由操作系统随进程回收仍未返回的 SDK 执行体。该兜底只用于真正退出应用，不能用于仍需继续运行的单任务用户取消。

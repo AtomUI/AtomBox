@@ -16,4 +16,13 @@ public interface ITransferStateStore
         TransferTask task,
         TransferProgress? progress,
         CancellationToken cancellationToken = default);
+
+    Task<OperationResult> SaveProgressBatchAsync(
+        IReadOnlyList<TransferProgressUpdate> updates,
+        CancellationToken cancellationToken = default)
+    {
+        return Task.FromResult(OperationResult.Failure(
+            AtomBox.Core.Errors.StorageError.NotSupported(
+                "Batch transfer progress updates are not supported by this store.")));
+    }
 }

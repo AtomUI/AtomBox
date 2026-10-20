@@ -2,6 +2,7 @@ using AtomBox.Core.Accounts;
 using AtomBox.Core.Capabilities;
 using AtomBox.Core.Credentials;
 using AtomBox.Core.Errors;
+using AtomBox.Core.Providers;
 using AtomBox.Core.Results;
 using AtomBox.Core.RemoteItems;
 using AtomBox.Core.Transfers;
@@ -87,6 +88,91 @@ public sealed class SftpStorageProviderTests
         Assert.Equal([1, 2, 3], client.UploadPayload);
         Assert.Equal([5, 6, 7], destination.ToArray());
         Assert.NotNull(progress.Latest);
+    }
+
+    [Fact]
+    public async Task TransferCapabilities_ReportCooperativeAsynchronousIo()
+    {
+        await using var provider = CreateProvider(new FakeSftpClient());
+
+        Assert.Equal(TransferIoExecutionKind.Asynchronous, provider.TransferCapabilities.UploadExecution);
+        Assert.Equal(TransferIoExecutionKind.Asynchronous, provider.TransferCapabilities.DownloadExecution);
+        Assert.True(provider.TransferCapabilities.SupportsCooperativeCancellation);
+        Assert.False(provider.TransferCapabilities.SupportsActiveAbort);
+    }
+
+    [Fact]
+    public async Task UploadAsync_CancellationStopsInFlightOperation()
+    {
+        var client = new FakeSftpClient
+        {
+            ExistingDirectories = ["/data"],
+            BlockUploadUntilCanceled = true
+        };
+        await using var provider = CreateProvider(client, rootPath: "/data");
+        await using var content = new MemoryStream([1, 2, 3]);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+        var operation = provider.UploadAsync(
+            new RemotePath("file.txt"),
+            content,
+            content.Length,
+            cancellationToken: cancellation.Token);
+        await client.UploadStarted.Task.WaitAsync(cancellation.Token);
+        cancellation.Cancel();
+        var result = await operation;
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCategory.Canceled, result.Error?.Category);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_CancellationStopsInFlightOperation()
+    {
+        var client = new FakeSftpClient
+        {
+            ExistingFiles = ["/data/file.txt"],
+            BlockDownloadUntilCanceled = true
+        };
+        await using var provider = CreateProvider(client, rootPath: "/data");
+        await using var destination = new MemoryStream();
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+        var operation = provider.DownloadAsync(
+            new RemotePath("file.txt"),
+            destination,
+            cancellationToken: cancellation.Token);
+        await client.DownloadStarted.Task.WaitAsync(cancellation.Token);
+        cancellation.Cancel();
+        var result = await operation;
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCategory.Canceled, result.Error?.Category);
+    }
+
+    [Fact]
+    public async Task UploadAsync_CancellationStopsInFlightConnection()
+    {
+        var client = new FakeSftpClient
+        {
+            BlockConnectUntilCanceled = true
+        };
+        await using var provider = CreateProvider(client, rootPath: "/data");
+        await using var content = new MemoryStream([1, 2, 3]);
+        using var cancellation = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+
+        var operation = provider.UploadAsync(
+            new RemotePath("file.txt"),
+            content,
+            content.Length,
+            cancellationToken: cancellation.Token);
+        await client.ConnectStarted.Task.WaitAsync(cancellation.Token);
+        cancellation.Cancel();
+        var result = await operation;
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCategory.Canceled, result.Error?.Category);
+        Assert.Null(client.UploadPath);
     }
 
     [Fact]
@@ -398,9 +484,37 @@ public sealed class SftpStorageProviderTests
 
         public byte[] DownloadPayload { get; init; } = [];
 
+        public bool BlockUploadUntilCanceled { get; init; }
+
+        public bool BlockDownloadUntilCanceled { get; init; }
+
+        public bool BlockConnectUntilCanceled { get; init; }
+
+        public TaskCompletionSource<bool> ConnectStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<bool> UploadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<bool> DownloadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
         public void Connect()
         {
             IsConnected = true;
+        }
+
+        public async Task ConnectAsync(CancellationToken cancellationToken = default)
+        {
+            ConnectStarted.TrySetResult(true);
+            if (BlockConnectUntilCanceled)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                return;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            Connect();
         }
 
         public IReadOnlyList<SftpRemoteEntry> ListDirectory(string path)
@@ -414,14 +528,39 @@ public sealed class SftpStorageProviderTests
             return ExistingFiles.Contains(path);
         }
 
+        public Task<bool> FileExistsAsync(
+            string path,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(FileExists(path));
+        }
+
         public bool DirectoryExists(string path)
         {
             return ExistingDirectories.Contains(path) || CreatedDirectories.Contains(path);
         }
 
+        public Task<bool> DirectoryExistsAsync(
+            string path,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(DirectoryExists(path));
+        }
+
         public void CreateDirectory(string path)
         {
             CreatedDirectories.Add(path);
+        }
+
+        public Task CreateDirectoryAsync(
+            string path,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            CreateDirectory(path);
+            return Task.CompletedTask;
         }
 
         public void DeleteFile(string path)
@@ -439,19 +578,43 @@ public sealed class SftpStorageProviderTests
             MovedPath = (sourcePath, destinationPath);
         }
 
-        public void UploadFile(Stream content, string path, Action<ulong>? progress = null)
+        public async Task UploadFileAsync(
+            Stream content,
+            string path,
+            Action<ulong>? progress = null,
+            CancellationToken cancellationToken = default)
         {
             UploadPath = path;
+            UploadStarted.TrySetResult(true);
+            if (BlockUploadUntilCanceled)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                return;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
             using var copy = new MemoryStream();
-            content.CopyTo(copy);
+            await content.CopyToAsync(copy, cancellationToken);
             UploadPayload = copy.ToArray();
             progress?.Invoke((ulong)UploadPayload.Length);
         }
 
-        public void DownloadFile(string path, Stream destination, Action<ulong>? progress = null)
+        public async Task DownloadFileAsync(
+            string path,
+            Stream destination,
+            Action<ulong>? progress = null,
+            CancellationToken cancellationToken = default)
         {
             DownloadPath = path;
-            destination.Write(DownloadPayload);
+            DownloadStarted.TrySetResult(true);
+            if (BlockDownloadUntilCanceled)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                return;
+            }
+
+            cancellationToken.ThrowIfCancellationRequested();
+            await destination.WriteAsync(DownloadPayload, cancellationToken);
             progress?.Invoke((ulong)DownloadPayload.Length);
         }
 

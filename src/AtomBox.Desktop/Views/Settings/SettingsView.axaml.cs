@@ -1,9 +1,12 @@
+using AtomBox.Desktop.ViewModels.Pages;
+using AtomUI.City.Presentation;
 using Avalonia.Controls;
 using Avalonia.Markup.Xaml;
 
 namespace AtomBox.Desktop.Views.Settings;
 
-public sealed partial class SettingsView : UserControl
+[ViewFor(typeof(SettingsViewModel))]
+public sealed partial class SettingsView : UserControl, IViewDataContextAware
 {
     public SettingsView()
     {

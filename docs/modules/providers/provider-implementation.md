@@ -189,6 +189,11 @@ Provider 可以保留脱敏技术细节供 Application 和 Presentation 展示�
 - `authMode` 属于账号配置字段，用于表达认证方式；password、privateKey、privateKeyPassphrase 等 secret material 只能通过凭据端口进入 provider factory / provider 操作链路。
 - FTP/WebDAV 匿名模式不得读取或要求 secret material；SFTP/FTP/WebDAV 非匿名模式必须通过 credential lease 获取临时凭据材料。
 - SFTP/FTP 上传文件前应确保远端父目录存在；下载目录应返回 Validation；下载不存在文件应返回 NotFound；删除必须按文件/目录类型分别调用协议能力。
+- SFTP 上传和下载必须使用 SSH.NET 的异步传输 API，并把 Runtime 提供的 `CancellationToken` 贯穿到协议调用。用户取消后，协议执行体必须退出并返回 Canceled 错误语义；不得只在传输开始前检查令牌、随后继续执行同步上传或下载。
+- SFTP 取消停止后续传输，但不承诺删除远端已经产生的部分文件。部分远端数据的清理由用户根据实际结果决定，Provider 不得在结果未知时自动删除路径。
+- Aliyun OSS V1 SDK 的 `PutObject`、`UploadPart` 和 `ResumableUploadObject` 都不接受 `CancellationToken`，不得把传入 AtomBox token 描述成“SDK 原生取消”。普通上传必须通过可取消源流与 SDK 同步进度回调中断请求，并在 SDK 返回后设置取消屏障。
+- Aliyun OSS 大文件上传不得直接使用会捕获所有异常并重试的 `ResumableUploadObject`。AtomBox 使用 `InitiateMultipartUpload -> UploadPart -> CompleteMultipartUpload` 显式编排：每个 part 前后检查 token，正在发送的 part 通过可取消流/回调退出；取消或失败后 best-effort 调用 `AbortMultipartUpload` 清理未完成会话，且不得执行 Complete。
+- Aliyun OSS 仍不声明 active abort：V1 SDK 的单个 HTTP 请求没有 token/abort handle，取消只能在下一次源流读取或进度回调处被观测。若取消与 `CompleteMultipartUpload` 已在服务端提交发生不可判定竞态，本地以用户取消意图为准，但不得擅自删除可能已完成的远端对象。
 - WebDAV 上传文件前应确保远端父目录存在；下载目录应返回 Validation；下载不存在文件应返回 NotFound；创建目录使用 MKCOL，移动/重命名使用 MOVE。
 - Provider 契约提供 `CreateFolderAsync`、`RenameAsync`、`MoveAsync` 三个文件管理入口；不支持的 provider 必须返回 `OperationNotSupported`，不能伪装成功。
 - SFTP/FTP/WebDAV 必须真实支持创建目录、重命名和移动；对象存储 provider 在未接入 SDK copy-object 前不得用“下载到内存再上传”的方式伪装 move/rename。

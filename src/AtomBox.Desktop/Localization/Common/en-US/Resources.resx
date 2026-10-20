@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="utf-8"?>
+<root>
+  <resheader name="resmimetype"><value>text/microsoft-resx</value></resheader>
+  <resheader name="version"><value>2.0</value></resheader>
+  <resheader name="reader"><value>System.Resources.ResXResourceReader, System.Windows.Forms</value></resheader>
+  <resheader name="writer"><value>System.Resources.ResXResourceWriter, System.Windows.Forms</value></resheader>
+  <data name="AddAccount" xml:space="preserve"><value>Add Account</value></data>
+  <data name="Open" xml:space="preserve"><value>Open</value></data>
+  <data name="Preview" xml:space="preserve"><value>Preview</value></data>
+  <data name="Download" xml:space="preserve"><value>Download</value></data>
+  <data name="Rename" xml:space="preserve"><value>Rename</value></data>
+  <data name="Delete" xml:space="preserve"><value>Delete</value></data>
+  <data name="Retry" xml:space="preserve"><value>Retry</value></data>
+  <data name="Abandon" xml:space="preserve"><value>Abandon</value></data>
+  <data name="ViewDetails" xml:space="preserve"><value>View Details</value></data>
+  <data name="PreviousPage" xml:space="preserve"><value>Previous</value></data>
+  <data name="NextPage" xml:space="preserve"><value>Next</value></data>
+  <data name="Edit" xml:space="preserve"><value>Edit</value></data>
+  <data name="Save" xml:space="preserve"><value>Save</value></data>
+  <data name="Reset" xml:space="preserve"><value>Reset</value></data>
+  <data name="Cancel" xml:space="preserve"><value>Cancel</value></data>
+  <data name="Modify" xml:space="preserve"><value>Change</value></data>
+  <data name="FileName" xml:space="preserve"><value>File Name</value></data>
+  <data name="Direction" xml:space="preserve"><value>Direction</value></data>
+  <data name="TargetSource" xml:space="preserve"><value>Target / Source</value></data>
+  <data name="Progress" xml:space="preserve"><value>Progress</value></data>
+  <data name="Speed" xml:space="preserve"><value>Speed</value></data>
+  <data name="Action" xml:space="preserve"><value>Action</value></data>
+  <data name="Result" xml:space="preserve"><value>Result</value></data>
+  <data name="CompletedAt" xml:space="preserve"><value>Completed At</value></data>
+  <data name="Name" xml:space="preserve"><value>Name</value></data>
+  <data name="Type" xml:space="preserve"><value>Type</value></data>
+  <data name="AddressProvider" xml:space="preserve"><value>Address / Provider</value></data>
+  <data name="FileSize" xml:space="preserve"><value>Size</value></data>
+  <data name="ModifiedAt" xml:space="preserve"><value>Modified</value></data>
+  <data name="Thumbnail" xml:space="preserve"><value>Thumbnail</value></data>
+  <data name="Upload" xml:space="preserve"><value>Upload</value></data>
+  <data name="Close" xml:space="preserve"><value>Close</value></data>
+  <data name="Confirm" xml:space="preserve"><value>Confirm</value></data>
+  <data name="Yes" xml:space="preserve"><value>Yes</value></data>
+  <data name="No" xml:space="preserve"><value>No</value></data>
+  <data name="Task" xml:space="preserve"><value>Task</value></data>
+  <data name="Status" xml:space="preserve"><value>Status</value></data>
+  <data name="Reason" xml:space="preserve"><value>Reason</value></data>
+  <data name="Retryable" xml:space="preserve"><value>Retryable</value></data>
+  <data name="Account" xml:space="preserve"><value>Account</value></data>
+  <data name="Path" xml:space="preserve"><value>Path</value></data>
+  <data name="FileCount" xml:space="preserve"><value>File Count</value></data>
+  <data name="SaveDirectory" xml:space="preserve"><value>Save Folder</value></data>
+  <data name="File" xml:space="preserve"><value>File</value></data>
+  <data name="Object" xml:space="preserve"><value>Object</value></data>
+  <data name="NewName" xml:space="preserve"><value>New Name</value></data>
+  <data name="Folder" xml:space="preserve"><value>Folder</value></data>
+  <data name="CurrentLocation" xml:space="preserve"><value>Current Location</value></data>
+  <data name="FailedFiles" xml:space="preserve"><value>Failed Files</value></data>
+</root>

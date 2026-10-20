@@ -30,6 +30,13 @@ public sealed class SftpStorageProvider : IStorageProvider, IRemoteHomePathProvi
 
     public StorageCapabilitySet Capabilities { get; }
 
+    public TransferExecutionCapabilities TransferCapabilities { get; } = new(
+        TransferIoExecutionKind.Asynchronous,
+        TransferIoExecutionKind.Asynchronous,
+        supportsCooperativeCancellation: true,
+        supportsActiveAbort: false,
+        supportsProgress: true);
+
     public string? HomePath
     {
         get
@@ -104,7 +111,7 @@ public sealed class SftpStorageProvider : IStorageProvider, IRemoteHomePathProvi
         }
     }
 
-    public Task<OperationResult> UploadAsync(
+    public async Task<OperationResult> UploadAsync(
         RemotePath path,
         Stream content,
         long? contentLength,
@@ -117,24 +124,27 @@ public sealed class SftpStorageProvider : IStorageProvider, IRemoteHomePathProvi
             ArgumentNullException.ThrowIfNull(content);
             if (path.IsRoot)
             {
-                return Task.FromResult(OperationResult.Failure(StorageError.Validation("Upload target path is required.")));
+                return OperationResult.Failure(StorageError.Validation("Upload target path is required."));
             }
 
-            EnsureConnected();
+            await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
             var remotePath = ToSftpPath(path);
-            EnsureParentDirectories(remotePath);
-            _client.UploadFile(content, remotePath, bytes =>
-                progress?.Report(new TransferProgress((long)bytes, contentLength, null)));
+            await EnsureParentDirectoriesAsync(remotePath, cancellationToken).ConfigureAwait(false);
+            await _client.UploadFileAsync(
+                content,
+                remotePath,
+                bytes => progress?.Report(new TransferProgress((long)bytes, contentLength, null)),
+                cancellationToken).ConfigureAwait(false);
             if (contentLength is not null)
             {
                 progress?.Report(new TransferProgress(contentLength.Value, contentLength.Value, null));
             }
 
-            return Task.FromResult(OperationResult.Success());
+            return OperationResult.Success();
         }
         catch (Exception exception)
         {
-            return Task.FromResult(OperationResult.Failure(ProviderErrorMapper.FromException(exception)));
+            return OperationResult.Failure(ProviderErrorMapper.FromException(exception));
         }
     }
 
@@ -242,7 +252,7 @@ public sealed class SftpStorageProvider : IStorageProvider, IRemoteHomePathProvi
         return MoveAsync(path, parent.Combine(newName, path.Kind), cancellationToken);
     }
 
-    public Task<OperationResult> DownloadAsync(
+    public async Task<OperationResult> DownloadAsync(
         RemotePath path,
         Stream destination,
         IProgress<TransferProgress>? progress = null,
@@ -254,28 +264,31 @@ public sealed class SftpStorageProvider : IStorageProvider, IRemoteHomePathProvi
             ArgumentNullException.ThrowIfNull(destination);
             if (path.IsRoot)
             {
-                return Task.FromResult(OperationResult.Failure(StorageError.Validation("Download source path is required.")));
+                return OperationResult.Failure(StorageError.Validation("Download source path is required."));
             }
 
-            EnsureConnected();
+            await EnsureConnectedAsync(cancellationToken).ConfigureAwait(false);
             var remotePath = ToSftpPath(path);
-            if (_client.DirectoryExists(remotePath))
+            if (await _client.DirectoryExistsAsync(remotePath, cancellationToken).ConfigureAwait(false))
             {
-                return Task.FromResult(OperationResult.Failure(StorageError.Validation("Download source path is a folder.")));
+                return OperationResult.Failure(StorageError.Validation("Download source path is a folder."));
             }
 
-            if (!_client.FileExists(remotePath))
+            if (!await _client.FileExistsAsync(remotePath, cancellationToken).ConfigureAwait(false))
             {
-                return Task.FromResult(OperationResult.Failure(StorageError.NotFound("Remote file was not found.")));
+                return OperationResult.Failure(StorageError.NotFound("Remote file was not found."));
             }
 
-            _client.DownloadFile(remotePath, destination, bytes =>
-                progress?.Report(new TransferProgress((long)bytes, null, null)));
-            return Task.FromResult(OperationResult.Success());
+            await _client.DownloadFileAsync(
+                remotePath,
+                destination,
+                bytes => progress?.Report(new TransferProgress((long)bytes, null, null)),
+                cancellationToken).ConfigureAwait(false);
+            return OperationResult.Success();
         }
         catch (Exception exception)
         {
-            return Task.FromResult(OperationResult.Failure(ProviderErrorMapper.FromException(exception)));
+            return OperationResult.Failure(ProviderErrorMapper.FromException(exception));
         }
     }
 
@@ -290,6 +303,14 @@ public sealed class SftpStorageProvider : IStorageProvider, IRemoteHomePathProvi
         if (!_client.IsConnected)
         {
             _client.Connect();
+        }
+    }
+
+    private async Task EnsureConnectedAsync(CancellationToken cancellationToken)
+    {
+        if (!_client.IsConnected)
+        {
+            await _client.ConnectAsync(cancellationToken).ConfigureAwait(false);
         }
     }
 
@@ -332,6 +353,21 @@ public sealed class SftpStorageProvider : IStorageProvider, IRemoteHomePathProvi
 
         EnsureParentDirectories(parent);
         _client.CreateDirectory(parent);
+    }
+
+    private async Task EnsureParentDirectoriesAsync(
+        string remotePath,
+        CancellationToken cancellationToken)
+    {
+        var parent = GetParentPath(remotePath);
+        if (string.IsNullOrWhiteSpace(parent) || parent == "/" ||
+            await _client.DirectoryExistsAsync(parent, cancellationToken).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        await EnsureParentDirectoriesAsync(parent, cancellationToken).ConfigureAwait(false);
+        await _client.CreateDirectoryAsync(parent, cancellationToken).ConfigureAwait(false);
     }
 
     private static string? GetParentPath(string remotePath)

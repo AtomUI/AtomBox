@@ -13,5 +13,6 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\AtomBox.Desktop\AtomBox.Desktop.csproj" />
+    <ProjectReference Include="..\..\external\AtomUI.City\src\AtomUI.City.Localization\AtomUI.City.Localization.csproj" />
   </ItemGroup>
 </Project>

@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using AtomBox.Application.Accounts;
+using AtomBox.Application.State;
 using AtomBox.Core.Accounts;
 using AtomBox.Core.RemoteItems;
 using AtomBox.Core.ValueObjects;
@@ -7,51 +8,45 @@ using AtomBox.Desktop.Dialogs;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Services;
 using AtomBox.Desktop.ViewModels;
-using Avalonia.Threading;
+using AtomUI.City.Mvvm;
+using AtomUI.City.State;
+using CommunityToolkit.Mvvm.Input;
+using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.Shell;
 
-public sealed class MainWindowViewModel : ViewModelBase
+public sealed class MainWindowViewModel : ViewModelBase, IShellNavigationController
 {
     private readonly INavigationService _navigationService;
     private readonly IAccountDialogWorkflow _accountDialogWorkflow;
-    private readonly AccountAppService _accounts;
+    private readonly IAtomBoxApplicationState _applicationState;
     private readonly IDesktopPreferencesService _preferences;
+    private readonly CityUiDispatcher _dispatcher;
     private readonly Dictionary<StorageAccountId, StorageAccountSummary> _navigationAccounts = [];
-    private object? _currentViewModel;
+    private readonly object _menuNavigationGate = new();
+    private CancellationTokenSource? _menuNavigationCancellation;
     private string? _currentMenuKey;
 
     public MainWindowViewModel(
         INavigationService navigationService,
         IAccountDialogWorkflow accountDialogWorkflow,
-        AccountAppService accounts,
+        IAtomBoxApplicationState applicationState,
         IDesktopPreferencesService preferences,
-        StatusBarViewModel statusBar)
+        StatusBarViewModel statusBar,
+        DesktopCommandFactory commands,
+        CityUiDispatcher dispatcher)
     {
         _navigationService = navigationService;
         _accountDialogWorkflow = accountDialogWorkflow;
-        _accounts = accounts;
+        _applicationState = applicationState;
         _preferences = preferences;
+        _dispatcher = dispatcher;
         StatusBar = statusBar;
-
-        _accountDialogWorkflow.AccountsChanged += (_, _) => RefreshRemoteAccountMenuOnUiThread();
-
-        _navigationService.CurrentViewModelChanged += (_, _) =>
-        {
-            CurrentViewModel = _navigationService.CurrentViewModel;
-        };
-        _navigationService.CurrentMenuKeyChanged += (_, _) =>
-        {
-            CurrentMenuKey = _navigationService.CurrentMenuKey;
-        };
-
-        _ = InitializeAsync();
-    }
-
-    public object? CurrentViewModel
-    {
-        get => _currentViewModel;
-        private set => SetProperty(ref _currentViewModel, value);
+        NavigateByMenuKeyCommand = commands.CreateAsync<string>(
+            this,
+            nameof(NavigateByMenuKeyCommand),
+            NavigateByMenuKeyAsync,
+            concurrencyPolicy: CommandConcurrencyPolicy.Allow);
     }
 
     public string? CurrentMenuKey
@@ -78,7 +73,48 @@ public sealed class MainWindowViewModel : ViewModelBase
 
     public ObservableCollection<RemoteAccountNavigationItem> WebDavAccounts { get; } = [];
 
-    public Task NavigateByMenuKeyAsync(string? itemKey)
+    public IAsyncRelayCommand<string> NavigateByMenuKeyCommand { get; }
+
+    public async Task NavigateByMenuKeyAsync(
+        string? itemKey,
+        CancellationToken cancellationToken = default)
+    {
+        using var supersession = new CancellationTokenSource();
+        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken,
+            supersession.Token);
+
+        lock (_menuNavigationGate)
+        {
+            _menuNavigationCancellation?.Cancel();
+            _menuNavigationCancellation = supersession;
+        }
+
+        try
+        {
+            await NavigateByMenuKeyCoreAsync(itemKey, linkedCancellation.Token).ConfigureAwait(true);
+        }
+        catch (OperationCanceledException) when (
+            supersession.IsCancellationRequested &&
+            !cancellationToken.IsCancellationRequested)
+        {
+            // A newer menu selection superseded this navigation intent.
+        }
+        finally
+        {
+            lock (_menuNavigationGate)
+            {
+                if (ReferenceEquals(_menuNavigationCancellation, supersession))
+                {
+                    _menuNavigationCancellation = null;
+                }
+            }
+        }
+    }
+
+    private Task NavigateByMenuKeyCoreAsync(
+        string? itemKey,
+        CancellationToken cancellationToken)
     {
         if (TryParseRemoteAccountMenuKey(itemKey, out var accountId) &&
             _navigationAccounts.TryGetValue(accountId, out var account))
@@ -88,50 +124,53 @@ public sealed class MainWindowViewModel : ViewModelBase
                 new RemoteBrowserNavigationParameter(
                     ToResourceGroup(account),
                     account.Id,
-                    GetInitialPath(account)));
+                    GetInitialPath(account)),
+                cancellationToken);
         }
 
         return itemKey switch
         {
-            NavigationMenuKeys.Home => NavigateAsync(NavigationTarget.Home),
+            NavigationMenuKeys.Home => NavigateAsync(NavigationTarget.Home, cancellationToken: cancellationToken),
             NavigationMenuKeys.RemoteStorage => NavigateAsync(
                 NavigationTarget.RemoteBrowser,
-                new RemoteBrowserNavigationParameter(NavigationResourceGroup.All)),
+                new RemoteBrowserNavigationParameter(NavigationResourceGroup.All),
+                cancellationToken),
             NavigationMenuKeys.RemoteObjectStorage => NavigateAsync(
                 NavigationTarget.RemoteBrowser,
-                new RemoteBrowserNavigationParameter(NavigationResourceGroup.ObjectStorage)),
+                new RemoteBrowserNavigationParameter(NavigationResourceGroup.ObjectStorage),
+                cancellationToken),
             NavigationMenuKeys.RemoteFileTransfer => NavigateAsync(
                 NavigationTarget.RemoteBrowser,
-                new RemoteBrowserNavigationParameter(NavigationResourceGroup.FileTransfer)),
+                new RemoteBrowserNavigationParameter(NavigationResourceGroup.FileTransfer),
+                cancellationToken),
             NavigationMenuKeys.RemoteWebDav => NavigateAsync(
                 NavigationTarget.RemoteBrowser,
-                new RemoteBrowserNavigationParameter(NavigationResourceGroup.WebDav)),
-            NavigationMenuKeys.AddRemote => AddAccountAndNavigateAsync(null),
-            NavigationMenuKeys.TransferQueue => NavigateAsync(NavigationTarget.TransferQueue),
-            NavigationMenuKeys.TransferHistory => NavigateAsync(NavigationTarget.TransferHistory),
-            NavigationMenuKeys.Settings => NavigateAsync(NavigationTarget.Settings),
-            NavigationMenuKeys.AccountManagement => NavigateAsync(NavigationTarget.AccountManagement),
+                new RemoteBrowserNavigationParameter(NavigationResourceGroup.WebDav),
+                cancellationToken),
+            NavigationMenuKeys.AddRemote => AddAccountAndNavigateAsync(null, cancellationToken),
+            NavigationMenuKeys.TransferQueue => NavigateAsync(NavigationTarget.TransferQueue, cancellationToken: cancellationToken),
+            NavigationMenuKeys.TransferHistory => NavigateAsync(NavigationTarget.TransferHistory, cancellationToken: cancellationToken),
+            NavigationMenuKeys.Settings => NavigateAsync(NavigationTarget.Settings, cancellationToken: cancellationToken),
+            NavigationMenuKeys.AccountManagement => NavigateAsync(NavigationTarget.AccountManagement, cancellationToken: cancellationToken),
             _ => Task.CompletedTask
         };
     }
 
-    public async Task RefreshRemoteAccountMenuAsync()
+    public Task RefreshRemoteAccountMenuAsync(CancellationToken cancellationToken = default)
     {
-        var result = await _accounts.ListAsync(new ListStorageAccountsRequest()).ConfigureAwait(true);
-        if (result.IsFailure)
-        {
-            ObjectStorageAccounts.Clear();
-            FileTransferAccounts.Clear();
-            WebDavAccounts.Clear();
-            _navigationAccounts.Clear();
-            RemoteAccountMenuRefreshed?.Invoke(this, EventArgs.Empty);
-            return;
-        }
+        cancellationToken.ThrowIfCancellationRequested();
+        ApplyAccountCatalog(_applicationState.Accounts.Value);
+        return Task.CompletedTask;
+    }
 
-        var accounts = result.GetValueOrThrow()
+    private void ApplyAccountCatalog(AccountCatalogState state)
+    {
+        var accounts = state.Status == ApplicationProjectionStatus.Ready
+            ? state.Accounts
             .OrderBy(account => account.ProviderCategory)
             .ThenBy(account => account.DisplayName, StringComparer.CurrentCultureIgnoreCase)
-            .ToArray();
+            .ToArray()
+            : [];
 
         _navigationAccounts.Clear();
         foreach (var account in accounts)
@@ -151,61 +190,76 @@ public sealed class MainWindowViewModel : ViewModelBase
         RemoteAccountMenuRefreshed?.Invoke(this, EventArgs.Empty);
     }
 
-    private void RefreshRemoteAccountMenuOnUiThread()
+    protected override ValueTask OnActivatedAsync(
+        ActivationContext context,
+        CancellationToken cancellationToken)
     {
-        Dispatcher.UIThread.Post(async () =>
-        {
-            try
+        context.Scope.Add(_applicationState.Accounts.Observe(
+            args => ApplyAccountCatalog(args.NewValue),
+            StateSubscriptionOptions.Dispatcher(_dispatcher)));
+        _navigationService.CurrentMenuKeyChanged += HandleCurrentMenuKeyChanged;
+        context.Scope.Add(EventSubscription.Create(
+            () => _navigationService.CurrentMenuKeyChanged -= HandleCurrentMenuKeyChanged));
+
+        return _dispatcher.PostAsync(
+            async token =>
             {
-                await RefreshRemoteAccountMenuAsync().ConfigureAwait(true);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine(ex);
-            }
-        });
+                var preferences = await _preferences.GetAsync(token).ConfigureAwait(true);
+                await NavigateStartupPageAsync(preferences.StartupPage, token).ConfigureAwait(true);
+            },
+            cancellationToken);
     }
 
-    private async Task InitializeAsync()
+    private void HandleCurrentMenuKeyChanged(object? sender, EventArgs args)
     {
-        await RefreshRemoteAccountMenuAsync().ConfigureAwait(true);
-        var preferences = await _preferences.GetAsync().ConfigureAwait(true);
-        await NavigateStartupPageAsync(preferences.StartupPage).ConfigureAwait(true);
+        CurrentMenuKey = _navigationService.CurrentMenuKey;
     }
 
-    private Task NavigateStartupPageAsync(StartupPageOption startupPage)
+    private Task NavigateStartupPageAsync(
+        StartupPageOption startupPage,
+        CancellationToken cancellationToken)
     {
         return startupPage switch
         {
-            StartupPageOption.Home => NavigateAsync(NavigationTarget.Home),
-            StartupPageOption.TransferQueue => NavigateAsync(NavigationTarget.TransferQueue),
-            StartupPageOption.AccountManagement => NavigateAsync(NavigationTarget.AccountManagement),
+            StartupPageOption.Home => NavigateAsync(NavigationTarget.Home, cancellationToken: cancellationToken),
+            StartupPageOption.TransferQueue => NavigateAsync(NavigationTarget.TransferQueue, cancellationToken: cancellationToken),
+            StartupPageOption.AccountManagement => NavigateAsync(NavigationTarget.AccountManagement, cancellationToken: cancellationToken),
             _ => NavigateAsync(
                 NavigationTarget.RemoteBrowser,
-                new RemoteBrowserNavigationParameter(NavigationResourceGroup.All))
+                new RemoteBrowserNavigationParameter(NavigationResourceGroup.All),
+                cancellationToken)
         };
     }
 
-    private async Task AddAccountAndNavigateAsync(StorageProviderCategory? category)
+    private async Task AddAccountAndNavigateAsync(
+        StorageProviderCategory? category,
+        CancellationToken cancellationToken)
     {
-        var result = await _accountDialogWorkflow.AddAccountAsync(category).ConfigureAwait(true);
-        if (result.IsFailure || result.GetValueOrThrow() is not { } account)
+        var result = await _accountDialogWorkflow
+            .AddAccountAsync(category, cancellationToken: cancellationToken)
+            .ConfigureAwait(true);
+        if (result is null || result.IsFailure)
         {
             return;
         }
+
+        var account = result.GetValueOrThrow();
 
         await NavigateAsync(
             NavigationTarget.RemoteBrowser,
             new RemoteBrowserNavigationParameter(
                 ToResourceGroup(account),
                 account.Id,
-                GetInitialPath(account))).ConfigureAwait(true);
-        await RefreshRemoteAccountMenuAsync().ConfigureAwait(true);
+                GetInitialPath(account)),
+            cancellationToken).ConfigureAwait(true);
     }
 
-    private Task NavigateAsync(NavigationTarget target, object? parameter = null)
+    private Task NavigateAsync(
+        NavigationTarget target,
+        object? parameter = null,
+        CancellationToken cancellationToken = default)
     {
-        return _navigationService.NavigateAsync(target, parameter);
+        return _navigationService.NavigateAsync(target, parameter, cancellationToken);
     }
 
     private static NavigationResourceGroup ToResourceGroup(StorageAccountSummary account)

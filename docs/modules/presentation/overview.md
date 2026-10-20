@@ -1,8 +1,8 @@
 # AtomBox.Presentation 模块设计
 
-> 文档状态：阶段性冻结
+> 文档状态：City 迁移基线
 >
-> 冻结时间：2026-06-14
+> 更新时间：2026-10-13
 >
 > 冻结范围：当前文档定义的架构、模块边界、依赖关系、目录规划或实现约束
 >
@@ -12,7 +12,7 @@
 
 `AtomBox.Presentation` 是 AtomBox 的桌面端展示与交互层。
 
-在物理项目上，Presentation 第一阶段归属于 `AtomBox.Desktop`，负责 Avalonia / AtomUI 应用启动、窗口、页面、ViewModel、命令绑定、主题资源、静态资源和桌面交互体验。
+在物理项目上，Presentation 归属于 `AtomBox.Desktop`，负责 Avalonia / AtomUI 应用启动、窗口、页面、ViewModel、命令绑定、主题资源、静态资源和桌面交互体验。City Host、Routing、Presentation、Localization 和 Mvvm 是该组合层的框架底座；业务程序集保持 City 无关。
 
 Presentation 不是业务编排层，也不是 provider 访问层。把远程存储 SDK、配置读写、凭据处理、传输调度细节塞进 ViewModel，是桌面应用最常见的烂法，前期看起来快，后期一定把 ViewModel 写成上帝对象。
 
@@ -49,7 +49,6 @@ src/AtomBox.Desktop/
   Composition/
   Shell/
   Navigation/
-  ViewFactory/
   Dialogs/
   Services/
   Views/
@@ -64,8 +63,7 @@ src/AtomBox.Desktop/
 | `Assets/` | 保存图片、图标、封面等静态 UI 资源。 |
 | `Composition/` | 保存桌面端组合根、模块注册、应用启动阶段的 DI 装配。 |
 | `Shell/` | 保存主窗口、顶部品牌区、左侧菜单、右侧内容承载区和底部状态栏。 |
-| `Navigation/` | 保存 Desktop 内部页面导航、导航目标、导航参数、菜单项 ViewModel 和页面 ViewModel 显式工厂。 |
-| `ViewFactory/` | 保存 ViewModel 到 View 的显式映射和 View 创建规则。 |
+| `Navigation/` | 保存业务导航目标/参数到 City route 的适配、菜单 key 同步和主 RouteOutlet 提交协调。 |
 | `Dialogs/` | 保存统一弹窗服务、弹窗 View 和弹窗 ViewModel。 |
 | `Services/` | 保存 Desktop UI 专用服务，例如消息提示和 UI 线程调度。 |
 | `Views/` | 保存 Avalonia / AtomUI 页面、窗口、用户控件。 |
@@ -80,7 +78,8 @@ src/AtomBox.Desktop/
 
 - `App`
 - `Program`
-- `DesktopCompositionRoot`
+- `AtomBoxDesktopModule`
+- `DesktopBootstrap`
 
 主窗口：
 
@@ -141,6 +140,10 @@ src/AtomBox.Desktop/
 Presentation / Desktop 是唯一组合根，负责应用启动、依赖注册、主窗口创建和关闭协调。
 
 - ViewModel 生命周期跟随页面、窗口或工作区。
+- 页面 ViewModel 由 City RouteOutlet entry 创建、激活、停用和释放；导航参数在激活前完成同步投影。
+- MainWindow ViewModel 作为 WindowSession 的逻辑 Root，StatusBar ViewModel 作为显式 owned child；二者不使用角色专用基类。
+- ViewModel 的激活期订阅、Channel、定时循环和异步工作归属当前 ActivationScope；停用必须取消并 drain。
+- Command 使用 City CommandFactory 和 CommunityToolkit 接口；异步 Command 每次执行动态绑定 owner 的当前 ActivationScope。
 - ViewModel 只持有展示状态、筛选条件、选中项、加载状态、错误展示状态等 UI 状态。
 - ViewModel 不持有 provider、Transfer worker、SDK client、secret material 或 Infrastructure 资源。
 - 远程列表、传输状态、账号列表等 UI 数据应作为快照展示，刷新时整体替换或按明确规则更新。

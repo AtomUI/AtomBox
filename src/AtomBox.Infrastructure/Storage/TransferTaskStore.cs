@@ -76,12 +76,70 @@ public sealed class TransferTaskStore : ITransferTaskStore
             {
                 tasks.Add(task);
             }
-            else if (task.UpdatedAt >= tasks[index].UpdatedAt)
+            else if (task.Revision > tasks[index].Revision)
             {
                 tasks[index] = task;
             }
 
             return await _store.WriteAsync(tasks, cancellationToken).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
+    }
+
+    public async Task<OperationResult<TransferTask>> CompareExchangeAsync(
+        TransferTask replacement,
+        long expectedRevision,
+        TransferStatus expectedStatus,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(replacement);
+        if (expectedRevision < 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(expectedRevision));
+        }
+
+        if (replacement.Revision != checked(expectedRevision + 1))
+        {
+            return OperationResult<TransferTask>.Failure(new StorageError(
+                StorageErrorCode.ValidationFailed,
+                "Replacement revision must be exactly one greater than the expected revision.",
+                StorageErrorCategory.Validation));
+        }
+
+        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        try
+        {
+            var tasksResult = await ReadTasksAsync(cancellationToken).ConfigureAwait(false);
+            if (tasksResult.IsFailure)
+            {
+                return OperationResult<TransferTask>.Failure(tasksResult.Error!);
+            }
+
+            var tasks = tasksResult.GetValueOrThrow();
+            var index = tasks.FindIndex(item => item.Id == replacement.Id);
+            if (index < 0)
+            {
+                return OperationResult<TransferTask>.Failure(StorageError.NotFound(
+                    "Transfer task was not found."));
+            }
+
+            var current = tasks[index];
+            if (current.Revision != expectedRevision || current.Status != expectedStatus)
+            {
+                return OperationResult<TransferTask>.Failure(new StorageError(
+                    StorageErrorCode.Conflict,
+                    "Transfer task changed before the conditional update could be applied.",
+                    StorageErrorCategory.Conflict));
+            }
+
+            tasks[index] = replacement;
+            var writeResult = await _store.WriteAsync(tasks, cancellationToken).ConfigureAwait(false);
+            return writeResult.IsFailure
+                ? OperationResult<TransferTask>.Failure(writeResult.Error!)
+                : OperationResult<TransferTask>.Success(replacement);
         }
         finally
         {

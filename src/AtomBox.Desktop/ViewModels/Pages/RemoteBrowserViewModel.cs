@@ -2,6 +2,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Windows.Input;
 using AtomBox.Application.Accounts;
+using AtomBox.Application.State;
 using AtomBox.Application.Browsing;
 using AtomBox.Application.Transfers;
 using AtomBox.Core.Accounts;
@@ -15,18 +16,21 @@ using AtomBox.Desktop.Dialogs;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Services;
-using AtomBox.Desktop.Shell;
 using AtomUI.Controls;
 using AtomUI.Desktop.Controls;
 using AtomUI.Icons.AntDesign;
 using Avalonia.Controls;
-using Avalonia.Threading;
+using AtomUI.City.Mvvm;
+using AtomUI.City.State;
+using CommunityToolkit.Mvvm.Input;
+using System.Threading.Channels;
+using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
+public sealed class RemoteBrowserViewModel : ViewModelBase
 {
-    private readonly AccountAppService _accounts;
+    private readonly IAtomBoxApplicationState _applicationState;
     private readonly RemoteBrowserAppService _browser;
     private readonly TransferAppService _transfers;
     private readonly IMessageService _messages;
@@ -35,8 +39,11 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
     private readonly IFilePickerService _filePicker;
     private readonly IDesktopPreferencesService _preferences;
     private readonly IAccountDialogWorkflow _accountDialogWorkflow;
-    private readonly StatusBarViewModel _statusBar;
-    private readonly EventHandler _accountsChangedHandler;
+    private readonly IAtomBoxLocalizedText _localization;
+    private readonly SemaphoreSlim _loadGate = new(1, 1);
+    private readonly CityUiDispatcher _dispatcher;
+    private Channel<byte>? _refreshRequests;
+    private Task? _refreshWorker;
     private string _title = string.Empty;
     private string _statusMessage = string.Empty;
     private string _currentPath = "/";
@@ -67,7 +74,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
     private bool _isUploadPreparing;
 
     public RemoteBrowserViewModel(
-        AccountAppService accounts,
+        IAtomBoxApplicationState applicationState,
         RemoteBrowserAppService browser,
         TransferAppService transfers,
         IMessageService messages,
@@ -76,11 +83,11 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         IFilePickerService filePicker,
         IDesktopPreferencesService preferences,
         IAccountDialogWorkflow accountDialogWorkflow,
-        StatusBarViewModel statusBar,
-        ILocalizationService localization)
-        : base(localization)
+        IAtomBoxLocalizedText localization,
+        DesktopCommandFactory commands,
+        CityUiDispatcher dispatcher)
     {
-        _accounts = accounts;
+        _applicationState = applicationState;
         _browser = browser;
         _transfers = transfers;
         _messages = messages;
@@ -89,46 +96,102 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         _filePicker = filePicker;
         _preferences = preferences;
         _accountDialogWorkflow = accountDialogWorkflow;
-        _statusBar = statusBar;
+        _localization = localization;
+        _dispatcher = dispatcher;
         _title = Localization.GetString("RemoteBrowser", "Title");
         _statusMessage = Localization.GetString("RemoteBrowser", "SelectTypeOrConnection");
-        _accountsChangedHandler = (_, _) => RefreshAccountsOnUiThread();
-        _accountDialogWorkflow.AccountsChanged += _accountsChangedHandler;
-        RefreshCommand = new AsyncRelayCommand(_ => RefreshAsync());
-        RetryLoadCommand = new AsyncRelayCommand(_ => RetryLoadAsync(), _ => _lastFailedListRequest is not null);
-        PreviousPageCommand = new AsyncRelayCommand(_ => LoadPreviousPageAsync(), _ => CanGoPreviousPage);
-        NextPageCommand = new AsyncRelayCommand(_ => LoadNextPageAsync(), _ => CanGoNextPage);
-        AddAccountCommand = new AsyncRelayCommand(_ => AddAccountAsync());
-        OpenAccountCommand = new AsyncRelayCommand(OpenAccountAsync, parameter => parameter is RemoteAccountChoiceViewModel);
-        OpenRowCommand = new AsyncRelayCommand(OpenRowAsync);
-        UploadCommand = new AsyncRelayCommand(_ => UploadAsync(), _ => CanUpload);
-        CreateBucketCommand = new AsyncRelayCommand(_ => CreateBucketAsync(), _ => CanCreateBucket);
-        CreateFolderCommand = new AsyncRelayCommand(_ => CreateFolderAsync(), _ => CanCreateFolder);
-        DownloadSelectedCommand = new AsyncRelayCommand(
+        RefreshCommand = commands.CreateAsync(this, nameof(RefreshCommand), RefreshAsync);
+        NavigateBreadcrumbCommand = commands.CreateAsync<object>(
+            this,
+            nameof(NavigateBreadcrumbCommand),
+            NavigateBreadcrumbAsync,
+            parameter => parameter is RemotePath);
+        ApplySearchCommand = commands.CreateAsync(
+            this,
+            nameof(ApplySearchCommand),
+            ApplySearchAsync);
+        RestoreListWhenSearchClearedCommand = commands.CreateAsync(
+            this,
+            nameof(RestoreListWhenSearchClearedCommand),
+            RestoreListWhenSearchClearedAsync);
+        RetryLoadCommand = commands.CreateAsync(
+            this,
+            nameof(RetryLoadCommand),
+            RetryLoadAsync,
+            () => _lastFailedListRequest is not null);
+        PreviousPageCommand = commands.CreateAsync(
+            this,
+            nameof(PreviousPageCommand),
+            LoadPreviousPageAsync,
+            () => CanGoPreviousPage);
+        NextPageCommand = commands.CreateAsync(
+            this,
+            nameof(NextPageCommand),
+            LoadNextPageAsync,
+            () => CanGoNextPage);
+        AddAccountCommand = commands.CreateAsync(this, nameof(AddAccountCommand), AddAccountAsync);
+        OpenAccountCommand = commands.CreateAsync<object>(
+            this,
+            nameof(OpenAccountCommand),
+            OpenAccountAsync,
+            parameter => parameter is RemoteAccountChoiceViewModel);
+        OpenRowCommand = commands.CreateAsync<object>(this, nameof(OpenRowCommand), OpenRowAsync);
+        UploadCommand = commands.CreateAsync(this, nameof(UploadCommand), UploadAsync, () => CanUpload);
+        CreateBucketCommand = commands.CreateAsync(
+            this,
+            nameof(CreateBucketCommand),
+            CreateBucketAsync,
+            () => CanCreateBucket);
+        CreateFolderCommand = commands.CreateAsync(
+            this,
+            nameof(CreateFolderCommand),
+            CreateFolderAsync,
+            () => CanCreateFolder);
+        DownloadSelectedCommand = commands.CreateAsync<object>(
+            this,
+            nameof(DownloadSelectedCommand),
             DownloadSelectedAsync,
             parameter => TryGetFileRow(parameter, out _, out _));
-        PreviewSelectedCommand = new AsyncRelayCommand(
+        PreviewSelectedCommand = commands.CreateAsync<object>(
+            this,
+            nameof(PreviewSelectedCommand),
             PreviewSelectedAsync,
             parameter => TryGetPreviewableRow(parameter, out _, out _, out _, out _));
-        RenameSelectedCommand = new AsyncRelayCommand(
+        RenameSelectedCommand = commands.CreateAsync<object>(
+            this,
+            nameof(RenameSelectedCommand),
             RenameSelectedAsync,
             parameter => TryGetRenameableRow(parameter, out _, out _, out _));
-        DeleteSelectedCommand = new AsyncRelayCommand(
+        DeleteSelectedCommand = commands.CreateAsync<object>(
+            this,
+            nameof(DeleteSelectedCommand),
             DeleteSelectedAsync,
             parameter => _storageAccountId is not null &&
                 !IsLoading &&
                 TryGetDeletableRow(parameter, out _, out _, out _));
-        DownloadSelectedFilesCommand = new AsyncRelayCommand(
-            _ => DownloadSelectedFilesAsync(),
-            _ => _storageAccountId is not null && !IsLoading && HasSelectedFiles);
-        DeleteSelectedFilesCommand = new AsyncRelayCommand(
-            _ => DeleteSelectedFilesAsync(),
-            _ => _storageAccountId is not null && !IsLoading && CanDeleteSelectedFiles);
-        ClearSelectedFilesCommand = new RelayCommand(
-            _ => ClearSelectedFiles(),
-            _ => HasSelectedFiles);
-        ShowErrorDetailsCommand = new AsyncRelayCommand(_ => ShowErrorDetailsAsync(), _ => HasErrorDetails);
+        DownloadSelectedFilesCommand = commands.CreateAsync(
+            this,
+            nameof(DownloadSelectedFilesCommand),
+            DownloadSelectedFilesAsync,
+            () => _storageAccountId is not null && !IsLoading && HasSelectedFiles);
+        DeleteSelectedFilesCommand = commands.CreateAsync(
+            this,
+            nameof(DeleteSelectedFilesCommand),
+            DeleteSelectedFilesAsync,
+            () => _storageAccountId is not null && !IsLoading && CanDeleteSelectedFiles);
+        ClearSelectedFilesCommand = commands.Create(
+            this,
+            nameof(ClearSelectedFilesCommand),
+            ClearSelectedFiles,
+            () => HasSelectedFiles);
+        ShowErrorDetailsCommand = commands.CreateAsync(
+            this,
+            nameof(ShowErrorDetailsCommand),
+            ShowErrorDetailsAsync,
+            () => HasErrorDetails);
     }
+
+    private IAtomBoxLocalizedText Localization => _localization;
 
     public string Title
     {
@@ -207,19 +270,13 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         "SelectedFiles",
         SelectedFileCount);
 
-    protected override void OnLanguageChanged()
+    private void HandleLanguageChanged(object? sender, EventArgs args)
     {
         UpdateTitleFromCurrentAccount();
         RebuildBreadcrumbItems();
         OnPropertyChanged(nameof(SelectedFileCountText));
         OnPropertyChanged(nameof(EmptyStateText));
         OnPropertyChanged(nameof(NameColumnHeader));
-    }
-
-    public override void Dispose()
-    {
-        _accountDialogWorkflow.AccountsChanged -= _accountsChangedHandler;
-        base.Dispose();
     }
 
     public bool HasBuckets => Buckets.Count > 0;
@@ -388,41 +445,47 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         set => SetProperty(ref _searchText, value ?? string.Empty);
     }
 
-    public AsyncRelayCommand RefreshCommand { get; }
+    public IAsyncRelayCommand RefreshCommand { get; }
 
-    public AsyncRelayCommand RetryLoadCommand { get; }
+    public IAsyncRelayCommand<object> NavigateBreadcrumbCommand { get; }
 
-    public AsyncRelayCommand PreviousPageCommand { get; }
+    public IAsyncRelayCommand ApplySearchCommand { get; }
 
-    public AsyncRelayCommand NextPageCommand { get; }
+    public IAsyncRelayCommand RestoreListWhenSearchClearedCommand { get; }
 
-    public AsyncRelayCommand AddAccountCommand { get; }
+    public IAsyncRelayCommand RetryLoadCommand { get; }
 
-    public AsyncRelayCommand OpenAccountCommand { get; }
+    public IAsyncRelayCommand PreviousPageCommand { get; }
 
-    public AsyncRelayCommand OpenRowCommand { get; }
+    public IAsyncRelayCommand NextPageCommand { get; }
 
-    public AsyncRelayCommand UploadCommand { get; }
+    public IAsyncRelayCommand AddAccountCommand { get; }
 
-    public AsyncRelayCommand CreateBucketCommand { get; }
+    public IAsyncRelayCommand<object> OpenAccountCommand { get; }
 
-    public AsyncRelayCommand CreateFolderCommand { get; }
+    public IAsyncRelayCommand<object> OpenRowCommand { get; }
 
-    public AsyncRelayCommand DownloadSelectedCommand { get; }
+    public IAsyncRelayCommand UploadCommand { get; }
 
-    public AsyncRelayCommand PreviewSelectedCommand { get; }
+    public IAsyncRelayCommand CreateBucketCommand { get; }
 
-    public AsyncRelayCommand RenameSelectedCommand { get; }
+    public IAsyncRelayCommand CreateFolderCommand { get; }
 
-    public AsyncRelayCommand DeleteSelectedCommand { get; }
+    public IAsyncRelayCommand<object> DownloadSelectedCommand { get; }
 
-    public AsyncRelayCommand DownloadSelectedFilesCommand { get; }
+    public IAsyncRelayCommand<object> PreviewSelectedCommand { get; }
 
-    public AsyncRelayCommand DeleteSelectedFilesCommand { get; }
+    public IAsyncRelayCommand<object> RenameSelectedCommand { get; }
 
-    public RelayCommand ClearSelectedFilesCommand { get; }
+    public IAsyncRelayCommand<object> DeleteSelectedCommand { get; }
 
-    public AsyncRelayCommand ShowErrorDetailsCommand { get; }
+    public IAsyncRelayCommand DownloadSelectedFilesCommand { get; }
+
+    public IAsyncRelayCommand DeleteSelectedFilesCommand { get; }
+
+    public IRelayCommand ClearSelectedFilesCommand { get; }
+
+    public IAsyncRelayCommand ShowErrorDetailsCommand { get; }
 
     public int SelectedFileCount => Rows.Count(row => row.IsFile && row.IsSelected);
 
@@ -476,7 +539,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
                 _remotePath = value.Path;
                 ResetPaging();
                 SyncSelectedBucketForPath(_remotePath);
-                _ = LoadItemsAsync();
+                RequestRefresh();
             }
         }
     }
@@ -487,7 +550,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         set => SetProperty(ref _selectedRow, value);
     }
 
-    private Task OpenRowAsync(object? parameter)
+    private Task OpenRowAsync(object? parameter, CancellationToken cancellationToken)
     {
         if (parameter is not RemoteListRowViewModel row)
         {
@@ -502,12 +565,12 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
             ClearSearch();
             SyncSelectedBucketForPath(_remotePath);
 
-            return LoadItemsAsync();
+            return LoadItemsAsync(cancellationToken);
         }
 
         if (row is { Kind: RemoteItemKind.File, CanPreview: true })
         {
-            return PreviewSelectedAsync(row);
+            return PreviewSelectedAsync(row, cancellationToken);
         }
 
         SelectedItem = Items.FirstOrDefault(item => item.Path == row.Path);
@@ -533,7 +596,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
             _remotePath = value?.Path ?? RemotePath.Root;
             ResetPaging();
             ClearSearch();
-            _ = LoadItemsAsync();
+            RequestRefresh();
         }
     }
 
@@ -558,18 +621,102 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
             _ => Localization.GetString("RemoteBrowser", "Title")
         };
 
-        _ = RefreshAsync();
     }
 
-    private Task RefreshAsync()
+    protected override ValueTask OnActivatedAsync(
+        ActivationContext context,
+        CancellationToken cancellationToken)
+    {
+        _localization.LanguageChanged += HandleLanguageChanged;
+        context.Scope.Add(EventSubscription.Create(
+            () => _localization.LanguageChanged -= HandleLanguageChanged));
+
+        var requests = Channel.CreateBounded<byte>(new BoundedChannelOptions(1)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleReader = true,
+            SingleWriter = false,
+        });
+        _refreshRequests = requests;
+        context.Scope.Add(EventSubscription.Create(
+            () => ReleaseRefreshRequests(requests)));
+        context.Scope.Add(_applicationState.Accounts.Observe(
+            HandleAccountCatalogChanged,
+            StateSubscriptionOptions.Dispatcher(_dispatcher)));
+
+        _refreshWorker = context.Scope.StartUniqueAsync(
+            "remote-browser-refresh",
+            workerToken => RunRefreshLifecycleAsync(requests.Reader, workerToken),
+            cancellationToken);
+
+        return ValueTask.CompletedTask;
+    }
+
+    protected override ValueTask OnDeactivatedAsync(CancellationToken cancellationToken)
+    {
+        Interlocked.Exchange(ref _refreshRequests, null)?.Writer.TryComplete();
+        _refreshWorker = null;
+        return ValueTask.CompletedTask;
+    }
+
+    private void ReleaseRefreshRequests(Channel<byte> requests)
+    {
+        Interlocked.CompareExchange(ref _refreshRequests, null, requests);
+        requests.Writer.TryComplete();
+        _refreshWorker = null;
+    }
+
+    protected override void OnDisposed()
+    {
+        _loadGate.Dispose();
+    }
+
+    private void HandleAccountCatalogChanged(StateChangedEventArgs<AccountCatalogState> args)
+    {
+        RequestRefresh();
+    }
+
+    private void RequestRefresh()
+    {
+        _refreshRequests?.Writer.TryWrite(0);
+    }
+
+    private Task RunRefreshLifecycleAsync(
+        ChannelReader<byte> requests,
+        CancellationToken cancellationToken)
+    {
+        return _dispatcher.PostAsync(
+            async token =>
+            {
+                await RefreshAsync(token).ConfigureAwait(true);
+                await RunRefreshWorkerAsync(requests, token).ConfigureAwait(true);
+            },
+            cancellationToken).AsTask();
+    }
+
+    private async Task RunRefreshWorkerAsync(
+        ChannelReader<byte> requests,
+        CancellationToken cancellationToken)
+    {
+        while (await requests.WaitToReadAsync(cancellationToken).ConfigureAwait(true))
+        {
+            while (requests.TryRead(out _))
+            {
+            }
+
+            await RefreshAsync(cancellationToken).ConfigureAwait(true);
+        }
+    }
+
+    private Task RefreshAsync(CancellationToken cancellationToken)
     {
         ResetPaging();
         return _storageAccountId is null
-            ? LoadEntryAsync()
-            : LoadItemsAsync();
+            ? LoadEntryAsync(cancellationToken)
+            : LoadItemsAsync(cancellationToken);
     }
 
-    private Task RetryLoadAsync()
+    private Task RetryLoadAsync(CancellationToken cancellationToken)
     {
         if (_lastFailedListRequest is null)
         {
@@ -578,10 +725,10 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
 
         _remotePath = _lastFailedListRequest.Path;
         _requestedCursor = _lastFailedListRequest.PageRequest?.Cursor;
-        return LoadItemsAsync();
+        return LoadItemsAsync(cancellationToken);
     }
 
-    private Task LoadNextPageAsync()
+    private Task LoadNextPageAsync(CancellationToken cancellationToken)
     {
         if (_nextCursor is null)
         {
@@ -590,10 +737,10 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
 
         _previousPageCursors.Push(_currentCursor);
         _requestedCursor = _nextCursor;
-        return LoadItemsAsync();
+        return LoadItemsAsync(cancellationToken);
     }
 
-    private Task LoadPreviousPageAsync()
+    private Task LoadPreviousPageAsync(CancellationToken cancellationToken)
     {
         if (_previousPageCursors.Count == 0)
         {
@@ -601,15 +748,24 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         }
 
         _requestedCursor = _previousPageCursors.Pop();
-        return LoadItemsAsync();
+        return LoadItemsAsync(cancellationToken);
     }
 
-    private Task LoadEntryAsync()
+    private async Task LoadEntryAsync(CancellationToken cancellationToken)
     {
-        return RunWithLoadingAsync(LoadEntryCoreAsync);
+        await _loadGate.WaitAsync(cancellationToken).ConfigureAwait(true);
+        try
+        {
+            await RunWithLoadingAsync(
+                () => LoadEntryCoreAsync(cancellationToken)).ConfigureAwait(true);
+        }
+        finally
+        {
+            _loadGate.Release();
+        }
     }
 
-    private async Task LoadEntryCoreAsync()
+    private async Task LoadEntryCoreAsync(CancellationToken cancellationToken)
     {
         SetAccountSelection(false);
         Items.Clear();
@@ -629,17 +785,20 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         CurrentPath = "/";
         ClearErrorDetails();
 
-        var category = ToProviderCategory(_resourceGroup);
-        var accountsResult = await _accounts.ListAsync(new ListStorageAccountsRequest(category)).ConfigureAwait(true);
-        if (accountsResult.IsFailure)
+        cancellationToken.ThrowIfCancellationRequested();
+        var catalog = _applicationState.Accounts.Value;
+        if (catalog.Status != ApplicationProjectionStatus.Ready)
         {
             StatusMessage = Localization.GetString("RemoteBrowser", "AccountEntryLoadFailed");
-            SetErrorDetails(StatusMessage, StatusMessage, accountsResult.Error);
+            SetErrorDetails(
+                StatusMessage,
+                StatusMessage,
+                StorageError.Unknown("Account catalog state is unavailable."));
             RaiseCollectionStateChanged();
             return;
         }
 
-        var accounts = accountsResult.GetValueOrThrow()
+        var accounts = catalog.Accounts
             .Where(IsAccountVisibleInResourceGroup)
             .ToArray();
         if (accounts.Length == 0)
@@ -687,7 +846,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         };
     }
 
-    private Task OpenAccountAsync(object? parameter)
+    private Task OpenAccountAsync(object? parameter, CancellationToken cancellationToken)
     {
         if (parameter is not RemoteAccountChoiceViewModel account)
         {
@@ -700,27 +859,37 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         ResetPaging();
         ClearSearch();
         RaiseUploadStateChanged();
-        return LoadItemsAsync();
+        return LoadItemsAsync(cancellationToken);
     }
 
-    private async Task LoadItemsAsync()
+    private async Task LoadItemsAsync(CancellationToken cancellationToken)
     {
-        if (_storageAccountId is null)
+        await _loadGate.WaitAsync(cancellationToken).ConfigureAwait(true);
+        try
         {
-            await LoadEntryAsync().ConfigureAwait(true);
-            return;
+            if (_storageAccountId is null)
+            {
+                await RunWithLoadingAsync(
+                    () => LoadEntryCoreAsync(cancellationToken)).ConfigureAwait(true);
+                return;
+            }
+
+            await RunWithLoadingAsync(
+                () => LoadItemsCoreAsync(cancellationToken)).ConfigureAwait(true);
+
+            if (_restoreListAfterSearchLoad)
+            {
+                _restoreListAfterSearchLoad = false;
+                await RestoreListWhenSearchClearedCoreAsync(cancellationToken).ConfigureAwait(true);
+            }
         }
-
-        await RunWithLoadingAsync(LoadItemsCoreAsync).ConfigureAwait(true);
-
-        if (_restoreListAfterSearchLoad)
+        finally
         {
-            _restoreListAfterSearchLoad = false;
-            await RestoreListWhenSearchClearedAsync().ConfigureAwait(true);
+            _loadGate.Release();
         }
     }
 
-    private async Task LoadItemsCoreAsync()
+    private async Task LoadItemsCoreAsync(CancellationToken cancellationToken)
     {
         if (_storageAccountId is not { } storageAccountId)
         {
@@ -735,12 +904,12 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         ObjectStorageAccounts.Clear();
         FileTransferAccounts.Clear();
         WebDavAccounts.Clear();
-        await LoadCurrentAccountAsync().ConfigureAwait(true);
+        await LoadCurrentAccountAsync(cancellationToken).ConfigureAwait(true);
         CurrentPath = FormatRemotePath(_remotePath);
         StatusMessage = Localization.GetString("RemoteBrowser", "LoadingItems");
         ClearErrorDetails();
         _lastFailedListRequest = null;
-        RetryLoadCommand.RaiseCanExecuteChanged();
+        RetryLoadCommand.NotifyCanExecuteChanged();
 
         var appliedSearchText = GetAppliedSearchText();
         var result = await _browser.ListRemoteItemsAsync(
@@ -748,7 +917,8 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
                 storageAccountId,
                 _remotePath,
                 new RemotePageRequest(100, _requestedCursor),
-                appliedSearchText)).ConfigureAwait(true);
+                appliedSearchText),
+            cancellationToken).ConfigureAwait(true);
 
         if (result.IsFailure)
         {
@@ -758,7 +928,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
                 _remotePath,
                 new RemotePageRequest(100, _requestedCursor),
                 appliedSearchText);
-            RetryLoadCommand.RaiseCanExecuteChanged();
+            RetryLoadCommand.NotifyCanExecuteChanged();
             SetErrorDetails(
                 StatusMessage,
                 StatusMessage,
@@ -954,27 +1124,12 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         OnPropertyChanged(nameof(CanGoPreviousPage));
         OnPropertyChanged(nameof(CanGoNextPage));
         OnPropertyChanged(nameof(IsPaginationVisible));
-        RetryLoadCommand.RaiseCanExecuteChanged();
-        UploadCommand.RaiseCanExecuteChanged();
-        CreateBucketCommand.RaiseCanExecuteChanged();
-        CreateFolderCommand.RaiseCanExecuteChanged();
-        PreviousPageCommand.RaiseCanExecuteChanged();
-        NextPageCommand.RaiseCanExecuteChanged();
-    }
-
-    private void RefreshAccountsOnUiThread()
-    {
-        Dispatcher.UIThread.Post(async () =>
-        {
-            try
-            {
-                await RefreshAsync().ConfigureAwait(true);
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Debug.WriteLine(ex);
-            }
-        });
+        RetryLoadCommand.NotifyCanExecuteChanged();
+        UploadCommand.NotifyCanExecuteChanged();
+        CreateBucketCommand.NotifyCanExecuteChanged();
+        CreateFolderCommand.NotifyCanExecuteChanged();
+        PreviousPageCommand.NotifyCanExecuteChanged();
+        NextPageCommand.NotifyCanExecuteChanged();
     }
 
     private bool CanWriteAtCurrentRoot()
@@ -1023,8 +1178,8 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         OnPropertyChanged(nameof(NameColumnHeader));
         OnPropertyChanged(nameof(IsBucketList));
         OnPropertyChanged(nameof(IsDataRowsVisible));
-        PreviousPageCommand.RaiseCanExecuteChanged();
-        NextPageCommand.RaiseCanExecuteChanged();
+        PreviousPageCommand.NotifyCanExecuteChanged();
+        NextPageCommand.NotifyCanExecuteChanged();
     }
 
     private void ResetPaging()
@@ -1048,27 +1203,28 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         OnPropertyChanged(nameof(SearchText));
     }
 
-    private async Task LoadCurrentAccountAsync()
+    private Task LoadCurrentAccountAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         if (_storageAccountId is null)
         {
             _currentAccount = null;
-            return;
+            return Task.CompletedTask;
         }
 
         if (_currentAccount?.Id == _storageAccountId.Value)
         {
-            return;
+            return Task.CompletedTask;
         }
 
-        var result = await _accounts.ListAsync(new ListStorageAccountsRequest()).ConfigureAwait(true);
-        if (result.IsFailure)
+        var catalog = _applicationState.Accounts.Value;
+        if (catalog.Status != ApplicationProjectionStatus.Ready)
         {
             _currentAccount = null;
-            return;
+            return Task.CompletedTask;
         }
 
-        _currentAccount = result.GetValueOrThrow().FirstOrDefault(account => account.Id == _storageAccountId.Value);
+        _currentAccount = catalog.Accounts.FirstOrDefault(account => account.Id == _storageAccountId.Value);
         UpdateTitleFromCurrentAccount();
         OnPropertyChanged(nameof(IsBucketSelectorVisible));
         OnPropertyChanged(nameof(IsBreadcrumbVisible));
@@ -1079,6 +1235,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         OnPropertyChanged(nameof(IsPlainBreadcrumbNavigationVisible));
         OnPropertyChanged(nameof(IsRemoteNavigationVisible));
         OnPropertyChanged(nameof(IsPaginationVisible));
+        return Task.CompletedTask;
     }
 
     private void UpdateTitleFromCurrentAccount()
@@ -1160,7 +1317,9 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         return true;
     }
 
-    public Task NavigateBreadcrumbAsync(object? navigateContext)
+    private Task NavigateBreadcrumbAsync(
+        object? navigateContext,
+        CancellationToken cancellationToken)
     {
         if (navigateContext is not RemotePath path)
         {
@@ -1172,10 +1331,10 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         ClearSearch();
         SyncSelectedBucketForPath(_remotePath);
 
-        return LoadItemsAsync();
+        return LoadItemsAsync(cancellationToken);
     }
 
-    public Task ApplySearchAsync()
+    private Task ApplySearchAsync(CancellationToken cancellationToken)
     {
         if (!IsSearchVisible || IsLoading)
         {
@@ -1184,10 +1343,10 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
 
         _appliedSearchText = SearchText.Trim();
         ResetPaging();
-        return LoadItemsAsync();
+        return LoadItemsAsync(cancellationToken);
     }
 
-    public Task RestoreListWhenSearchClearedAsync()
+    private Task RestoreListWhenSearchClearedAsync(CancellationToken cancellationToken)
     {
         if (!IsSearchVisible)
         {
@@ -1213,7 +1372,22 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
 
         _appliedSearchText = string.Empty;
         ResetPaging();
-        return LoadItemsAsync();
+        return LoadItemsAsync(cancellationToken);
+    }
+
+    private async Task RestoreListWhenSearchClearedCoreAsync(CancellationToken cancellationToken)
+    {
+        if (!IsSearchVisible ||
+            !string.IsNullOrWhiteSpace(SearchText) ||
+            string.IsNullOrWhiteSpace(_appliedSearchText))
+        {
+            return;
+        }
+
+        _appliedSearchText = string.Empty;
+        ResetPaging();
+        await RunWithLoadingAsync(
+            () => LoadItemsCoreAsync(cancellationToken)).ConfigureAwait(true);
     }
 
     private void SetAllFilesSelected(bool isSelected)
@@ -1253,9 +1427,9 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         OnPropertyChanged(nameof(HasSelectableFiles));
         OnPropertyChanged(nameof(CanDeleteSelectedFiles));
         OnPropertyChanged(nameof(AllFilesSelectionState));
-        DownloadSelectedFilesCommand.RaiseCanExecuteChanged();
-        DeleteSelectedFilesCommand.RaiseCanExecuteChanged();
-        ClearSelectedFilesCommand.RaiseCanExecuteChanged();
+        DownloadSelectedFilesCommand.NotifyCanExecuteChanged();
+        DeleteSelectedFilesCommand.NotifyCanExecuteChanged();
+        ClearSelectedFilesCommand.NotifyCanExecuteChanged();
     }
 
     private void RebuildBreadcrumbItems()
@@ -1322,7 +1496,9 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         return [0, -1, partCount - 3, partCount - 2, partCount - 1];
     }
 
-    private async Task DownloadSelectedAsync(object? parameter)
+    private async Task DownloadSelectedAsync(
+        object? parameter,
+        CancellationToken cancellationToken)
     {
         if (_storageAccountId is null || !TryGetFileRow(parameter, out var path, out var name))
         {
@@ -1330,38 +1506,32 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         }
 
         var storageAccountId = _storageAccountId.Value;
-        var preferences = await _preferences.GetAsync().ConfigureAwait(true);
+        var preferences = await _preferences.GetAsync(cancellationToken).ConfigureAwait(true);
         var localPath = new LocalPath(Path.Combine(preferences.DefaultDownloadDirectory, name));
         _messages.Info(Localization.Format("RemoteBrowser", "CreatingDownload", localPath.Value));
 
-        _ = Task.Run(async () =>
+        var result = await _transfers.CreateDownloadTasksAsync(
+            new CreateDownloadTasksRequest(
+                storageAccountId,
+                [path],
+                localPath,
+                TransferOverwritePolicy.Rename),
+            cancellationToken).ConfigureAwait(true);
+
+        if (result.IsFailure)
         {
-            var result = await _transfers.CreateDownloadTasksAsync(
-                new CreateDownloadTasksRequest(
-                    storageAccountId,
-                    [path],
-                    localPath,
-                    TransferOverwritePolicy.Rename)).ConfigureAwait(false);
+            var message = Localization.GetString("RemoteBrowser", "DownloadCreateFailed");
+            StatusMessage = message;
+            SetErrorDetails(message, message, result.Error);
+            _messages.Error(message);
+            return;
+        }
 
-            Dispatcher.UIThread.Post(() =>
-            {
-                if (result.IsFailure)
-                {
-                    var message = Localization.GetString("RemoteBrowser", "DownloadCreateFailed");
-                    StatusMessage = message;
-                    SetErrorDetails(message, message, result.Error);
-                    _messages.Error(message);
-                    return;
-                }
-
-                _statusBar.RequestQueueRefresh();
-                StatusMessage = Localization.Format("RemoteBrowser", "DownloadCreatedAt", localPath.Value);
-                _messages.Success(Localization.GetString("RemoteBrowser", "DownloadCreated"));
-            });
-        });
+        StatusMessage = Localization.Format("RemoteBrowser", "DownloadCreatedAt", localPath.Value);
+        _messages.Success(Localization.GetString("RemoteBrowser", "DownloadCreated"));
     }
 
-    private async Task DownloadSelectedFilesAsync()
+    private async Task DownloadSelectedFilesAsync(CancellationToken cancellationToken)
     {
         if (_storageAccountId is not { } storageAccountId)
         {
@@ -1376,7 +1546,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
             return;
         }
 
-        var preferences = await _preferences.GetAsync().ConfigureAwait(true);
+        var preferences = await _preferences.GetAsync(cancellationToken).ConfigureAwait(true);
         var targets = selectedFiles
             .Select(row => new DownloadTaskTarget(
                 row.Path,
@@ -1388,7 +1558,8 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
             new CreateDownloadTasksRequest(
                 storageAccountId,
                 targets,
-                TransferOverwritePolicy.Rename)).ConfigureAwait(true);
+                TransferOverwritePolicy.Rename),
+            cancellationToken).ConfigureAwait(true);
 
         if (result.IsFailure)
         {
@@ -1408,13 +1579,14 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         }
 
         var createdCount = result.GetValueOrThrow().Tasks.Count;
-        _statusBar.RequestQueueRefresh();
         ClearSelectedFiles();
         StatusMessage = Localization.Format("RemoteBrowser", "DownloadsCreatedAt", createdCount, preferences.DefaultDownloadDirectory);
         _messages.Success(Localization.Format("RemoteBrowser", "DownloadsCreated", createdCount));
     }
 
-    private async Task PreviewSelectedAsync(object? parameter)
+    private async Task PreviewSelectedAsync(
+        object? parameter,
+        CancellationToken cancellationToken)
     {
         if (_storageAccountId is null ||
             !TryGetPreviewableRow(parameter, out var path, out var name, out var sizeBytes, out var kind))
@@ -1429,7 +1601,10 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
             name,
             sizeBytes,
             kind);
-        var result = await RunWithLoadingAsync(() => _browser.PreviewRemoteFileAsync(previewRequest)).ConfigureAwait(true);
+        var result = await RunWithLoadingAsync(
+            () => _browser.PreviewRemoteFileAsync(
+                previewRequest,
+                cancellationToken: cancellationToken)).ConfigureAwait(true);
 
         if (result.IsFailure)
         {
@@ -1474,7 +1649,9 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         StatusMessage = Localization.Format("RemoteBrowser", "PreviewOpened", name);
     }
 
-    private async Task RenameSelectedAsync(object? parameter)
+    private async Task RenameSelectedAsync(
+        object? parameter,
+        CancellationToken cancellationToken)
     {
         if (_storageAccountId is null ||
             !TryGetRenameableRow(parameter, out var path, out var name, out var kind))
@@ -1502,11 +1679,13 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         }
 
         StatusMessage = Localization.Format("RemoteBrowser", "Renaming", name);
-        var result = await RunWithLoadingAsync(() => _browser.RenameRemoteItemAsync(new RenameRemoteItemRequest(
-            _storageAccountId.Value,
-            path,
-            kind,
-            newName.Trim()))).ConfigureAwait(true);
+        var result = await RunWithLoadingAsync(() => _browser.RenameRemoteItemAsync(
+            new RenameRemoteItemRequest(
+                _storageAccountId.Value,
+                path,
+                kind,
+                newName.Trim()),
+            cancellationToken)).ConfigureAwait(true);
 
         if (result.IsFailure)
         {
@@ -1670,7 +1849,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
             : parent.Value.Combine(newName, pathKind);
     }
 
-    private async Task UploadAsync()
+    private async Task UploadAsync(CancellationToken cancellationToken)
     {
         if (_storageAccountId is null || !CanUpload)
         {
@@ -1682,6 +1861,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
             return;
         }
 
+        cancellationToken.ThrowIfCancellationRequested();
         var selectedFiles = await _filePicker.PickFilesForUploadAsync().ConfigureAwait(true);
         if (selectedFiles.Count == 0)
         {
@@ -1709,7 +1889,8 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
             prepareResult = await _transfers
                 .PrepareBatchUploadTasksAsync(
                     new PrepareBatchUploadTasksRequest(storageAccountId, uploadTargets),
-                    progress)
+                    progress,
+                    cancellationToken)
                 .ConfigureAwait(true);
         }
         finally
@@ -1752,38 +1933,32 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
             ? Localization.GetString("RemoteBrowser", "CreatingUploadSingle")
             : Localization.Format("RemoteBrowser", "CreatingUploadMultiple", targetsToCreate.Length));
 
-        _ = Task.Run(async () =>
+        var result = await _transfers.CreateBatchUploadTasksAsync(
+            new CreateBatchUploadTasksRequest(
+                storageAccountId,
+                targetsToCreate,
+                TransferOverwritePolicy.Ask),
+            cancellationToken).ConfigureAwait(true);
+
+        if (result.IsFailure)
         {
-            var result = await _transfers.CreateBatchUploadTasksAsync(
-                new CreateBatchUploadTasksRequest(
-                    storageAccountId,
-                    targetsToCreate,
-                    TransferOverwritePolicy.Ask)).ConfigureAwait(false);
+            var message = Localization.GetString("RemoteBrowser", "UploadCreateFailed");
+            StatusMessage = message;
+            SetErrorDetails(message, message, result.Error);
+            _messages.Error(message);
+            return;
+        }
 
-            Dispatcher.UIThread.Post(() =>
-            {
-                if (result.IsFailure)
-                {
-                    var message = Localization.GetString("RemoteBrowser", "UploadCreateFailed");
-                    StatusMessage = message;
-                    SetErrorDetails(message, message, result.Error);
-                    _messages.Error(message);
-                    return;
-                }
-
-                var createdCount = result.GetValueOrThrow().Tasks.Count;
-                _statusBar.RequestQueueRefresh();
-                StatusMessage = createdCount <= 1
-                    ? Localization.GetString("RemoteBrowser", "UploadCreatedWaitSingle")
-                    : Localization.Format("RemoteBrowser", "UploadCreatedWaitMultiple", createdCount);
-                _messages.Success(createdCount <= 1
-                    ? Localization.GetString("RemoteBrowser", "UploadCreatedSingle")
-                    : Localization.Format("RemoteBrowser", "UploadCreatedMultiple", createdCount));
-            });
-        });
+        var createdCount = result.GetValueOrThrow().Tasks.Count;
+        StatusMessage = createdCount <= 1
+            ? Localization.GetString("RemoteBrowser", "UploadCreatedWaitSingle")
+            : Localization.Format("RemoteBrowser", "UploadCreatedWaitMultiple", createdCount);
+        _messages.Success(createdCount <= 1
+            ? Localization.GetString("RemoteBrowser", "UploadCreatedSingle")
+            : Localization.Format("RemoteBrowser", "UploadCreatedMultiple", createdCount));
     }
 
-    private async Task CreateBucketAsync()
+    private async Task CreateBucketAsync(CancellationToken cancellationToken)
     {
         if (_storageAccountId is null || !CanCreateBucket)
         {
@@ -1812,9 +1987,9 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
 
         StatusMessage = Localization.Format("RemoteBrowser", "CreatingBucket", bucketName);
         var path = new RemotePath(bucketName, RemotePathKind.BucketRoot);
-        var result = await _browser.CreateRemoteFolderAsync(new CreateRemoteFolderRequest(
-            _storageAccountId.Value,
-            path)).ConfigureAwait(true);
+        var result = await _browser.CreateRemoteFolderAsync(
+            new CreateRemoteFolderRequest(_storageAccountId.Value, path),
+            cancellationToken).ConfigureAwait(true);
 
         if (result.IsFailure)
         {
@@ -1835,10 +2010,10 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
 
         _messages.Info(Localization.Format("RemoteBrowser", "BucketCreated", bucketName));
         StatusMessage = Localization.Format("RemoteBrowser", "BucketCreated", bucketName);
-        await LoadItemsAsync().ConfigureAwait(true);
+        await LoadItemsAsync(cancellationToken).ConfigureAwait(true);
     }
 
-    private async Task CreateFolderAsync()
+    private async Task CreateFolderAsync(CancellationToken cancellationToken)
     {
         if (_storageAccountId is null || !CanCreateFolder)
         {
@@ -1867,9 +2042,9 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
 
         var folderPath = _remotePath.Combine(folderName, RemotePathKind.Folder);
         StatusMessage = Localization.Format("RemoteBrowser", "CreatingFolder", folderName);
-        var result = await _browser.CreateRemoteFolderAsync(new CreateRemoteFolderRequest(
-            _storageAccountId.Value,
-            folderPath)).ConfigureAwait(true);
+        var result = await _browser.CreateRemoteFolderAsync(
+            new CreateRemoteFolderRequest(_storageAccountId.Value, folderPath),
+            cancellationToken).ConfigureAwait(true);
 
         if (result.IsFailure)
         {
@@ -1894,7 +2069,9 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         AppendCreatedFolderRow(folderName, folderPath);
     }
 
-    private async Task DeleteSelectedAsync(object? parameter)
+    private async Task DeleteSelectedAsync(
+        object? parameter,
+        CancellationToken cancellationToken)
     {
         if (_storageAccountId is null || !TryGetDeletableRow(parameter, out var path, out var name, out var kind))
         {
@@ -1916,10 +2093,9 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         }
 
         StatusMessage = Localization.Format("RemoteBrowser", "Deleting", name);
-        var result = await RunWithLoadingAsync(() => _browser.DeleteRemoteItemAsync(new DeleteRemoteItemRequest(
-            _storageAccountId.Value,
-            path,
-            kind))).ConfigureAwait(true);
+        var result = await RunWithLoadingAsync(() => _browser.DeleteRemoteItemAsync(
+            new DeleteRemoteItemRequest(_storageAccountId.Value, path, kind),
+            cancellationToken)).ConfigureAwait(true);
 
         if (result.IsFailure)
         {
@@ -1945,7 +2121,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         RemoveRow(path);
     }
 
-    private async Task DeleteSelectedFilesAsync()
+    private async Task DeleteSelectedFilesAsync(CancellationToken cancellationToken)
     {
         if (_storageAccountId is not { } storageAccountId)
         {
@@ -1978,10 +2154,12 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
             {
                 var row = selectedFiles[index];
                 StatusMessage = Localization.Format("RemoteBrowser", "DeletingProgress", index + 1, selectedFiles.Length, row.Name);
-                var result = await _browser.DeleteRemoteItemAsync(new DeleteRemoteItemRequest(
-                    storageAccountId,
-                    row.Path,
-                    RemoteItemKind.File)).ConfigureAwait(true);
+                var result = await _browser.DeleteRemoteItemAsync(
+                    new DeleteRemoteItemRequest(
+                        storageAccountId,
+                        row.Path,
+                        RemoteItemKind.File),
+                    cancellationToken).ConfigureAwait(true);
                 if (result.IsFailure)
                 {
                     failures.Add((row, result.Error!));
@@ -1992,7 +2170,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
                 }
             }
 
-            await LoadItemsCoreAsync().ConfigureAwait(true);
+            await LoadItemsCoreAsync(cancellationToken).ConfigureAwait(true);
         }).ConfigureAwait(true);
 
         if (failures.Count == 0)
@@ -2150,13 +2328,20 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         }
     }
 
-    private async Task AddAccountAsync()
+    private async Task AddAccountAsync(CancellationToken cancellationToken)
     {
         var category = ToProviderCategory(_resourceGroup);
         var preferredProviderId = _resourceGroup == NavigationResourceGroup.WebDav
             ? new StorageProviderId("webdav")
             : (StorageProviderId?)null;
-        var result = await _accountDialogWorkflow.AddAccountAsync(category, preferredProviderId).ConfigureAwait(true);
+        var result = await _accountDialogWorkflow
+            .AddAccountAsync(category, preferredProviderId, cancellationToken)
+            .ConfigureAwait(true);
+        if (result is null)
+        {
+            return;
+        }
+
         if (result.IsFailure)
         {
             StatusMessage = Localization.GetString("RemoteBrowser", "AccountSaveFailed");
@@ -2165,15 +2350,11 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         }
 
         var account = result.GetValueOrThrow();
-        if (account is null)
-        {
-            return;
-        }
 
         _storageAccountId = account.Id;
         _remotePath = GetInitialPath(account);
         ResetPaging();
-        await LoadItemsAsync().ConfigureAwait(true);
+        await LoadItemsAsync(cancellationToken).ConfigureAwait(true);
     }
 
     private RemotePath GetUploadTargetPath(LocalPath firstLocalPath)
@@ -2184,18 +2365,27 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
             : _remotePath.Combine(fileName);
     }
 
-    private async Task NavigateToTransferStatusAsync(CreateTransferTasksResult createdTasks)
+    private async Task NavigateToTransferStatusAsync(
+        CreateTransferTasksResult createdTasks,
+        CancellationToken cancellationToken)
     {
         var createdTaskIds = createdTasks.Tasks.Select(task => task.Id).ToHashSet();
-        var queueResult = await _transfers.GetQueueAsync(new GetTransferQueueRequest()).ConfigureAwait(true);
+        var queueResult = await _transfers.GetQueueAsync(
+            new GetTransferQueueRequest(),
+            cancellationToken).ConfigureAwait(true);
         if (queueResult.IsSuccess &&
             queueResult.GetValueOrThrow().Tasks.Any(snapshot => createdTaskIds.Contains(snapshot.Task.Id)))
         {
-            await _navigation.NavigateAsync(NavigationTarget.TransferQueue).ConfigureAwait(true);
+            await _navigation.NavigateAsync(
+                NavigationTarget.TransferQueue,
+                cancellationToken: cancellationToken).ConfigureAwait(true);
             return;
         }
 
-        await _navigation.NavigateAsync(NavigationTarget.TransferHistory, new TransferHistoryNavigationParameter(1)).ConfigureAwait(true);
+        await _navigation.NavigateAsync(
+            NavigationTarget.TransferHistory,
+            new TransferHistoryNavigationParameter(1),
+            cancellationToken).ConfigureAwait(true);
     }
 
     private string BuildDuplicateUploadMessage(IReadOnlyList<PreparedUploadTaskTarget> targets)
@@ -2286,8 +2476,9 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         return RemotePath.Root;
     }
 
-    private Task ShowErrorDetailsAsync()
+    private Task ShowErrorDetailsAsync(CancellationToken cancellationToken)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         return _lastErrorDetails is null
             ? Task.CompletedTask
             : _dialogs.ShowErrorDetailsAsync(_lastErrorDetails);
@@ -2302,7 +2493,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         _lastErrorDetails = ErrorDialogRequest.FromError(title, fallbackSummary, error, details);
         OnPropertyChanged(nameof(HasErrorDetails));
         OnPropertyChanged(nameof(IsStatusBarMessageVisible));
-        ShowErrorDetailsCommand.RaiseCanExecuteChanged();
+        ShowErrorDetailsCommand.NotifyCanExecuteChanged();
     }
 
     private void ClearErrorDetails()
@@ -2315,7 +2506,7 @@ public sealed class RemoteBrowserViewModel : LocalizedViewModelBase
         _lastErrorDetails = null;
         OnPropertyChanged(nameof(HasErrorDetails));
         OnPropertyChanged(nameof(IsStatusBarMessageVisible));
-        ShowErrorDetailsCommand.RaiseCanExecuteChanged();
+        ShowErrorDetailsCommand.NotifyCanExecuteChanged();
     }
 }
 

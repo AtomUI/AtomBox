@@ -40,13 +40,15 @@ Application 不能退化成 Provider、Transfer、Infrastructure 的机械转发
 
 | 用例 | 输入 | 输出 | 说明 |
 | --- | --- | --- | --- |
-| 添加账号 | `AddStorageAccountRequest` | `OperationResult<StorageAccountSummary>` | 保存账号配置和凭据引用；不保存 secret 明文。 |
-| 更新账号 | `UpdateStorageAccountRequest` | `OperationResult<StorageAccountSummary>` | 修改账号配置；不影响已运行传输任务。 |
+| 添加账号 | `AddStorageAccountRequest` | `OperationResult<StorageAccountSummary>` | 接收瞬时凭据材料，由 Application 保存凭据和账号；明文不进入结果或 State。 |
+| 更新账号 | `UpdateStorageAccountRequest` | `OperationResult<StorageAccountSummary>` | 可接收新的瞬时凭据材料；替换成功后清理旧凭据，不影响已运行传输任务。 |
 | 删除账号 | `DeleteStorageAccountRequest` | `OperationResult` | 删除前必须检查未完成传输任务引用。 |
 | 列出账号 | `ListStorageAccountsRequest` | `OperationResult<IReadOnlyList<StorageAccountSummary>>` | 给左侧菜单、账号管理页和远程入口使用。 |
 | 测试连接 | `TestConnectionRequest` | `OperationResult<TestConnectionResult>` | 可以创建短生命周期 provider；不得长期持有。 |
 
 账号删除必须遵守生命周期文档：只要仍有未完成任务引用该账号，就禁止删除。
+
+账号增删改成功后必须从 Repository 重建并发布账号目录 State。持久化成功但投影刷新失败时，Application 发布 `Faulted`，不得发布旧数据或伪造空列表。账号草稿连接测试产生的临时凭据必须在用例结束时进入待清理状态。
 
 ## 4. 远程浏览用例
 
@@ -119,6 +121,8 @@ Application 查询传输队列或历史时，只能通过 Core 传输状态存�
 
 设置保存必须通过 Application 用例显式触发，不能由 ViewModel 或 Infrastructure 私自决定业务流程。
 
+设置初始化、保存和恢复默认值后必须发布 ApplicationSettings State；失败时保留失败事实，不以默认设置覆盖错误。
+
 上传指纹索引设置规则：
 
 - `ApplicationSettings` 保存是否启用上传指纹索引。
@@ -157,7 +161,7 @@ Phase 9 允许 Application 结果对象补充 UI 可稳定展示的只读信息�
 
 ## 8. 禁止事项
 
-- Application 不引用 Avalonia、AtomUI、ViewModel、View。
+- Application 不引用 Avalonia、AtomUI 控件、ViewModel、View；`AtomUI.City.State` 是经迁移矩阵批准、仅用于运行时状态合同的例外。
 - Application 不引用具体 SDK、FTP/SFTP 客户端、网盘 HTTP API 客户端。
 - Application 不直接读取配置文件、不访问数据库、不加密凭据。
 - Application 不持有 provider、SDK client、secret material。

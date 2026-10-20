@@ -24,6 +24,7 @@ AtomBox 遵循以下原则：
 
 - dotnet 标准库优先：底层库优先选择使用现代化 .NET Standard 库。
 - AtomUI 优先：UI 层优先使用 AtomUI 库提供的 UI 展示能力。
+- AtomUI.City Host 优先：Desktop 的模块、DI Root、启动停止和窗口 session 由 City 统一管理。
 - AOT 优先：默认要尽量支持 AOT、trimming，可以通过 source generator、显式注册等方式优化性能减小体积。
 
 ## 3. 禁止行为列表
@@ -86,16 +87,17 @@ UploadViewModel
 | 模块 | 可以依赖 | 不应该依赖 | 依赖原则 |
 | --- | --- | --- | --- |
 | AtomBox.Core | .NET BCL，以及极少数不污染领域模型的基础类型 | Avalonia、AtomUI、Serilog、具体云厂商 SDK、数据库、配置文件实现、HTTP API 实现 | Core 是产品内核，只定义 AtomBox 的核心模型、抽象、错误、能力和领域规则。 |
-| AtomBox.Application | AtomBox.Core，`Microsoft.Extensions.DependencyInjection.Abstractions` | Avalonia、AtomUI、具体云厂商 SDK、具体协议库、ViewModel、View、`IServiceProvider` 直接解析 | Application 编排用户用例，只依赖核心抽象，不直接接触 UI 和具体后端实现；可提供 `IServiceCollection` 注册扩展供 Desktop 组合根调用。 |
-| AtomBox.Transfer | AtomBox.Core，`Microsoft.Extensions.DependencyInjection.Abstractions` | Avalonia、AtomUI、Application、具体云厂商 SDK、具体 Provider 实现、`IServiceProvider` 直接解析 | Transfer Engine 负责调度传输任务，通过 Core 中的 provider 抽象执行实际读写；可提供 `IServiceCollection` 注册扩展供 Desktop 组合根调用。 |
+| AtomBox.Application | AtomBox.Core、AtomUI.City.State，`Microsoft.Extensions.DependencyInjection.Abstractions` | Avalonia、AtomUI 控件、具体云厂商 SDK、具体协议库、ViewModel、View、`IServiceProvider` 直接解析 | Application 编排用户用例，使用 City.State 发布账号和设置的运行时投影，不直接接触 UI 和具体后端实现；可提供 `IServiceCollection` 注册扩展供 Desktop 组合根调用。 |
+| AtomBox.Transfer | AtomBox.Core、AtomUI.City.Core、AtomUI.City.State，`Microsoft.Extensions.DependencyInjection.Abstractions` | Avalonia、AtomUI 控件、Application、具体云厂商 SDK、具体 Provider 实现、`IServiceProvider` 直接解析 | Transfer Engine 负责调度传输任务，通过 Core 中的 provider 抽象执行实际读写，使用 City.State 发布已持久化队列和 Runtime 健康投影，并通过自身 City Module 接入 Host 生命周期；标准 DI 扩展继续供测试组合使用。 |
 | AtomBox.Providers | AtomBox.Core，具体云厂商 SDK、FTP/SFTP 协议库、网盘 API 客户端，`Microsoft.Extensions.DependencyInjection.Abstractions` | Avalonia、AtomUI、ViewModel、Desktop UI、`IServiceProvider` 直接解析 | Provider 实现 Core 中的存储抽象，把外部 SDK/API 类型转换为 Core 类型；可提供 `IServiceCollection` 注册扩展供 Desktop 组合根调用。 |
 | AtomBox.Infrastructure | AtomBox.Core，必要的系统库、加密库、持久化库、日志库，`Microsoft.Extensions.DependencyInjection.Abstractions` | Avalonia、AtomUI、ViewModel、具体页面逻辑、`IServiceProvider` 直接解析 | Infrastructure 提供配置、凭据、日志、缓存、本地持久化等技术实现；可提供 `IServiceCollection` 注册扩展供 Desktop 组合根调用。 |
-| AtomBox.Desktop | AtomBox.Application、AtomBox.Transfer、AtomBox.Providers、AtomBox.Infrastructure、AtomBox.Core | 不应被 Core、Application、Transfer、Providers、Infrastructure 反向依赖 | Desktop 是 Avalonia/AtomUI 启动项目和组合根，负责 UI、DI 注册和应用启动。 |
+| AtomBox.Desktop | AtomBox.Application、AtomBox.Transfer、AtomBox.Providers、AtomBox.Infrastructure、AtomBox.Core，以及已实施的 AtomUI.City Core / Mvvm / Routing / Presentation / State / Localization / Build / Generators 能力 | 不应被 Core、Application、Transfer、Providers、Infrastructure 反向依赖 | Desktop 是 Avalonia/AtomUI 启动项目和 City 应用模块，负责 UI、模块组合和应用启动；Root Provider 只由 City Host 创建。 |
 
 推荐的项目引用方向如下：
 
 ```text
 AtomBox.Desktop
+  -> AtomUI.City.Core / Presentation
   -> AtomBox.Application
   -> AtomBox.Transfer
   -> AtomBox.Providers
@@ -138,7 +140,8 @@ AtomBox.Core
 - Provider 不依赖 Desktop，也不依赖 ViewModel。
 - Infrastructure 不承载业务用例，只提供技术能力。
 - Desktop 可以引用所有实现模块，但只作为组合根，不把 UI 类型泄漏到 Core、Application、Transfer、Provider 或 Infrastructure。
-- Desktop 是生产组合根。Application 不是组合根，不能负责组装 Providers、Transfer、Infrastructure 或 Desktop UI。
+- Desktop 是生产组合边界，但不自行构建容器；`ApplicationHost` 是唯一 Root Provider 所有者。Application 不是组合根，不能负责组装 Providers、Transfer、Infrastructure 或 Desktop UI。
+- City 依赖只能依照迁移主矩阵进入真正拥有相应业务能力的模块，不能因为调用点位于 Desktop 就把上游业务包装在 UI 层。Core 保持零 City 依赖；Application 采用 City.State，Transfer 采用 City.Core.Module 与 City.State，Desktop 采用已批准的 UI/Host 能力；Providers 与 Infrastructure 已经专项审计并明确保持无 City 引用。
 - Application、Transfer、Providers、Infrastructure 可以暴露 `IServiceCollection` 注册扩展，供 Desktop 组合根调用；这些模块内部业务对象不得持有、注入或直接解析 `IServiceProvider`。
 - 跨模块稳定端口统一定义在 Core，例如 provider factory、账号仓储、设置仓储、凭据存储、传输任务存储和传输调度端口。
 - Providers、Infrastructure、Transfer 可以提供 Core 端口的实现；Application 只消费 Core 端口，不定义跨模块端口。
@@ -153,9 +156,13 @@ AtomBox 从零重建时采用 `src/` + `tests/` 的标准仓库结构。生产�
 ```text
 AtomBox/
   AtomBox.sln
+  .gitmodules
   .gitignore
   Directory.Build.props
   Directory.Packages.props
+
+  external/
+    AtomUI.City/
 
   Docs/
     overview.md
@@ -180,7 +187,6 @@ AtomBox/
       Composition/
       Shell/
       Navigation/
-      ViewFactory/
       Dialogs/
       Services/
       Views/
@@ -247,7 +253,7 @@ AtomBox/
 
 | 项目 | 职责 |
 | --- | --- |
-| AtomBox.Desktop | Avalonia / AtomUI 启动项目，承载 Views、ViewModels、资源、桌面端交互逻辑和 DI 组合根。 |
+| AtomBox.Desktop | Avalonia / AtomUI 启动项目和 City 应用模块，承载 Views、ViewModels、资源、桌面端交互逻辑与双生命周期衔接。 |
 | AtomBox.Application | 用户用例编排层，负责账号管理、远程浏览、连接测试、创建传输任务、触发删除或刷新等应用流程。 |
 | AtomBox.Core | 产品内核，定义核心模型、接口、能力、错误、领域规则和值对象。 |
 | AtomBox.Transfer | 独立传输调度器，负责任务队列、并发、取消、重试、进度聚合和任务状态更新；`Paused` / `Interrupted` 状态用于关闭、中断和后续恢复设计，第一版不承诺对外暂停/恢复调度能力。 |

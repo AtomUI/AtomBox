@@ -29,7 +29,7 @@ Application 允许包含：
 
 Application 禁止包含：
 
-- Avalonia、AtomUI、View、ViewModel、Command、Binding 等 UI 类型。
+- Avalonia、AtomUI 控件、View、ViewModel、Command、Binding 等 UI 类型；框架无关的 `AtomUI.City.State` 合同是经专项决策批准的唯一现有例外。
 - 具体云厂商 SDK、FTP/SFTP 库、网盘 API 客户端类型。
 - JSON 配置读写、SQLite 访问、凭据加密、文件系统持久化等技术实现。
 - 传输 worker、队列调度、并发控制等 Transfer Engine 运行时实现。
@@ -50,6 +50,7 @@ src/AtomBox.Application/
   Browsing/
   Transfers/
   Settings/
+  State/
   DependencyInjection/
 ```
 
@@ -61,6 +62,7 @@ src/AtomBox.Application/
 | `Browsing/` | 定义远程资源浏览相关用例，例如列目录、刷新目录、删除远程资源、获取路径上下文。 |
 | `Transfers/` | 定义传输相关用例入口，例如创建上传任务、创建下载任务、取消任务、重试任务；不实现调度器。 |
 | `Settings/` | 定义应用设置相关用例，例如读取设置、保存设置、更新偏好。 |
+| `State/` | 定义账号目录和应用设置的 City.State 运行时只读投影、所有者写入与初始化。 |
 | `DependencyInjection/` | 定义 Application 层服务注册扩展，例如 `AddAtomBoxApplication()`。 |
 
 ## 5. 首批核心对象范围
@@ -115,6 +117,7 @@ src/AtomBox.Application/
 Application 消费的 Core 端口：
 
 - `IStorageAccountRepository`
+- `ICredentialStore`
 - `IApplicationSettingsRepository`
 - `IStorageProviderFactory`
 - `ITransferTaskScheduler`
@@ -127,10 +130,10 @@ Application 消费 `IStorageProviderFactory` 的边界必须非常窄：它可�
 
 ## 6. 设计约束
 
-- Application 只能依赖 Core，以及必要的抽象接口；不能依赖 Desktop、具体 Provider 实现或 Infrastructure 实现。
+- Application 只能依赖 Core、经专项决策批准的框架无关 City 合同以及必要的抽象接口；不能依赖 Desktop、具体 Provider 实现或 Infrastructure 实现。当前批准的 City 依赖只有 `AtomUI.City.State`。
 - Application 不定义跨模块稳定端口，只消费 Core 中定义的端口。
 - ViewModel 只能调用 Application 暴露的用例服务，不能绕过 Application 直接调用 Provider 或 Infrastructure。
-- Application 不直接保存凭据，不直接读取配置文件，不直接访问数据库。
+- Application 可以通过 Core `ICredentialStore` 端口编排账号凭据的保存、替换和待清理事务，但不能实现加密、文件保存或数据库访问，也不能长期持有明文。
 - Application 不接触具体 SDK/API/协议异常；这些异常必须先在 Providers 内转换为 Core 统一错误模型。
 - Application 不负责传输调度细节，只负责创建、操作或查询传输任务。
 - Application 不能替 Transfer 预创建 provider；传输执行阶段的 provider 创建由 Transfer 通过 Core 端口触发。
@@ -143,16 +146,27 @@ Application 消费 `IStorageProviderFactory` 的边界必须非常窄：它可�
 
 ## 7. 生命周期约束
 
-Application Service 是应用级无状态服务，可以作为长期服务实例存在。
+Application Service 是应用级编排服务，可以作为长期服务实例存在；为保证提交顺序可持有并发门，但不能持有外部资源或业务实体缓存。
 
 - `AccountAppService`、`RemoteBrowserAppService`、`TransferAppService`、`SettingsAppService` 不持有 provider、SDK client、secret material、ViewModel 或 UI 状态。
 - Application 返回的结果对象是一次用例调用的短生命周期结果快照。
 - Application 可以为了连接测试、远程浏览、能力探测创建短生命周期 provider，但不能为 Transfer 创建 provider，不能保存 provider 实例。
 - Application 短用例可以一次用例创建一个 provider；这里的用例包括连接测试、目录列表、能力探测、远程对象删除等短流程。
-- Application 可以触发 provider 创建，但不直接读取 secret material，不直接创建或释放 `CredentialLease`；lease 生命周期由 provider factory / provider 操作链路封装。
+- Application 的账号写入和草稿连接请求可以接收一次调用范围内的 `CredentialSecretMaterial`，并通过 `ICredentialStore` 转换为 `CredentialRef`；不得把明文保存到字段、State、结果、日志或诊断中。Application 不直接创建或释放 `CredentialLease`，lease 生命周期仍由 provider factory / provider 操作链路封装。
 - Application 不能把 UI 点击次数等同于 provider 生命周期，不能把 provider 生命周期扩大到多个独立用户提交批次。
 - 账号删除用例必须检查未完成传输任务引用，不能允许删除仍被任务引用的账号。
 - 账号修改只影响后续操作，不影响已经运行中的传输任务。
 - 设置保存必须通过 Application 用例显式触发，不能由 ViewModel 或 Infrastructure 私自决定业务流程。
 
 Application 的服务生命周期只表达用例编排能力，不代表它拥有底层资源。资源生命周期归 Provider、Transfer 或 Infrastructure 管。
+
+## City.State 运行时投影
+
+Application 直接使用 `AtomUI.City.State` 发布账号目录和应用设置的运行时只读投影。Repository 仍是持久化事实源；State 只用于让多个前端消费者安全获得同一份当前快照和后续变化。
+
+- `IAtomBoxApplicationState` 暴露账号和设置的 `IReadOnlyState<T>`。
+- 状态由 Application 初始化器加载，并在相关用例成功提交后刷新。
+- 状态具有 `Uninitialized / Ready / Faulted` 三种显式加载状态；读取失败不能伪装成空数据。
+- 写权限属于 `AtomBox.Application`，通过 City OwnerWrite authority 获取；Desktop 及其他消费者没有 writer。
+- State 为 Transient snapshot，不承担磁盘持久化和进程恢复。
+- State 值、错误摘要和诊断不得包含 secret material。

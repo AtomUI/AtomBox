@@ -181,7 +181,6 @@ public sealed class TransferAppServiceDataTests : IDisposable
 
         Assert.True(result.IsSuccess);
         Assert.Equal(1, scheduler.RetryCalls);
-        Assert.Equal(1, scheduler.WakeCalls);
     }
 
     [Fact]
@@ -269,8 +268,6 @@ public sealed class TransferAppServiceDataTests : IDisposable
         public Task<OperationResult> RetryAsync(TransferTaskId taskId, CancellationToken cancellationToken = default)
             => Task.FromResult(OperationResult.Success());
 
-        public Task<OperationResult> WakeAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(OperationResult.Success());
     }
 
     private sealed class CompletingScheduler : ITransferTaskScheduler
@@ -299,8 +296,6 @@ public sealed class TransferAppServiceDataTests : IDisposable
         public Task<OperationResult> RetryAsync(TransferTaskId taskId, CancellationToken cancellationToken = default)
             => Task.FromResult(OperationResult.Success());
 
-        public Task<OperationResult> WakeAsync(CancellationToken cancellationToken = default)
-            => Task.FromResult(OperationResult.Success());
     }
 
     private sealed class CountingScheduler : ITransferTaskScheduler
@@ -308,7 +303,6 @@ public sealed class TransferAppServiceDataTests : IDisposable
         public int SubmitCalls { get; private set; }
         public int CancelCalls { get; private set; }
         public int RetryCalls { get; private set; }
-        public int WakeCalls { get; private set; }
 
         public Task<OperationResult> SubmitAsync(TransferTask task, CancellationToken cancellationToken = default)
         {
@@ -328,10 +322,5 @@ public sealed class TransferAppServiceDataTests : IDisposable
             return Task.FromResult(OperationResult.Success());
         }
 
-        public Task<OperationResult> WakeAsync(CancellationToken cancellationToken = default)
-        {
-            WakeCalls++;
-            return Task.FromResult(OperationResult.Success());
-        }
     }
 }

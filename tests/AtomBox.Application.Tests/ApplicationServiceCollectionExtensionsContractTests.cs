@@ -2,8 +2,10 @@ using AtomBox.Application.Accounts;
 using AtomBox.Application.Browsing;
 using AtomBox.Application.DependencyInjection;
 using AtomBox.Application.Settings;
+using AtomBox.Application.State;
 using AtomBox.Application.Transfers;
 using Microsoft.Extensions.DependencyInjection;
+using AtomUI.City.State;
 
 namespace AtomBox.Application.Tests;
 
@@ -20,6 +22,9 @@ public sealed class ApplicationServiceCollectionExtensionsContractTests
         Assert.Contains(descriptors, d => d.ServiceType == typeof(RemoteBrowserAppService) && d.Lifetime == ServiceLifetime.Singleton);
         Assert.Contains(descriptors, d => d.ServiceType == typeof(TransferAppService) && d.Lifetime == ServiceLifetime.Singleton);
         Assert.Contains(descriptors, d => d.ServiceType == typeof(SettingsAppService) && d.Lifetime == ServiceLifetime.Singleton);
+        Assert.Contains(descriptors, d => d.ServiceType == typeof(IAtomBoxApplicationState) && d.Lifetime == ServiceLifetime.Singleton);
+        Assert.Contains(descriptors, d => d.ServiceType == typeof(AtomBoxApplicationStateInitializer) && d.Lifetime == ServiceLifetime.Singleton);
+        Assert.Contains(descriptors, d => d.ServiceType == typeof(IApplicationStateWriterFactory) && d.Lifetime == ServiceLifetime.Singleton);
     }
 
     [Fact]

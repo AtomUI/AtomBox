@@ -2,18 +2,22 @@
 
 > 报告状态：已完成
 > 创建日期：2026-06-17
+> 最近验证：2026-10-14
 > 测试命令：`dotnet test tests/AtomBox.Application.Tests`
 > 测试框架：xUnit
 
 ## 1. 总体结果
 
-- **总计：132 项测试，0 失败，0 跳过，0 警告**
-- 测试用时：~273ms
+- **总计：163 项测试，0 失败，0 跳过**
+- 最近全仓运行中的 Application 测试用时：~761ms
 - 构建验证：`dotnet build` — 0 warning / 0 error
+- 全仓 Release 验证：693/693 测试通过，0 warning / 0 error
 
 ## 2. 测试范围
 
-### Round 1 — 契约测试（89 项，5 个文件）
+当前 163 项基线包含下述历史两轮 132 项测试、后续新增的 Application 用例测试，以及 City.State 迁移专项测试。历史分轮表保留用于追溯，不再作为当前测试文件总数统计。
+
+### 2026-06 历史 Round 1 — 契约测试（89 项，5 个文件）
 
 | 测试文件 | 测试数 | 覆盖方法 | 覆盖内容 |
 |---|---|---|---|
@@ -25,7 +29,7 @@
 
 **共计：89 项契约测试，全部通过**（含 16 项原有 `ApplicationValidationTests`）
 
-### Round 2 — 数据测试（43 项，4 个文件）
+### 2026-06 历史 Round 2 — 数据测试（43 项，4 个文件）
 
 | 测试文件 | 测试数 | 测试方式 | 覆盖内容 |
 |---|---|---|---|
@@ -61,16 +65,20 @@
 | `SettingsAppService` | UpdateAsync | ✓ | ✓ | 全部覆盖 |
 | `SettingsAppService` | ResetAsync | ✓ | ✓ | 全部覆盖 |
 | DI 扩展 | AddAtomBoxApplication | ✓ | - | 注册验证 |
+| Application State | Initialize / Observe / Fault | ✓ | - | 初始快照、版本顺序、失败状态 |
+| 账号凭据事务 | Add / Update / Delete | ✓ | - | 瞬时明文边界、旧凭据待清理、State 发布 |
 
 ## 3. 发现的代码问题
 
-**全部通过审查。** 未在 Application 代码中发现逻辑缺陷或错误。
+本轮迁移发现并修复了账号/设置多消费者重复读取、Desktop 直连凭据仓库以及账号变更事件与当前事实分离的问题。当前自动化基线未发现未处理的回归。
 
-Application 层具有严格的防护性编程：
+当前 Application 层的关键防护包括：
 - 所有公共方法在入站时验证 ID 和必填字段
 - 验证失败在调用仓库或工厂之前即返回
 - 依赖方失败会正确传播
-- 翻译边界清晰（无异常泄漏）
+- Repository 保持持久化事实源，City.State 只发布运行时投影
+- 凭据明文仅作为一次请求的瞬时输入，不进入 State 或结果对象
+- State 显式区分 `Uninitialized / Ready / Faulted`
 
 ## 4. 已移除的测试
 
@@ -87,4 +95,4 @@ Application 层具有严格的防护性编程：
 
 1. Round 2 数据测试使用真实 `AtomBoxStoragePaths` + 真实仓库实现，但不使用真实 `ITransferTaskScheduler`（传输层更高级别）或真实 `IStorageProviderFactory`（需要实际云提供商）。
 2. `StoreBackedScheduler` 和 `CompletingScheduler` 是在数据测试内部创建的桥接假实现，用于连接 Application 调度流程与真实存储——它们模拟调度器将任务持久化到真实仓库。
-3. 未发现需要修复的生产代码问题。
+3. 2026-10-13 新增 City.State 原子观察、状态投影和凭据事务测试；真实 UI 验收由用户另行人工执行。
