@@ -12,9 +12,19 @@ internal interface IAliyunOssClient
 
     void CopyObject(string sourceBucketName, string sourceKey, string destinationBucketName, string destinationKey);
 
-    void PutObject(string bucketName, string key, Stream content);
+    void PutObject(
+        string bucketName,
+        string key,
+        Stream content,
+        CancellationToken cancellationToken = default);
 
-    void PutObjectMultipart(string bucketName, string key, Stream content, long contentLength, Action<long, long>? progress = null);
+    void PutObjectMultipart(
+        string bucketName,
+        string key,
+        Stream content,
+        long contentLength,
+        Action<long, long>? progress = null,
+        CancellationToken cancellationToken = default);
 
     AliyunOssDownloadObject GetObject(string bucketName, string key);
 }

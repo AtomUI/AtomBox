@@ -48,6 +48,8 @@
 
 - `Pending -> Running` 只能通过 CAS 领取。
 - 用户取消 Pending 直接进入 `Canceled`；取消 Running 先进入 `Canceling`，执行体退出后才进入 `Canceled`。
+- `Canceled` 持久化成功后必须从活动队列移除并出现在传输历史；不能只更新 UI，也不能让协议调用在后台继续传输。
+- 一旦持久化状态进入 `Canceling`，用户取消意图优先于 Provider 的迟到结果；即使不合作 Provider 最后返回 Success，终态仍必须是 `Canceled`，不得回写为 `Succeeded`。
 - Host 关闭保存为 `Interrupted`；无 AtomBox 取消来源的 Provider 取消映射为 `Failed`。
 - Provider 已明确超时失败映射为 `Failed`；Runtime 有限等待超时且结果未知映射为 `Interrupted`。
 - Abandoned 执行的迟到进度、迟到成功、迟到失败和迟到异常都不能修改持久化终态或公开 State。
@@ -60,6 +62,7 @@
 - 多任务脏进度可以批量 flush，且只在持久化成功后发布 City.State。
 - 正常结束先强制 flush 最终进度，再 CAS 提交终态。
 - 中间进度写入失败保留最新内存值并退避重试；迟到 ExecutionLease 不再接受进度。
+- Desktop 收到同一 `TransferTaskId` 的连续进度快照时必须保持行 ViewModel 与行控件身份稳定，只更新可观察属性；自动化测试应拒绝集合 Reset/Replace，人工烟测应确认悬停不闪烁且一次点击即可触发取消。
 
 ### 2.6 Runtime 健康与异常
 
@@ -72,7 +75,7 @@
 ### 2.7 启动恢复与关闭
 
 - 启动自动调度持久化 `Pending`。
-- 遗留 `Running` 通过 CAS 转换为 `Interrupted`；`Paused`、`Interrupted` 和终态不自动执行。
+- 遗留 `Running` 通过 CAS 转换为 `Interrupted`；遗留 `Canceling` 通过 CAS 转换为 `Canceled` 并进入历史；`Paused`、`Interrupted` 和终态不自动执行。
 - 关闭先停止准入，再等待已进入受理阶段的提交，随后取消 Worker、有限等待并执行最终 flush。
 - 协作 Provider 在宽限期内退出；不合作 Provider 超时后不阻止 Host 继续关闭。
 - 不合作 Worker 被标记 Abandoned 后即使测试主动放行返回，也不能覆盖 `Interrupted`。
@@ -118,7 +121,7 @@ Application 提交
 2. 提交一个足够观察进度的真实任务，确认队列和状态栏持续刷新。
 3. 切换到其他页面，确认 ViewModel 停用不会取消应用级传输。
 4. 最小化到托盘，确认 Runtime 继续执行。
-5. 取消运行中任务，确认先显示取消中，再显示已取消或能力受限时的中断结果。
+5. 鼠标持续悬停在正在更新进度的任务行，确认行和按钮不闪烁；单击一次取消，确认立即进入取消中，再显示已取消或能力受限时的中断结果。
 6. 制造一个任务失败，再提交可成功任务，确认 Runtime 没有整体停摆。
 7. 传输中真正退出应用并重新启动，确认旧任务显示 `Interrupted` 且不会自动重传。
 8. 手动重试该任务，确认从起点重新执行，不宣称断点续传。

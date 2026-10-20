@@ -6,10 +6,13 @@ namespace AtomBox.Providers.ObjectStorage.AliyunOss;
 internal sealed class AliyunOssSdkClient : IAliyunOssClient
 {
     private readonly IOss _client;
+    private readonly AliyunOssMultipartUploader _multipartUploader;
 
     public AliyunOssSdkClient(IOss client)
     {
-        _client = client;
+        _client = client ?? throw new ArgumentNullException(nameof(client));
+        _multipartUploader = new AliyunOssMultipartUploader(
+            new AliyunOssSdkMultipartOperations(client));
     }
 
     public IReadOnlyList<AliyunOssBucket> ListBuckets()
@@ -66,9 +69,20 @@ internal sealed class AliyunOssSdkClient : IAliyunOssClient
         _client.CopyObject(new CopyObjectRequest(sourceBucketName, sourceKey, destinationBucketName, destinationKey));
     }
 
-    public void PutObject(string bucketName, string key, Stream content)
+    public void PutObject(
+        string bucketName,
+        string key,
+        Stream content,
+        CancellationToken cancellationToken = default)
     {
-        _client.PutObject(bucketName, key, content);
+        cancellationToken.ThrowIfCancellationRequested();
+        var request = new PutObjectRequest(bucketName, key, content)
+        {
+            StreamTransferProgress = (_, _) => cancellationToken.ThrowIfCancellationRequested()
+        };
+
+        _client.PutObject(request);
+        cancellationToken.ThrowIfCancellationRequested();
     }
 
     public void PutObjectMultipart(
@@ -76,19 +90,16 @@ internal sealed class AliyunOssSdkClient : IAliyunOssClient
         string key,
         Stream content,
         long contentLength,
-        Action<long, long>? progress = null)
+        Action<long, long>? progress = null,
+        CancellationToken cancellationToken = default)
     {
-        var checkpointDir = Path.Combine(Path.GetTempPath(), "AtomBox", "aliyun-oss-checkpoints");
-        Directory.CreateDirectory(checkpointDir);
-        var request = new UploadObjectRequest(bucketName, key, content)
-        {
-            PartSize = ObjectStorageUploadPolicy.PartSize,
-            CheckpointDir = checkpointDir,
-            StreamTransferProgress = (_, args) => progress?.Invoke(args.TransferredBytes, args.TotalBytes)
-        };
-
-        _client.ResumableUploadObject(request);
-        progress?.Invoke(contentLength, contentLength);
+        _multipartUploader.Upload(
+            bucketName,
+            key,
+            content,
+            contentLength,
+            progress,
+            cancellationToken);
     }
 
     public AliyunOssDownloadObject GetObject(string bucketName, string key)

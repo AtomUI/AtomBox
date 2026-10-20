@@ -46,7 +46,7 @@ Transfer Runtime 负责执行已经创建好的 `TransferTask`。
 | `TransferOperationExecutor` | 单任务执行期 | 创建临时 provider，执行一次上传或下载并释放资源。 |
 | `ActiveExecution` | Runtime 内部执行租约 | 持有执行体、取消来源、进度快照、序号和迟到提交围栏。 |
 | `TransferStateProjector` | 应用级投影器 | 只在事实成功持久化后发布 City.State 队列投影。 |
-| `TransferSpeedMeter` | 执行期对象 | 计算速度快照。 |
+| `TransferSpeedMeter` | 执行期对象 | 使用单调时钟、最小采样窗口和 EWMA 平滑计算速度快照，隔离 Provider 高频突发回调。 |
 
 这些对象都不能被 ViewModel 直接持有，也不能进入 Application 结果对象。Desktop 只观察 `IAtomBoxTransferState` 的只读快照。
 
@@ -134,6 +134,8 @@ State 不取代 Store，也不改变 Application 的命令入口。
 
 Provider 的进度回调只能更新线程安全的最新内存快照并立即返回，禁止在 `IProgress.Report` 中同步等待异步 Store。Runtime 通过统一异步循环合并、节流和批量持久化进度，成功落盘后再更新 City.State；执行结束时先强制 flush 最终进度，再通过 Revision/预期状态条件提交终态。
 
+速度不能按相邻两次 Provider 回调的瞬时时间差直接计算。Provider SDK 可能在极短时间内突发报告多个累计字节快照，这类回调反映缓冲区推进，不代表稳定网络吞吐量。`TransferSpeedMeter` 必须使用单调时钟，在至少一秒的有效采样窗口上按累计字节增量计算，并在窗口之间进行平滑；窗口内回调沿用最近一次可信速度。字节倒退的迟到或乱序回调必须在进入测速器前拒绝，不能污染后续采样基线。
+
 ## 7. 启动与关闭
 
 Transfer 通过 `AtomBoxTransferModule` 接入 City Host。Module 在 `ConfigureServices` 注册 Transfer 服务，在 `OnPostApplicationInitializationAsync` 启动应用级 Runtime，在 `OnApplicationShutdownAsync` 执行有限关闭；Desktop 只显式加载并依赖该 Module，不再手工注册或调用 Transfer 初始化器。
@@ -143,7 +145,7 @@ Transfer 通过 `AtomBoxTransferModule` 接入 City Host。Module 在 `Configure
 - 初始化 Transfer Runtime。
 - 读取未完成任务并重建运行时队列与 City.State 投影。
 - 自动调度已经可靠受理、但尚未被领取的 `Pending`。
-- 将上次运行遗留的 `Running` 保守地转换为 `Interrupted`；`Paused` / `Interrupted` 不自动执行，只能由用户显式重试并从任务起点重新开始。
+- 将上次运行遗留的 `Running` 保守地转换为 `Interrupted`；已记录用户取消意图的 `Canceling` 在重启确认本地执行体消失后转换为 `Canceled`，从活动队列移入历史；`Paused` / `Interrupted` 不自动执行，只能由用户显式重试并从任务起点重新开始。
 
 关闭时：
 
@@ -177,6 +179,7 @@ Phase 9 不改变 Transfer 的职责边界，但要求传输结果具备可解�
 - 用户取消任务必须与网络失败、权限失败、provider 错误区分。
 - 应用关闭或 worker 超时导致的未确认结果必须保存为 `Interrupted` 或等价状态。
 - 运行中用户取消先进入 `Canceling`，只有执行体确认退出后才能保存为 `Canceled`；重复取消必须幂等。
+- `Canceling` 是已持久化的用户意图：执行体退出后它必须收敛到 `Canceled`；Provider 的迟到 Success、Failure 或异常均不得覆盖该意图。
 - Provider 返回取消时必须结合用户、Host 和 Runtime 实际取消来源判定终态，不能仅凭异常类型把任务记为用户取消。
 - `Interrupted` 不能自动恢复执行；后续只能由用户通过 Application 重试用例显式恢复。
 

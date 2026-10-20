@@ -145,6 +145,67 @@ public sealed class TransferRuntimeControllerTests
         Assert.Contains(
             context.Store.Tasks,
             saved => saved.Id == task.Id && saved.Revision >= 3);
+
+        var queue = (await context.Store.ListQueueAsync(timeout.Token)).GetValueOrThrow();
+        var history = (await context.Store.ListHistoryAsync(0, 10, timeout.Token)).GetValueOrThrow();
+        Assert.DoesNotContain(queue, snapshot => snapshot.Task.Id == task.Id);
+        var historical = Assert.Single(history, snapshot => snapshot.Task.Id == task.Id);
+        Assert.Equal(TransferStatus.Canceled, historical.Task.Status);
+        await context.Runtime.StopAsync();
+    }
+
+    [Fact]
+    public async Task CancelRunningTask_UserCancellationWinsOverLateProviderSuccess()
+    {
+        var provider = new NonCooperativeBlockingProvider();
+        var context = CreateContext(new FixedProviderFactory(provider));
+        await context.Runtime.StartAsync(CancellationToken.None);
+        var task = TransferTaskFactory.Create(TransferStatus.Pending);
+        await context.Runtime.SubmitAsync(task);
+        using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+        await provider.Started.Task.WaitAsync(timeout.Token);
+
+        var cancel = await context.Runtime.CancelAsync(task.Id, timeout.Token);
+        var canceling = (await context.Store.GetByIdAsync(task.Id, timeout.Token)).GetValueOrThrow();
+        Assert.True(cancel.IsSuccess);
+        Assert.Equal(TransferStatus.Canceling, canceling.Status);
+
+        provider.Release.TrySetResult(true);
+        await provider.Completed.Task.WaitAsync(timeout.Token);
+        var canceled = await context.Store.WaitForStatusAsync(
+            task.Id,
+            TransferStatus.Canceled,
+            timeout.Token);
+
+        Assert.Equal(TransferStatus.Canceled, canceled.Status);
+        var queue = (await context.Store.ListQueueAsync(timeout.Token)).GetValueOrThrow();
+        var history = (await context.Store.ListHistoryAsync(0, 10, timeout.Token)).GetValueOrThrow();
+        Assert.DoesNotContain(queue, snapshot => snapshot.Task.Id == task.Id);
+        var historical = Assert.Single(history, snapshot => snapshot.Task.Id == task.Id);
+        Assert.Equal(TransferStatus.Canceled, historical.Task.Status);
+        await context.Runtime.StopAsync();
+    }
+
+    [Fact]
+    public async Task StartupRecovery_InterruptsRunningButCompletesUserCancellation()
+    {
+        var context = CreateContext(new FakeProviderFactory());
+        var running = TransferTaskFactory.Create(TransferStatus.Running);
+        var canceling = TransferTaskFactory.Create(TransferStatus.Canceling);
+        await context.Store.SaveAsync(running);
+        await context.Store.SaveAsync(canceling);
+
+        await context.Runtime.StartAsync(CancellationToken.None);
+
+        var recoveredRunning = (await context.Store.GetByIdAsync(running.Id)).GetValueOrThrow();
+        var recoveredCanceling = (await context.Store.GetByIdAsync(canceling.Id)).GetValueOrThrow();
+        var queue = (await context.Store.ListQueueAsync()).GetValueOrThrow();
+        var history = (await context.Store.ListHistoryAsync(0, 10)).GetValueOrThrow();
+        Assert.Equal(TransferStatus.Interrupted, recoveredRunning.Status);
+        Assert.Equal(TransferStatus.Canceled, recoveredCanceling.Status);
+        Assert.Contains(queue, snapshot => snapshot.Task.Id == running.Id);
+        Assert.DoesNotContain(queue, snapshot => snapshot.Task.Id == canceling.Id);
+        Assert.Contains(history, snapshot => snapshot.Task.Id == canceling.Id);
         await context.Runtime.StopAsync();
     }
 

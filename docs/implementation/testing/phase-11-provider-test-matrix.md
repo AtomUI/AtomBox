@@ -252,7 +252,20 @@ OSS 没有真实目录，但 Provider 必须为上层 UI 和 Application 提供�
 | `AliyunOss_DeleteUploadedFile_Should_RemoveObject` | 删除后对象不存在。 |
 | `AliyunOss_OverwriteExistingObject_Should_FollowPolicy` | 覆盖策略行为明确；本轮可先允许覆盖或返回冲突，但必须固定。 |
 
-### 8.3.1 S3 兼容对象存储扩展操作
+### 8.3.1 上传取消
+
+| Case | 期望 |
+| --- | --- |
+| `UploadAsync_ObservesCancellationDuringTransfer(false)` | 普通 PutObject 已开始读取后取消，SDK 输入流停止、结果映射为 Canceled，不得返回 Success。 |
+| `UploadAsync_ObservesCancellationDuringTransfer(true)` | 显式 multipart 已开始读取后取消，当前 part 停止、结果映射为 Canceled，不得返回 Success。 |
+| `UploadAsync_DoesNotReportSuccess_WhenCancellationRacesWithSdkCompletion` | SDK 返回边界恰好发生取消时，普通和分片上传均由取消屏障拒绝 Success。 |
+| `TransferCapabilities_ReportCooperativeCancellation` | Aliyun OSS 声明协作取消与进度能力，但不虚报 active abort。 |
+| `Upload_AbortsMultipartUpload_WhenCancellationOccursDuringPartTransfer` | part 传输中取消后不得调用 Complete，必须 best-effort 调用 AbortMultipartUpload。 |
+| `Upload_AbortsMultipartUpload_AndPreservesOriginalPartFailure` | part 失败时清理 multipart 会话；即使 Abort 也失败，仍保留原始上传错误。 |
+
+上述两条取消用例必须在传输开始后再触发 token，不能只覆盖“调用前已取消”。SDK 返回后的取消屏障也必须受测，避免取消与完成竞态把任务重新写成成功。
+
+### 8.3.2 S3 兼容对象存储扩展操作
 
 S3 兼容 provider 当前包括：华为云 OBS、百度智能云 BOS、京东云 OSS、青云 QingStor、火山引擎 TOS。它们复用 `S3CompatibleProvider` 抽象，并在 registry 中声明 `CreateFolder`、`Rename`、`Move` 能力。
 
@@ -352,7 +365,9 @@ ATOMBOX_OSS_TEST_PREFIX=atombox-tests/
 | `Sftp_MoveFolder_Should_CreateDestinationParentAndMove` | 目录移动前创建目标父目录，并走协议 rename/move 能力。 |
 | `Sftp_MoveToExistingDestination_Should_ReturnConflict` | 目标路径已存在返回 Conflict。 |
 | `Sftp_Upload_Should_CreateMissingParentDirectories` | 上传 `a/b/file.txt` 前自动创建缺失的 `a`、`a/b`。 |
+| `Sftp_Upload_Should_ObserveCancellationDuringTransfer` | 上传开始后取消令牌能够终止 SSH.NET 异步上传并返回 Canceled。 |
 | `Sftp_DownloadFile_Should_WriteContentAndReportProgress` | 下载文件写入目标 stream，并报告进度。 |
+| `Sftp_Download_Should_ObserveCancellationDuringTransfer` | 下载开始后取消令牌能够终止 SSH.NET 异步下载并返回 Canceled。 |
 | `Sftp_DownloadFolder_Should_ReturnValidation` | 下载目录返回 Validation，不调用 download file。 |
 | `Sftp_DownloadMissingFile_Should_ReturnNotFound` | 缺失文件返回 NotFound。 |
 | `Sftp_DeleteFile_Should_CallDeleteFile` | 文件路径删除走协议 file delete。 |
@@ -518,7 +533,7 @@ ATOMBOX_WEBDAV_TEST_PREFIX=atombox-tests/
   - S3 兼容 provider 使用 continuation-token / marker。
   - 又拍云当前使用 Core 默认 offset pagination。
 - 大文件上传：
-  - 阿里 OSS 使用 SDK `ResumableUploadObject`。
+  - 阿里 OSS 使用 SDK `InitiateMultipartUpload`、`UploadPart`、`CompleteMultipartUpload` 显式编排，并在取消/失败时调用 `AbortMultipartUpload`；不使用会吞入取消异常并自动重试的 `ResumableUploadObject`。
   - 腾讯 COS 使用 SDK multipart upload。
   - 七牛 Kodo 使用 SDK `ResumableUploader`。
   - 百度 BOS、京东云 OSS、青云 QingStor 通过 S3 兼容 multipart upload。

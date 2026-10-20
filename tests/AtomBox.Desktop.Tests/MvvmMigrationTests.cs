@@ -20,6 +20,7 @@ using AtomBox.Infrastructure.Configuration;
 using AtomBox.Providers.Common;
 using AtomBox.Transfer;
 using AtomBox.Transfer.Scheduling;
+using AtomBox.Transfer.State;
 using AtomUI.City.Mvvm;
 using AtomUI.City.Presentation;
 using CommunityToolkit.Mvvm.Input;
@@ -241,6 +242,69 @@ public sealed class MvvmMigrationTests
 
         await queue.DisposeAsync();
         await statusBar.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task TransferQueueUpdatesProgressWithoutReplacingTheRunningRow()
+    {
+        await using var context = await DesktopTestContext.CreateAsync();
+        var queue = ActivatorUtilities.CreateInstance<TransferQueueViewModel>(
+            context.Services,
+            new TestLocalizedText(),
+            new ImmediateUiDispatcher());
+        await queue.ActivateAsync(new ActivationScope());
+        var taskStore = context.Services.GetRequiredService<ITransferTaskStore>();
+        var stateStore = context.Services.GetRequiredService<ITransferStateStore>();
+        var synchronizer = context.Services.GetRequiredService<ITransferStateSynchronizer>();
+        var now = DateTimeOffset.UtcNow;
+        var task = new TransferTask(
+            TransferTaskId.New(),
+            StorageAccountId.New(),
+            TransferDirection.Upload,
+            new LocalPath(@"C:\stable-row.bin"),
+            new RemotePath("uploads/stable-row.bin"),
+            TransferStatus.Running,
+            new TransferOptions(TransferOverwritePolicy.Ask),
+            now,
+            now);
+        Assert.True((await taskStore.SaveAsync(task)).IsSuccess);
+        Assert.True((await stateStore.SaveProgressBatchAsync(
+        [
+            new TransferProgressUpdate(
+                task.Id,
+                task.Revision,
+                sequence: 1,
+                new TransferProgress(10, 100, 1024))
+        ])).IsSuccess);
+        Assert.True((await synchronizer.RefreshAsync()).IsSuccess);
+        var originalRow = Assert.Single(queue.Tasks);
+        var collectionChanges = 0;
+        var changedProperties = new List<string?>();
+        var queuePropertyChanges = new List<string?>();
+        queue.Tasks.CollectionChanged += (_, _) => collectionChanges++;
+        originalRow.PropertyChanged += (_, args) => changedProperties.Add(args.PropertyName);
+        queue.PropertyChanged += (_, args) => queuePropertyChanges.Add(args.PropertyName);
+
+        Assert.True((await stateStore.SaveProgressBatchAsync(
+        [
+            new TransferProgressUpdate(
+                task.Id,
+                task.Revision,
+                sequence: 2,
+                new TransferProgress(40, 100, 4096))
+        ])).IsSuccess);
+        Assert.True((await synchronizer.RefreshAsync()).IsSuccess);
+
+        var updatedRow = Assert.Single(queue.Tasks);
+        Assert.Same(originalRow, updatedRow);
+        Assert.Equal(0, collectionChanges);
+        Assert.Empty(queuePropertyChanges);
+        Assert.Equal(40, updatedRow.ProgressValue);
+        Assert.Equal("4 KB/s", updatedRow.Speed);
+        Assert.Contains(nameof(TransferTaskRowViewModel.ProgressValue), changedProperties);
+        Assert.Contains(nameof(TransferTaskRowViewModel.Speed), changedProperties);
+        Assert.True(queue.ExecuteTaskActionCommand.CanExecute(updatedRow));
+        await queue.DisposeAsync();
     }
 
     [Fact]

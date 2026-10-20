@@ -51,10 +51,7 @@
                                                     MinHeight="40"
                                                     BorderBrush="{StaticResource AtomBoxSubtleBorderBrush}"
                                                     BorderThickness="0,0,0,1"
-                                                    Background="{StaticResource AtomBoxSurfaceBrush}"
-                                                    PointerEntered="HandleTransferRowPointerEntered"
-                                                    PointerMoved="HandleTransferRowPointerMoved"
-                                                    PointerExited="HandleTransferRowPointerExited">
+                                                    Background="{StaticResource AtomBoxSurfaceBrush}">
                                                 <Grid Classes="transfer-row-content"
                                                       ColumnDefinitions="1.4*,90,2*,130,90,176"
                                                       Background="Transparent">
@@ -88,7 +85,8 @@
                                                                 VerticalAlignment="Center">
                                                         <atom:Button Content="{Binding Action}"
                                                                      Command="{Binding ActionCommand}"
-                                                                     CommandParameter="{Binding}" />
+                                                                     CommandParameter="{Binding}"
+                                                                     IsEnabled="{Binding CanExecuteAction}" />
                                                         <atom:Button Content="{loc:Loc Common.Abandon}"
                                                                      Command="{Binding AbandonCommand}"
                                                                      CommandParameter="{Binding}"

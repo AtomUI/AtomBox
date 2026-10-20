@@ -5,6 +5,8 @@
 > Matrix ID：`AB-PROVIDERS × CITY-*`
 >
 > 实施分支：`feature/with-city`
+
+> 后续实现说明（2026-10-20）：本审计记录的 SFTP 与 Aliyun OSS 运行中不可取消债务，已在 Providers 自身边界内独立治理。SFTP 现使用 SSH.NET 异步上传/下载并贯穿 `CancellationToken`；Aliyun OSS V1 SDK 没有原生 token，普通上传以可取消流/回调中断请求，大文件改为显式 multipart 编排并在取消时 abort 会话。两项改动均不采用 City 能力，也不改变本审计的 City 决策。
 >
 > 创建时间：2026-10-13
 

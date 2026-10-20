@@ -291,14 +291,16 @@ Round 2 需要：
 
 ### 11.2 TransferSpeedMeter
 
-（当前为占位符，测试覆盖待实现后补充）
-
 | Case | 期望 |
 | --- | --- |
-| `SpeedMeter_ComputesBytesPerSecond` | (bytes delta) / (time delta) 计算正确 |
-| `SpeedMeter_InitialState_ReturnsNullOrZero` | 尚未接收到数据时无有效速度 |
-| `SpeedMeter_MultipleSamples_Averages` | 多次采样后速度平滑或滚动窗口合理 |
-| `SpeedMeter_Disposed_StopsAcceptingData` | Dispose 后 Report 被忽略或抛出 |
+| `Apply_InitialSample_HasNoSpeed` | 尚未形成完整采样窗口时不伪造速度 |
+| `Apply_FullWindow_ComputesBytesPerSecond` | 在完整窗口上按 `(bytes delta) / (time delta)` 计算 |
+| `Apply_DefaultClock_UsesMonotonicTimeProviderTimestamp` | 生产默认路径使用可注入的单调时间戳，不依赖系统墙上时钟 |
+| `Apply_BurstCallbacks_DoNotCreateInstantaneousSpike` | 高频突发回调不使用微秒级相邻时间差产生虚高速度 |
+| `Apply_ShortInterval_CarriesLastStableSpeed` | 窗口内沿用最近一次可信速度 |
+| `Apply_MultipleWindows_UsesExponentialSmoothing` | 多窗口速度使用 EWMA 平滑 |
+| `Apply_ReportedSpeed_PreservesProviderMeasurement` | Provider 显式提供速度时保持该测量值 |
+| `Apply_BytesRegression_ResetsMeasurementWindow` | 字节倒退时重置独立测速器基线；Runtime 同时在调用前拒绝乱序回调 |
 
 ## 12. DI 注册校验测试矩阵
 

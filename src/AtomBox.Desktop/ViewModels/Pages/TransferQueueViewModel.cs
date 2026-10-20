@@ -9,6 +9,7 @@ using AtomBox.Desktop.Services;
 using AtomBox.Transfer.State;
 using AtomUI.City.Mvvm;
 using AtomUI.City.State;
+using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
@@ -31,6 +32,12 @@ public sealed class TransferQueueViewModel : ViewModelBase
     private TransferRuntimeSnapshot _runtimeState = TransferRuntimeSnapshot.Initial;
     private bool _isLoading;
     private TransferTaskRowViewModel? _selectedTask;
+    private bool _taskCollectionStateInitialized;
+    private bool _lastHasTasks;
+    private bool _lastIsEmptyStateVisible;
+    private bool _lastIsTaskListVisible;
+    private bool _lastHasCancelableTasks;
+    private bool _lastHasRetryableTasks;
 
     public TransferQueueViewModel(
         TransferAppService transfers,
@@ -168,9 +175,9 @@ public sealed class TransferQueueViewModel : ViewModelBase
     private void ApplyQueue(TransferQueueState state)
     {
         _queueState = state;
-        Tasks.Clear();
         if (state.Status != TransferProjectionStatus.Ready && !state.IsStale)
         {
+            Tasks.Clear();
             _currentSnapshots = [];
             IsLoading = false;
             SetStatus(state.Status == TransferProjectionStatus.Faulted
@@ -181,15 +188,7 @@ public sealed class TransferQueueViewModel : ViewModelBase
         }
 
         _currentSnapshots = state.Tasks;
-        foreach (var task in state.Tasks)
-        {
-            Tasks.Add(TransferTaskRowViewModel.From(
-                task,
-                ExecuteTaskActionCommand,
-                AbandonTaskCommand,
-                ShowTaskDetailsCommand,
-                _localization));
-        }
+        ReconcileTasks(state.Tasks);
 
         SetStatus(state.Status == TransferProjectionStatus.Faulted
             ? new("Transfer", "QueueStale")
@@ -202,6 +201,72 @@ public sealed class TransferQueueViewModel : ViewModelBase
                         : new("Transfer", "QueueCount", Tasks.Count));
         IsLoading = false;
         RaiseTaskCollectionStateChanged();
+    }
+
+    private void ReconcileTasks(IReadOnlyList<TransferStateSnapshot> snapshots)
+    {
+        var commandStateChanged = false;
+        var desiredTaskIds = snapshots
+            .Select(snapshot => snapshot.Task.Id)
+            .ToHashSet();
+        for (var index = Tasks.Count - 1; index >= 0; index--)
+        {
+            if (!desiredTaskIds.Contains(Tasks[index].TaskId))
+            {
+                Tasks.RemoveAt(index);
+                commandStateChanged = true;
+            }
+        }
+
+        for (var targetIndex = 0; targetIndex < snapshots.Count; targetIndex++)
+        {
+            var snapshot = snapshots[targetIndex];
+            var existingIndex = FindTaskIndex(snapshot.Task.Id);
+            if (existingIndex < 0)
+            {
+                Tasks.Insert(targetIndex, TransferTaskRowViewModel.From(
+                    snapshot,
+                    ExecuteTaskActionCommand,
+                    AbandonTaskCommand,
+                    ShowTaskDetailsCommand,
+                    _localization));
+                commandStateChanged = true;
+                continue;
+            }
+
+            var row = Tasks[existingIndex];
+            var previousCanExecuteAction = row.CanExecuteAction;
+            var previousCanAbandon = row.CanAbandon;
+            var previousHasDetails = row.HasDetails;
+            row.UpdateFrom(snapshot, _localization);
+            commandStateChanged |= previousCanExecuteAction != row.CanExecuteAction ||
+                previousCanAbandon != row.CanAbandon ||
+                previousHasDetails != row.HasDetails;
+            if (existingIndex != targetIndex)
+            {
+                Tasks.Move(existingIndex, targetIndex);
+            }
+        }
+
+        if (commandStateChanged)
+        {
+            ExecuteTaskActionCommand.NotifyCanExecuteChanged();
+            AbandonTaskCommand.NotifyCanExecuteChanged();
+            ShowTaskDetailsCommand.NotifyCanExecuteChanged();
+        }
+    }
+
+    private int FindTaskIndex(TransferTaskId taskId)
+    {
+        for (var index = 0; index < Tasks.Count; index++)
+        {
+            if (Tasks[index].TaskId == taskId)
+            {
+                return index;
+            }
+        }
+
+        return -1;
     }
 
     private async Task NotifyCompletedTasksAsync(
@@ -290,13 +355,44 @@ public sealed class TransferQueueViewModel : ViewModelBase
 
     private void RaiseTaskCollectionStateChanged()
     {
-        OnPropertyChanged(nameof(HasTasks));
-        OnPropertyChanged(nameof(IsEmptyStateVisible));
-        OnPropertyChanged(nameof(IsTaskListVisible));
-        OnPropertyChanged(nameof(HasCancelableTasks));
-        OnPropertyChanged(nameof(HasRetryableTasks));
-        CancelPendingTasksCommand.NotifyCanExecuteChanged();
-        RetryFailedTasksCommand.NotifyCanExecuteChanged();
+        var hasTasks = HasTasks;
+        var isEmptyStateVisible = IsEmptyStateVisible;
+        var isTaskListVisible = IsTaskListVisible;
+        var hasCancelableTasks = HasCancelableTasks;
+        var hasRetryableTasks = HasRetryableTasks;
+        if (!_taskCollectionStateInitialized || hasTasks != _lastHasTasks)
+        {
+            OnPropertyChanged(nameof(HasTasks));
+        }
+
+        if (!_taskCollectionStateInitialized || isEmptyStateVisible != _lastIsEmptyStateVisible)
+        {
+            OnPropertyChanged(nameof(IsEmptyStateVisible));
+        }
+
+        if (!_taskCollectionStateInitialized || isTaskListVisible != _lastIsTaskListVisible)
+        {
+            OnPropertyChanged(nameof(IsTaskListVisible));
+        }
+
+        if (!_taskCollectionStateInitialized || hasCancelableTasks != _lastHasCancelableTasks)
+        {
+            OnPropertyChanged(nameof(HasCancelableTasks));
+            CancelPendingTasksCommand.NotifyCanExecuteChanged();
+        }
+
+        if (!_taskCollectionStateInitialized || hasRetryableTasks != _lastHasRetryableTasks)
+        {
+            OnPropertyChanged(nameof(HasRetryableTasks));
+            RetryFailedTasksCommand.NotifyCanExecuteChanged();
+        }
+
+        _lastHasTasks = hasTasks;
+        _lastIsEmptyStateVisible = isEmptyStateVisible;
+        _lastIsTaskListVisible = isTaskListVisible;
+        _lastHasCancelableTasks = hasCancelableTasks;
+        _lastHasRetryableTasks = hasRetryableTasks;
+        _taskCollectionStateInitialized = true;
     }
 
     private async Task ExecuteTaskActionAsync(
@@ -444,49 +540,145 @@ public sealed class TransferQueueViewModel : ViewModelBase
 
     private void SetStatus(LocalizedText value)
     {
+        var previous = _statusMessage.Resolve(_localization);
         _statusMessage = value;
-        OnPropertyChanged(nameof(StatusMessage));
+        if (!string.Equals(previous, value.Resolve(_localization), StringComparison.Ordinal))
+        {
+            OnPropertyChanged(nameof(StatusMessage));
+        }
     }
 
     private void HandleLanguageChanged(object? sender, EventArgs args)
     {
         OnPropertyChanged(nameof(Title));
         OnPropertyChanged(nameof(StatusMessage));
-        Tasks.Clear();
-        foreach (var task in _currentSnapshots)
-        {
-            Tasks.Add(TransferTaskRowViewModel.From(
-                task,
-                ExecuteTaskActionCommand,
-                AbandonTaskCommand,
-                ShowTaskDetailsCommand,
-                _localization));
-        }
+        ReconcileTasks(_currentSnapshots);
         RaiseTaskCollectionStateChanged();
     }
 
 }
 
-public sealed record TransferTaskRowViewModel(
-    AtomBox.Core.ValueObjects.TransferTaskId TaskId,
-    TransferStatus Status,
-    string FileName,
-    string Direction,
-    string TargetOrSource,
-    string Progress,
-    double ProgressValue,
-    bool IsProgressBarVisible,
-    string Speed,
-    string? Reason,
-    bool HasDetails,
-    string Action,
-    bool CanExecuteAction,
-    ICommand ActionCommand,
-    bool CanAbandon,
-    ICommand AbandonCommand,
-    ICommand DetailsCommand)
+public sealed class TransferTaskRowViewModel : ObservableObject
 {
+    private TransferStatus _status;
+    private string _fileName = string.Empty;
+    private string _direction = string.Empty;
+    private string _targetOrSource = string.Empty;
+    private string _progress = string.Empty;
+    private double _progressValue;
+    private bool _isProgressBarVisible;
+    private string _speed = string.Empty;
+    private string? _reason;
+    private bool _hasDetails;
+    private string _action = string.Empty;
+    private bool _canExecuteAction;
+    private bool _canAbandon;
+
+    private TransferTaskRowViewModel(
+        TransferTaskId taskId,
+        ICommand actionCommand,
+        ICommand abandonCommand,
+        ICommand detailsCommand)
+    {
+        TaskId = taskId;
+        ActionCommand = actionCommand;
+        AbandonCommand = abandonCommand;
+        DetailsCommand = detailsCommand;
+    }
+
+    public TransferTaskId TaskId { get; }
+
+    public TransferStatus Status
+    {
+        get => _status;
+        private set => SetProperty(ref _status, value);
+    }
+
+    public string FileName
+    {
+        get => _fileName;
+        private set => SetProperty(ref _fileName, value);
+    }
+
+    public string Direction
+    {
+        get => _direction;
+        private set => SetProperty(ref _direction, value);
+    }
+
+    public string TargetOrSource
+    {
+        get => _targetOrSource;
+        private set => SetProperty(ref _targetOrSource, value);
+    }
+
+    public string Progress
+    {
+        get => _progress;
+        private set => SetProperty(ref _progress, value);
+    }
+
+    public double ProgressValue
+    {
+        get => _progressValue;
+        private set => SetProperty(ref _progressValue, value);
+    }
+
+    public bool IsProgressBarVisible
+    {
+        get => _isProgressBarVisible;
+        private set
+        {
+            if (SetProperty(ref _isProgressBarVisible, value))
+            {
+                OnPropertyChanged(nameof(IsProgressTextVisible));
+            }
+        }
+    }
+
     public bool IsProgressTextVisible => !IsProgressBarVisible;
+
+    public string Speed
+    {
+        get => _speed;
+        private set => SetProperty(ref _speed, value);
+    }
+
+    public string? Reason
+    {
+        get => _reason;
+        private set => SetProperty(ref _reason, value);
+    }
+
+    public bool HasDetails
+    {
+        get => _hasDetails;
+        private set => SetProperty(ref _hasDetails, value);
+    }
+
+    public string Action
+    {
+        get => _action;
+        private set => SetProperty(ref _action, value);
+    }
+
+    public bool CanExecuteAction
+    {
+        get => _canExecuteAction;
+        private set => SetProperty(ref _canExecuteAction, value);
+    }
+
+    public ICommand ActionCommand { get; }
+
+    public bool CanAbandon
+    {
+        get => _canAbandon;
+        private set => SetProperty(ref _canAbandon, value);
+    }
+
+    public ICommand AbandonCommand { get; }
+
+    public ICommand DetailsCommand { get; }
 
     public static TransferTaskRowViewModel From(
         TransferStateSnapshot snapshot,
@@ -495,29 +687,44 @@ public sealed record TransferTaskRowViewModel(
         ICommand detailsCommand,
         IAtomBoxLocalizedText localization)
     {
+        var row = new TransferTaskRowViewModel(
+            snapshot.Task.Id,
+            actionCommand,
+            abandonCommand,
+            detailsCommand);
+        row.UpdateFrom(snapshot, localization);
+        return row;
+    }
+
+    internal void UpdateFrom(
+        TransferStateSnapshot snapshot,
+        IAtomBoxLocalizedText localization)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        ArgumentNullException.ThrowIfNull(localization);
+        if (snapshot.Task.Id != TaskId)
+        {
+            throw new ArgumentException("A transfer row cannot change its task identity.", nameof(snapshot));
+        }
+
         var task = snapshot.Task;
         var targetOrSource = task.Direction == TransferDirection.Upload
             ? task.RemotePath.ToString()
             : task.LocalPath.ToString();
-
-        return new TransferTaskRowViewModel(
-            task.Id,
-            task.Status,
-            GetFileName(task, localization),
-            FormatDirection(task.Direction, localization),
-            string.IsNullOrWhiteSpace(targetOrSource) ? "/" : targetOrSource,
-            FormatProgress(task.Status, snapshot.Progress, localization),
-            snapshot.Progress?.Percent ?? 0,
-            task.Status == TransferStatus.Running && snapshot.Progress?.Percent is not null,
-            FormatSpeed(task.Status, snapshot.Progress),
-            task.StatusReason,
-            !string.IsNullOrWhiteSpace(task.StatusReason) || task.Status is TransferStatus.Failed or TransferStatus.Interrupted,
-            FormatAction(task.Status, localization),
-            CanExecuteActionFor(task.Status, snapshot.CanRetry),
-            actionCommand,
-            task.Status == TransferStatus.Interrupted,
-            abandonCommand,
-            detailsCommand);
+        Status = task.Status;
+        FileName = GetFileName(task, localization);
+        Direction = FormatDirection(task.Direction, localization);
+        TargetOrSource = string.IsNullOrWhiteSpace(targetOrSource) ? "/" : targetOrSource;
+        Progress = FormatProgress(task.Status, snapshot.Progress, localization);
+        ProgressValue = snapshot.Progress?.Percent ?? 0;
+        IsProgressBarVisible = task.Status == TransferStatus.Running && snapshot.Progress?.Percent is not null;
+        Speed = FormatSpeed(task.Status, snapshot.Progress);
+        Reason = task.StatusReason;
+        HasDetails = !string.IsNullOrWhiteSpace(task.StatusReason) ||
+            task.Status is TransferStatus.Failed or TransferStatus.Interrupted;
+        Action = FormatAction(task.Status, localization);
+        CanExecuteAction = CanExecuteActionFor(task.Status, snapshot.CanRetry);
+        CanAbandon = task.Status == TransferStatus.Interrupted;
     }
 
     private static string GetFileName(TransferTask task, IAtomBoxLocalizedText localization)

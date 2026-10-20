@@ -360,14 +360,19 @@ public sealed class TransferRuntimeController : ITransferTaskScheduler
             foreach (var task in tasksResult.GetValueOrThrow()
                          .Where(item => item.Status is TransferStatus.Running or TransferStatus.Canceling))
             {
-                var interrupted = task.WithStatus(
-                    TransferStatus.Interrupted,
-                    _timeProvider.GetUtcNow(),
-                    "应用上次退出时任务仍在运行，远端最终结果未知。",
-                    StorageErrorCategory.Unknown,
-                    isRetryable: true);
+                var recovered = task.Status == TransferStatus.Canceling
+                    ? task.WithStatus(
+                        TransferStatus.Canceled,
+                        _timeProvider.GetUtcNow(),
+                        "用户已请求取消；应用重启时确认本地传输执行体已停止。")
+                    : task.WithStatus(
+                        TransferStatus.Interrupted,
+                        _timeProvider.GetUtcNow(),
+                        "应用上次退出时任务仍在运行，远端最终结果未知。",
+                        StorageErrorCategory.Unknown,
+                        isRetryable: true);
                 var recovery = await _taskStore.CompareExchangeAsync(
-                    interrupted,
+                    recovered,
                     task.Revision,
                     task.Status,
                     cancellationToken).ConfigureAwait(false);
@@ -640,7 +645,8 @@ public sealed class TransferRuntimeController : ITransferTaskScheduler
                 running,
                 _executorFactory(),
                 _runtimeCancellation!.Token,
-                SignalProgress);
+                SignalProgress,
+                _timeProvider);
             if (!_active.TryAdd(running.Id, entry))
             {
                 entry.Dispose();
@@ -809,18 +815,18 @@ public sealed class TransferRuntimeController : ITransferTaskScheduler
             }
 
             TransferTask terminal;
-            if (execution.Result.IsSuccess)
-            {
-                terminal = current.WithStatus(
-                    TransferStatus.Succeeded,
-                    _timeProvider.GetUtcNow());
-            }
-            else if (entry.IsUserCancellationRequested && current.Status == TransferStatus.Canceling)
+            if (current.Status == TransferStatus.Canceling)
             {
                 terminal = current.WithStatus(
                     TransferStatus.Canceled,
                     _timeProvider.GetUtcNow(),
                     "用户取消了传输任务。");
+            }
+            else if (execution.Result.IsSuccess)
+            {
+                terminal = current.WithStatus(
+                    TransferStatus.Succeeded,
+                    _timeProvider.GetUtcNow());
             }
             else if (entry.IsHostCancellationRequested)
             {
@@ -1254,7 +1260,7 @@ public sealed class TransferRuntimeController : ITransferTaskScheduler
         private readonly object _gate = new();
         private readonly CancellationTokenSource _cancellation;
         private readonly Action _signalProgress;
-        private readonly TransferSpeedMeter _speedMeter = new();
+        private readonly TransferSpeedMeter _speedMeter;
         private TransferTask _task;
         private TransferProgress? _latest;
         private long _sequence;
@@ -1268,11 +1274,13 @@ public sealed class TransferRuntimeController : ITransferTaskScheduler
             TransferTask task,
             TransferOperationExecutor executor,
             CancellationToken runtimeCancellation,
-            Action signalProgress)
+            Action signalProgress,
+            TimeProvider timeProvider)
         {
             _task = task;
             Executor = executor;
             _signalProgress = signalProgress;
+            _speedMeter = new TransferSpeedMeter(timeProvider);
             _cancellation = CancellationTokenSource.CreateLinkedTokenSource(runtimeCancellation);
         }
 
@@ -1349,12 +1357,12 @@ public sealed class TransferRuntimeController : ITransferTaskScheduler
                     return;
                 }
 
-                var measured = _speedMeter.Apply(value);
-                if (_latest is not null && measured.BytesTransferred < _latest.BytesTransferred)
+                if (_latest is not null && value.BytesTransferred < _latest.BytesTransferred)
                 {
                     return;
                 }
 
+                var measured = _speedMeter.Apply(value);
                 _latest = measured;
                 _sequence++;
             }
