@@ -12,6 +12,7 @@ using AtomBox.Infrastructure.Configuration;
 using AtomBox.Transfer.Scheduling;
 using AtomBox.Transfer.State;
 using AtomUI.City.Core.Diagnostics;
+using AtomUI.City.Mvvm;
 using AtomUI.City.Presentation;
 using AtomUI.City.Routing;
 using Microsoft.Extensions.DependencyInjection;
@@ -136,6 +137,8 @@ public sealed class CityHostIntegrationTests
             Assert.NotNull(host.Services.GetRequiredService<IAtomBoxLocalizedText>());
             Assert.NotNull(host.Services.GetRequiredService<IDesktopLanguageService>());
             Assert.NotNull(host.Services.GetRequiredService<IPresentationRuntime>());
+            Assert.NotNull(host.Services.GetRequiredService<IRoutePresentationCoordinator>());
+            Assert.NotNull(host.Services.GetRequiredService<CommandExecutionDomain>());
             var runtime = host.Services.GetRequiredService<TransferRuntimeController>();
             Assert.Equal(TransferRuntimeLifecycleState.Created, runtime.Current.Lifecycle);
             Assert.Null(host.ApplicationScope);

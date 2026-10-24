@@ -381,12 +381,15 @@ public sealed class MvvmMigrationTests
             new TestAccountDialogWorkflow(),
             statusBar,
             dispatcher);
+        await shell.ActivateAsync(new ActivationScope());
+        navigation.ArmSupersession();
 
-        var firstNavigation = shell.NavigateByMenuKeyAsync(NavigationMenuKeys.Home);
+        var firstNavigation = shell.NavigateByMenuKeyCommand.ExecuteAsync(NavigationMenuKeys.Home);
         await navigation.FirstNavigationStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
 
-        var latestNavigation = shell.NavigateByMenuKeyAsync(NavigationMenuKeys.Settings);
-        await Task.WhenAll(firstNavigation, latestNavigation).WaitAsync(TimeSpan.FromSeconds(5));
+        var latestNavigation = shell.NavigateByMenuKeyCommand.ExecuteAsync(NavigationMenuKeys.Settings);
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => firstNavigation);
+        await latestNavigation.WaitAsync(TimeSpan.FromSeconds(5));
 
         Assert.True(navigation.FirstNavigationObservedCancellation);
         Assert.Equal(NavigationTarget.Settings, navigation.CommittedTarget);
@@ -727,12 +730,13 @@ public sealed class MvvmMigrationTests
     private sealed class SupersedingNavigationService : INavigationService
     {
         private readonly SemaphoreSlim _navigationGate = new(1, 1);
-        private int _navigationCount;
+        private int _controlledNavigationCount;
         private int _firstNavigationObservedCancellation;
+        private int _supersessionArmed;
 
         public event EventHandler? CurrentMenuKeyChanged;
 
-        public TaskCompletionSource<bool> FirstNavigationStarted { get; } =
+        public TaskCompletionSource<bool> FirstNavigationStarted { get; private set; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public string? CurrentMenuKey { get; private set; }
@@ -742,6 +746,15 @@ public sealed class MvvmMigrationTests
         public bool FirstNavigationObservedCancellation =>
             Volatile.Read(ref _firstNavigationObservedCancellation) != 0;
 
+        public void ArmSupersession()
+        {
+            FirstNavigationStarted = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+            Volatile.Write(ref _controlledNavigationCount, 0);
+            Volatile.Write(ref _firstNavigationObservedCancellation, 0);
+            Volatile.Write(ref _supersessionArmed, 1);
+        }
+
         public async Task NavigateAsync(
             NavigationTarget target,
             object? parameter = null,
@@ -750,7 +763,8 @@ public sealed class MvvmMigrationTests
             await _navigationGate.WaitAsync(cancellationToken);
             try
             {
-                if (Interlocked.Increment(ref _navigationCount) == 1)
+                if (Volatile.Read(ref _supersessionArmed) != 0 &&
+                    Interlocked.Increment(ref _controlledNavigationCount) == 1)
                 {
                     FirstNavigationStarted.TrySetResult(true);
                     try

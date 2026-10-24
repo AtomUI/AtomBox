@@ -15,7 +15,7 @@ using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class HomeViewModel : ViewModelBase
+public sealed class HomeViewModel : DesktopViewModelBase
 {
     private readonly IAtomBoxApplicationState _applicationState;
     private readonly IAtomBoxTransferState _transferState;

@@ -6,6 +6,7 @@ using AtomBox.Core.ValueObjects;
 using AtomBox.Desktop.Dialogs;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Navigation;
+using AtomBox.Desktop.ViewModels;
 using AtomUI.City.Mvvm;
 using AtomUI.City.State;
 using CommunityToolkit.Mvvm.Input;
@@ -13,7 +14,7 @@ using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class AccountManagementViewModel : ViewModelBase
+public sealed class AccountManagementViewModel : DesktopViewModelBase
 {
     private readonly AccountAppService _accounts;
     private readonly IAtomBoxApplicationState _applicationState;

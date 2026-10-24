@@ -1,65 +1,31 @@
 # AtomBox Desktop Navigation 设计
 
-> 当前实现说明（2026-10-13）：本文记录的 `CurrentViewModel` 和 `IPageViewModelFactory` 已被 City Router、最终参数快照和 RouteOutlet entry 取代。AtomBox `INavigationService` 现在只是业务 `NavigationTarget`/参数到 City route 的适配器；现行合同以 [City 迁移审计](../../iterations/features/with-city.md) 与 [MVVM 迁移记录](../../iterations/features/with-city-mvvm.md) 为准。
-
-> 文档状态：第一版发布基线冻结
+> 文档状态：当前实现合同
 >
-> 冻结时间：2026-06-22
->
-> 冻结范围：当前文档定义的 Desktop 第一版导航模型、导航目标、导航参数、菜单 key 同步和页面 ViewModel 工厂边界
->
-> 变更规则：第一版发布前代码已冻结；如需调整本文档定义的导航边界，必须先说明原因，再同步更新相关 Presentation 文档。
+> 最近更新：2026-10-24，City `7f273ea`
 
-本文档定义 Desktop 内部导航边界。Navigation 只管理“当前应该进入哪个页面、带什么参数、当前页面 ViewModel 是谁”，不负责创建 Avalonia View。
+本文定义 AtomBox Desktop 的应用导航适配边界。路由真相、提交回执、条件恢复和页面 Outlet 生命周期由 City 提供；AtomBox 只定义业务导航目标、参数编解码、页面计划以及菜单选中投影。
 
-## 1. 定位
+## 1. 职责与依赖方向
 
-Navigation 是应用内位置管理，不是 View 创建器。
-
-它回答的问题是：
-
-- 用户现在应该看到哪个页面。
-- 页面切换需要哪些参数。
-- 当前页面 ViewModel 是哪个。
-- 通过哪个显式页面 ViewModel 工厂获取目标 ViewModel。
-- 左侧菜单选中状态应同步到哪个菜单 key。
-
-它不回答的问题是：
-
-- 某个 ViewModel 对应哪个 `.axaml`。
-- AtomUI 控件如何布局。
-- 远程 provider 如何连接。
-- 传输任务如何执行。
-
-## 2. 第一版导航目标
-
-第一版使用轻量导航服务：
-
-```csharp
-public interface INavigationService
-{
-    object? CurrentViewModel { get; }
-
-    Task NavigateAsync(NavigationTarget target, object? parameter = null);
-}
-```
-
-`CurrentViewModel` 由 `MainWindowViewModel` 暴露给右侧 `ContentControl`，View 创建交给 `ViewFactory`。
-
-`NavigationService` 不直接创建页面 ViewModel。目标页面 ViewModel 必须通过 `IPageViewModelFactory` 创建或获取。
-
-推荐关系如下：
+当前主链路为：
 
 ```text
-NavigationService
-  -> IPageViewModelFactory
-    -> 显式 Func<TViewModel> / 具体页面工厂
-      -> 页面 ViewModel
+菜单 City Command
+  -> CommandExecutionDomain（latest-wins）
+  -> AtomBox INavigationService
+  -> City IRoutePresentationCoordinator
+      -> City IRouter commit
+      -> AtomBox IRoutePresentationPlanFactory adapter
+          -> City ViewModelLease / ViewLocator / ViewFactory / ViewBinder
+      -> City RouteOutlet commit
+      -> 失败时按 NavigationCommitReceipt 条件恢复 Router
+  -> 成功后发布 CurrentMenuKey
 ```
 
-## 3. NavigationTarget
+`NavigationService` 是 Desktop 应用级 adapter。它可以引用 Desktop 参数类型、City Router 和 Presentation 服务，但不能调用 Provider、持有 SDK client、访问 Infrastructure 持久化实现或拥有传输 worker。
 
-第一版稳定页面目标：
+## 2. 稳定导航目标
 
 ```csharp
 public enum NavigationTarget
@@ -73,89 +39,72 @@ public enum NavigationTarget
 }
 ```
 
-枚举不是业务模型，只是 Desktop 内部导航目标。它不能进入 Core、Application、Transfer、Providers、Infrastructure。
+`NavigationTarget` 只属于 Desktop，不进入 Core、Application、Transfer、Providers 或 Infrastructure。
 
-## 4. 参数模型
+六个目标由 `AtomBoxRouteCatalog` 映射到 City route graph。当前唯一页面 Outlet 为 `primary`。
 
-导航参数必须是 Desktop 内部 UI 参数对象，不能直接塞 SDK 类型或 Provider 实例。
+## 3. 参数合同
 
-当前参数：
+AtomBox 参数在 Router 提交前编码为字符串字典；页面计划必须从 Router 已提交的最终参数快照重新解码，不能继续使用调用方的可变对象。
 
-```text
-RemoteBrowserNavigationParameter
-  - ResourceGroup
-    - All
-    - ObjectStorage
-    - FileTransfer
-  - StorageAccountId?
-  - RemotePath?
+- `RemoteBrowserNavigationParameter`：资源分组、可选账号 ID、可选远端路径；
+- `TransferHistoryNavigationParameter`：可选页码；
+- `AccountManagementNavigationParameter`：可选选中账号 ID。
 
-TransferHistoryNavigationParameter
-  - PageIndex?
+参数可以包含 Core 稳定值对象的序列化表示，但不得包含 secret material、Provider、SDK client、repository 或 View 实例。
 
-AccountManagementNavigationParameter
-  - SelectedAccountId?
-```
+页面计划在 ViewModel 首次激活前应用最终参数。因此 `RemoteBrowserViewModel` 的第一次 Activation 加载能够直接观察最终账号和路径，不需要先加载默认页面再修正。
 
-参数可以引用 Core 的稳定值对象，例如 `StorageAccountId`、`RemotePath`。参数不能包含 secret material、provider、SDK client、repository 实现。
+## 4. 原子提交与失败恢复
 
-## 5. 点击行为映射
+一次导航必须通过 `IRoutePresentationCoordinator.NavigateAsync` 完成，AtomBox 不再直接先调用 Router、再手工调用 Outlet。
 
-左侧菜单点击行为进入 `NavigationService`：
+协调器负责：
 
-| 菜单节点 | NavigationTarget | 参数 |
-| --- | --- | --- |
-| 首页 | `Home` | 无。 |
-| 远程存储 | `RemoteBrowser` | `ResourceGroup = All`。 |
-| OSS | `RemoteBrowser` | `ResourceGroup = ObjectStorage`。 |
-| FTP/SFTP | `RemoteBrowser` | `ResourceGroup = FileTransfer`。 |
-| 具体连接实例 | `RemoteBrowser` | `ResourceGroup`、`StorageAccountId` 和可选路径。 |
-| 传输队列 | `TransferQueue` | 无。 |
-| 历史记录 | `TransferHistory` | 可选页码。 |
-| 应用设置 | `Settings` | 无。 |
-| 账号管理 | `AccountManagement` | 可选选中账号。 |
+1. 为同一 Outlet 串行化技术提交；
+2. 执行 Router 导航并取得 `NavigationCommitReceipt`；
+3. 请求 AtomBox 创建单次使用的 `RouteOutletCommitPlan`；
+4. 把计划提交给 RouteOutlet；
+5. 当计划创建、View 绑定、ViewModel 激活或 Outlet 提交失败时，按回执尝试恢复提交前 Router 快照；
+6. 若已有更新的 Router 提交，拒绝用旧回执覆盖新状态，并返回结构化结果。
 
-添加账号入口不作为左侧菜单独立节点；它由远程存储页、空状态或账号管理页触发，并调用统一账号弹窗流程。
+只有 `RoutePresentationResultStatus.Succeeded` 才能更新 `CurrentMenuKey`。失败结果必须保留 City 的状态、消息和异常链；调用取消必须继续表现为 `OperationCanceledException`，不能伪装成普通导航失败。
 
-## 6. 菜单 key 同步
+## 5. 页面候选所有权
 
-`NavigationService` 在页面切换后解析当前菜单 key：
+AtomBox 计划工厂负责取得 ViewModel lease、定位并创建 View、绑定 DataContext，然后生成 `RouteOutletCommitPlan`。
 
-- `Home` -> 首页。
-- `RemoteBrowser + ResourceGroup.All` -> 远程存储。
-- `RemoteBrowser + ResourceGroup.ObjectStorage` -> OSS。
-- `RemoteBrowser + ResourceGroup.FileTransfer` -> FTP/SFTP。
-- `RemoteBrowser + StorageAccountId` -> 对应真实账号节点。
-- `TransferQueue`、`TransferHistory`、`Settings`、`AccountManagement` -> 对应功能节点。
+- 计划返回前发生异常：AtomBox 释放尚未转交的 BoundViewHandle 和 ViewModel lease；
+- 计划返回并提交 Outlet：候选所有权转交 City；
+- Outlet 成功：City 持有新 entry，并在提交后停用和释放旧 entry；
+- Outlet 失败或取消：City 回滚可见内容并释放被拒绝候选。
 
-右侧页面之间的跳转必须同步左侧菜单选中状态。例如上传或下载创建任务后跳转传输队列，左侧菜单也应选中 `传输队列`。
+应用代码不得在计划提交后再次释放候选，也不得在 ViewModel 中保存 View 引用。
 
-## 7. Router 规则
+## 6. 菜单并发与取消
 
-第一版不单独引入 Router。
+`MainWindowViewModel.NavigateByMenuKeyCommand` 使用由 DI/Host 所有的 `CommandExecutionDomain`，并采用 `CommandConcurrencyPolicy.Allow`。这样，同一命令的新执行原子取得新 generation，并请求取消此前执行。
 
-当前第一版没有外部深链、URL 地址、导航历史栈、可序列化路由状态，因此不需要 Router。
+latest-wins 只提供执行所有权、取消请求和 currentness，不会强杀不观察 token 的第三方任务。AtomBox 必须把 City 给出的标准 `CancellationToken` 原样传到 Router、计划创建、ViewModel Activation 和下游业务调用。
 
-如果后续引入 Router，它必须放在 `Navigation/` 下，并位于 `NavigationService` 前面。
+Domain 是 Host 单例异步可释放对象。Host 关闭时停止接收新执行、取消活动执行并等待 drain；ViewModel 不自行维护额外的 CTS、锁或版本号。
 
-## 8. 生命周期和禁止事项
+## 7. 菜单 key 投影
 
-`NavigationService` 是 Desktop 应用级服务。
+菜单 key 是 AtomBox NavMenu 的展示状态，不是第二套路由真相。导航与页面呈现都成功后，`NavigationService` 才根据目标和最终参数映射：
 
-它可以长期持有当前页面 ViewModel 引用，但不能长期持有：
+- `Home` -> 首页；
+- RemoteBrowser 分组 -> 远程存储、OSS、FTP/SFTP 或 WebDAV；
+- RemoteBrowser 指定账号 -> 对应账号节点；
+- TransferQueue、TransferHistory、Settings、AccountManagement -> 对应功能节点。
 
-- View 实例。
-- Provider 实例。
-- SDK client。
-- Transfer worker。
-- Secret material。
+上传完成后跳转传输队列等页面内导航同样必须经过 `INavigationService`，以同步左侧菜单。
 
-禁止事项：
+## 8. 验证要求
 
-- Navigation 不创建 Avalonia View。
-- Navigation 不调用 Provider。
-- Navigation 不直接访问 Infrastructure 持久化实现。
-- Navigation 不直接持有或调用 `IServiceProvider`。
-- Navigation 不直接 `new` 页面 ViewModel。
-- Navigation 不承担弹窗职责。
-- Navigation 不解析 AtomUI 控件事件细节。
+- City Host 必须能解析 `IRoutePresentationCoordinator` 和共享 `CommandExecutionDomain`；
+- 导航参数编码/解码必须往返一致；
+- 最终参数必须在目标 ViewModel 首次 Activation 前应用；
+- 快速菜单点击必须取消旧 generation，最终只提交最新目标；
+- Router 成功而页面计划失败时，必须由协调器恢复或返回明确的恢复拒绝状态；
+- 构建、Desktop 自动化测试与最终人工 UI 菜单烟测全部通过后，升级才可合并。

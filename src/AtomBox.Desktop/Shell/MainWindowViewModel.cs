@@ -15,7 +15,7 @@ using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.Shell;
 
-public sealed class MainWindowViewModel : ViewModelBase, IShellNavigationController
+public sealed class MainWindowViewModel : DesktopViewModelBase, IShellNavigationController
 {
     private readonly INavigationService _navigationService;
     private readonly IAccountDialogWorkflow _accountDialogWorkflow;
@@ -23,8 +23,6 @@ public sealed class MainWindowViewModel : ViewModelBase, IShellNavigationControl
     private readonly IDesktopPreferencesService _preferences;
     private readonly CityUiDispatcher _dispatcher;
     private readonly Dictionary<StorageAccountId, StorageAccountSummary> _navigationAccounts = [];
-    private readonly object _menuNavigationGate = new();
-    private CancellationTokenSource? _menuNavigationCancellation;
     private string? _currentMenuKey;
 
     public MainWindowViewModel(
@@ -34,6 +32,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IShellNavigationControl
         IDesktopPreferencesService preferences,
         StatusBarViewModel statusBar,
         DesktopCommandFactory commands,
+        CommandExecutionDomain navigationExecutionDomain,
         CityUiDispatcher dispatcher)
     {
         _navigationService = navigationService;
@@ -43,9 +42,10 @@ public sealed class MainWindowViewModel : ViewModelBase, IShellNavigationControl
         _dispatcher = dispatcher;
         StatusBar = statusBar;
         NavigateByMenuKeyCommand = commands.CreateAsync<string>(
+            navigationExecutionDomain,
             this,
             nameof(NavigateByMenuKeyCommand),
-            NavigateByMenuKeyAsync,
+            (itemKey, _, cancellationToken) => NavigateByMenuKeyAsync(itemKey, cancellationToken),
             concurrencyPolicy: CommandConcurrencyPolicy.Allow);
     }
 
@@ -79,37 +79,7 @@ public sealed class MainWindowViewModel : ViewModelBase, IShellNavigationControl
         string? itemKey,
         CancellationToken cancellationToken = default)
     {
-        using var supersession = new CancellationTokenSource();
-        using var linkedCancellation = CancellationTokenSource.CreateLinkedTokenSource(
-            cancellationToken,
-            supersession.Token);
-
-        lock (_menuNavigationGate)
-        {
-            _menuNavigationCancellation?.Cancel();
-            _menuNavigationCancellation = supersession;
-        }
-
-        try
-        {
-            await NavigateByMenuKeyCoreAsync(itemKey, linkedCancellation.Token).ConfigureAwait(true);
-        }
-        catch (OperationCanceledException) when (
-            supersession.IsCancellationRequested &&
-            !cancellationToken.IsCancellationRequested)
-        {
-            // A newer menu selection superseded this navigation intent.
-        }
-        finally
-        {
-            lock (_menuNavigationGate)
-            {
-                if (ReferenceEquals(_menuNavigationCancellation, supersession))
-                {
-                    _menuNavigationCancellation = null;
-                }
-            }
-        }
+        await NavigateByMenuKeyCoreAsync(itemKey, cancellationToken).ConfigureAwait(true);
     }
 
     private Task NavigateByMenuKeyCoreAsync(
