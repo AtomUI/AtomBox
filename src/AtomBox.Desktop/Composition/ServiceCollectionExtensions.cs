@@ -26,6 +26,8 @@ public static class ServiceCollectionExtensions
         services.AddSingleton<IAccountDialogWorkflow, AccountDialogWorkflow>();
         services.AddSingleton<IMessageService, MessageService>();
         services.AddSingleton<ICommandExceptionHandler, DesktopCommandExceptionHandler>();
+        services.AddSingleton(serviceProvider => new CommandExecutionDomain(
+            serviceProvider.GetService<AtomUI.City.Core.Diagnostics.IHostDiagnostics>()));
         services.AddSingleton<DesktopCommandFactory>();
         services.AddSingleton<IFilePickerService, AvaloniaFilePickerService>();
 

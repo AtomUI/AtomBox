@@ -16,6 +16,7 @@ using AtomBox.Desktop.Dialogs;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Services;
+using AtomBox.Desktop.ViewModels;
 using AtomUI.Controls;
 using AtomUI.Desktop.Controls;
 using AtomUI.Icons.AntDesign;
@@ -28,7 +29,7 @@ using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class RemoteBrowserViewModel : ViewModelBase
+public sealed class RemoteBrowserViewModel : DesktopViewModelBase
 {
     private readonly IAtomBoxApplicationState _applicationState;
     private readonly RemoteBrowserAppService _browser;

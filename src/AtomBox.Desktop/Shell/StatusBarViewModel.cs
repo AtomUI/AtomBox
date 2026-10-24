@@ -8,7 +8,7 @@ using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.Shell;
 
-public sealed class StatusBarViewModel : ViewModelBase
+public sealed class StatusBarViewModel : DesktopViewModelBase
 {
     private readonly IAtomBoxTransferState _transferState;
     private readonly IAtomBoxLocalizedText _localization;

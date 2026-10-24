@@ -10,6 +10,17 @@ AtomBox Desktop 的框架职责已迁移到 AtomUI.City：City Host 是唯一组
 
 City 能力遵循业务所有权落位：Application 直接采用 City.State；Transfer 采用 City.Core.Module 与 City.State；Core、Providers 和 Infrastructure 保持零 City 引用。Desktop 只消费上游状态并形成 UI 投影，不接管上游业务事实。
 
+## City `7f273ea` 升级
+
+2026-10-24，AtomBox 在 `feature/update-city` 分支把 City 子模块从 `34ce19f` 升级到 `7f273ea`。本次升级落实以下适配：
+
+- City `ViewModelBase` 已改为框架自有的轻量通知实现，不再从 CommunityToolkit 基类继承。Desktop 增加 `DesktopViewModelBase`，只补充按属性名发送通知的应用便利方法；激活、停用、ActivationScope、释放和属性存储仍全部采用 City 合同。
+- `NavigationService` 不再自行拼接“Router 提交 + Outlet 提交”事务，而是采用 `IRoutePresentationCoordinator`。页面计划创建或 Outlet 提交失败时，由 City 根据 `NavigationCommitReceipt` 条件恢复 Router 快照，避免路由真相与可见页面分裂。
+- 菜单导航删除手写的 `CancellationTokenSource + lock` supersession 状态机，改用 Host 所有的 `CommandExecutionDomain`。同一菜单命令以 `Allow` 准入并采用 latest-wins；新意图请求取消旧意图，Domain 在 Host 释放时取消并 drain 活动执行。
+- City.State 在该版本区间没有运行时合同变化；Application 与 Transfer 的既有 State 迁移无需调整。City.Data、SignalR、严格 NativeAOT 和 CLI 改动不进入 AtomBox 当前运行时边界。
+
+升级后的导航合同和失败恢复规则以 [AtomBox Desktop Navigation 设计](../../modules/presentation/navigation.md) 为准。
+
 ## 当前架构
 
 ```text
@@ -192,9 +203,9 @@ City `353d3b9` 修复了该契约：非 OS 关闭若已被更早的应用处理�
 ## 自动验证
 
 - AtomBox Release 全解构建：0 warning、0 error；
-- AtomBox 当前全量测试：666/666；
+- AtomBox 当前全量测试：703/703；
 - win-x64、linux-x64、osx-arm64 自包含单文件发布全部成功；
-- Desktop 当前测试：34/34，覆盖 Host 启停与失败回滚、Transfer Module 生命周期、单实例、六条 route、六个 View 注册、导航参数往返、City 本地化、MVVM 生命周期、Shell composition 和依赖边界；
+- Desktop 当前测试：39/39，覆盖 Host 启停与失败回滚、Transfer Module 生命周期、单实例、六条 route、六个 View 注册、导航参数往返、City 本地化、MVVM 生命周期、Shell composition、共享导航执行域和依赖边界；
 - City MVVM 测试 89/89、Public API governance 4/4，Mvvm net8.0/net10.0 构建通过；
 - 本地化集成测试覆盖 City embedded package 读取、英文到简体中文切换，以及同一 revision 的原子快照发布；
 - City Generator 测试 206/206、Localization 测试 96/96；静态 embedded package 不依赖 `Assembly.Location`，单文件发布可直接加载 source assembly；

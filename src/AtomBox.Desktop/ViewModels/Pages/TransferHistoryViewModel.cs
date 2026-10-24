@@ -6,13 +6,14 @@ using AtomBox.Desktop.Localization;
 using AtomBox.Core.Transfers;
 using AtomBox.Desktop.Navigation;
 using AtomBox.Desktop.Services;
+using AtomBox.Desktop.ViewModels;
 using AtomUI.City.Mvvm;
 using CommunityToolkit.Mvvm.Input;
 using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class TransferHistoryViewModel : ViewModelBase
+public sealed class TransferHistoryViewModel : DesktopViewModelBase
 {
     private readonly TransferAppService _transfers;
     private readonly IMessageService _messages;

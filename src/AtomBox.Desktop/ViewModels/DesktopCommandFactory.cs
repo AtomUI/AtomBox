@@ -54,6 +54,26 @@ public sealed class DesktopCommandFactory
             _exceptionHandler);
     }
 
+    public IAsyncRelayCommand<T> CreateAsync<T>(
+        CommandExecutionDomain executionDomain,
+        IActivationScopeOwner owner,
+        string commandName,
+        Func<T?, CommandExecutionLease, CancellationToken, Task> execute,
+        Predicate<T?>? canExecute = null,
+        CommandConcurrencyPolicy concurrencyPolicy = CommandConcurrencyPolicy.Reject,
+        Func<T?, object?>? concurrencyKeySelector = null)
+    {
+        return _uiCommands.CreateAsync(
+            executionDomain,
+            execute,
+            canExecute,
+            new CommandExecutionState(commandName, owner.GetType()),
+            owner,
+            concurrencyPolicy,
+            concurrencyKeySelector,
+            _exceptionHandler);
+    }
+
     public IRelayCommand Create(
         ViewModelBase owner,
         string commandName,

@@ -5,6 +5,7 @@ using AtomBox.Core.Errors;
 using AtomBox.Desktop.Dialogs;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Services;
+using AtomBox.Desktop.ViewModels;
 using AtomBox.Infrastructure.Configuration;
 using System.Diagnostics;
 using System.Threading.Channels;
@@ -15,7 +16,7 @@ using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class SettingsViewModel : ViewModelBase
+public sealed class SettingsViewModel : DesktopViewModelBase
 {
     private readonly SettingsAppService _settings;
     private readonly IAtomBoxApplicationState _applicationState;

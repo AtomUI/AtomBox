@@ -6,6 +6,7 @@ using AtomBox.Core.ValueObjects;
 using AtomBox.Desktop.Dialogs;
 using AtomBox.Desktop.Localization;
 using AtomBox.Desktop.Services;
+using AtomBox.Desktop.ViewModels;
 using AtomBox.Transfer.State;
 using AtomUI.City.Mvvm;
 using AtomUI.City.State;
@@ -15,7 +16,7 @@ using CityUiDispatcher = AtomUI.City.Core.Threading.IUiDispatcher;
 
 namespace AtomBox.Desktop.ViewModels.Pages;
 
-public sealed class TransferQueueViewModel : ViewModelBase
+public sealed class TransferQueueViewModel : DesktopViewModelBase
 {
     private readonly TransferAppService _transfers;
     private readonly IAtomBoxTransferState _transferState;

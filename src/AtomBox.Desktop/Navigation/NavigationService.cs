@@ -23,6 +23,7 @@ public sealed class NavigationService : INavigationService, IAsyncDisposable
     private readonly AsyncServiceScope _routingScope;
     private readonly IServiceProvider _services;
     private readonly IRouter _router;
+    private readonly IRoutePresentationCoordinator _routePresentationCoordinator;
     private readonly IViewModelFactory _viewModelFactory;
     private readonly IViewLocator _viewLocator;
     private readonly AtomUI.City.Presentation.ViewFactory _viewFactory;
@@ -35,6 +36,7 @@ public sealed class NavigationService : INavigationService, IAsyncDisposable
     public NavigationService(
         IServiceProvider services,
         IServiceScopeFactory scopeFactory,
+        IRoutePresentationCoordinator routePresentationCoordinator,
         IViewModelFactory viewModelFactory,
         IViewLocator viewLocator,
         AtomUI.City.Presentation.ViewFactory viewFactory,
@@ -44,6 +46,7 @@ public sealed class NavigationService : INavigationService, IAsyncDisposable
         _services = services;
         _routingScope = scopeFactory.CreateAsyncScope();
         _router = _routingScope.ServiceProvider.GetRequiredService<IRouter>();
+        _routePresentationCoordinator = routePresentationCoordinator;
         _viewModelFactory = viewModelFactory;
         _viewLocator = viewLocator;
         _viewFactory = viewFactory;
@@ -101,24 +104,37 @@ public sealed class NavigationService : INavigationService, IAsyncDisposable
             ObjectDisposedException.ThrowIf(_disposed, this);
             var outlet = GetOutlet();
             var parameters = EncodeParameters(target, parameter);
-            var routeResult = await _router.NavigateAsync(
-                AtomBoxRouteCatalog.GetReference(target),
-                parameters,
-                new NavigationOptions { OutletName = AtomBoxRouteCatalog.PrimaryOutlet },
+            var coordinationResult = await _routePresentationCoordinator.NavigateAsync(
+                _router,
+                outlet,
+                token => _router.NavigateAsync(
+                    AtomBoxRouteCatalog.GetReference(target),
+                    parameters,
+                    new NavigationOptions { OutletName = AtomBoxRouteCatalog.PrimaryOutlet },
+                    token),
+                new NavigationPlanFactory(this, target),
                 cancellationToken)
                 .ConfigureAwait(true);
 
-            if (routeResult.Status != NavigationResultStatus.Success || routeResult.ActiveRoute is null)
+            if (!coordinationResult.Succeeded)
             {
+                if (coordinationResult.Status == RoutePresentationResultStatus.Cancelled ||
+                    coordinationResult.Exception is OperationCanceledException && cancellationToken.IsCancellationRequested)
+                {
+                    throw new OperationCanceledException(cancellationToken);
+                }
+
                 throw new InvalidOperationException(
-                    routeResult.Error is null
-                        ? $"City navigation to '{target}' did not produce an active route."
-                        : $"City navigation failed ({routeResult.Error.Code}): {routeResult.Error.Message}",
-                    routeResult.Error?.Exception);
+                    coordinationResult.Message is null
+                        ? $"City route presentation to '{target}' failed with status '{coordinationResult.Status}'."
+                        : $"City route presentation to '{target}' failed with status " +
+                          $"'{coordinationResult.Status}': {coordinationResult.Message}",
+                    coordinationResult.Exception);
             }
 
+            var routeResult = coordinationResult.Navigation ?? throw new InvalidOperationException(
+                "City route presentation succeeded without a navigation result.");
             var navigationParameter = DecodeParameter(target, routeResult.Parameters);
-            await CommitRouteAsync(outlet, routeResult.Route, navigationParameter, cancellationToken).ConfigureAwait(true);
 
             // A successful outlet commit is the navigation transaction's point of no return.
             // The departing page may be deactivated by that commit, which can cancel the
@@ -169,17 +185,17 @@ public sealed class NavigationService : INavigationService, IAsyncDisposable
         }
     }
 
-    private async Task CommitRouteAsync(
-        IRouteOutlet outlet,
-        RouteDescriptor route,
-        object? navigationParameter,
+    private async ValueTask<RouteOutletCommitPlan> CreateRoutePlanAsync(
+        NavigationTarget target,
+        RoutePresentationPlanContext context,
         CancellationToken cancellationToken)
     {
+        var route = context.Navigation.Route;
+        var navigationParameter = DecodeParameter(target, context.Navigation.Parameters);
         var viewModelType = route.ViewModelTarget?.ViewModelType ?? throw new InvalidOperationException(
             $"Route '{route.RouteId}' does not declare a ViewModel target.");
         ViewModelLease? viewModelLease = null;
         BoundViewHandle? handle = null;
-        var ownershipTransferred = false;
 
         try
         {
@@ -198,42 +214,38 @@ public sealed class NavigationService : INavigationService, IAsyncDisposable
                 cancellationToken)
                 .ConfigureAwait(true);
 
-            var plan = RouteOutletCommitPlan.Replace(
-                AtomBoxRouteCatalog.PrimaryOutlet,
+            return RouteOutletCommitPlan.Replace(
+                context.OutletName,
                 handle,
                 viewModelLease,
                 routeId: route.RouteId,
                 reuseKey: route.ViewModelTarget.ReuseKey);
-
-            // This is the transaction boundary: cancellation is honored while the
-            // route is being prepared, but once the outlet starts replacing content
-            // it must finish atomically. Replacing the old view deactivates its view
-            // model and can cancel the very command token that initiated navigation.
-            cancellationToken.ThrowIfCancellationRequested();
-            ownershipTransferred = true;
-            var commitResult = await outlet.CommitAsync(plan, CancellationToken.None).ConfigureAwait(true);
-            if (!commitResult.Succeeded)
-            {
-                throw new InvalidOperationException(
-                    $"City route outlet commit failed ({commitResult.Error}): {commitResult.Message}");
-            }
         }
         catch
         {
-            if (!ownershipTransferred)
+            if (handle is not null)
             {
-                if (handle is not null)
-                {
-                    await _dispatcher.InvokeAsync(handle.Dispose).ConfigureAwait(false);
-                }
+                await _dispatcher.InvokeAsync(handle.Dispose).ConfigureAwait(false);
+            }
 
-                if (viewModelLease is not null)
-                {
-                    await viewModelLease.DisposeAsync().ConfigureAwait(false);
-                }
+            if (viewModelLease is not null)
+            {
+                await viewModelLease.DisposeAsync().ConfigureAwait(false);
             }
 
             throw;
+        }
+    }
+
+    private sealed class NavigationPlanFactory(
+        NavigationService owner,
+        NavigationTarget target) : IRoutePresentationPlanFactory
+    {
+        public ValueTask<RouteOutletCommitPlan> CreateAsync(
+            RoutePresentationPlanContext context,
+            CancellationToken cancellationToken = default)
+        {
+            return owner.CreateRoutePlanAsync(target, context, cancellationToken);
         }
     }
 

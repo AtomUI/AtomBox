@@ -365,6 +365,8 @@ AtomBox Desktop 已完成 Host、Module、Routing、Presentation 和 Localizatio
 | 13、14、15 | `AUC-MVVM-009` Command Concurrency and Activation Ownership | Implemented (`41e75dd`, `c333994`) |
 | 16 | `AUC-MVVM-010` Command Exception Delivery | Implemented (`41e75dd`) |
 | 09 | `AUC-PRESENTATION-017` Logical Root and Owned Child ViewModels | Implemented (`41e75dd`) |
+| 13、15 | `AUC-MVVM-012` Shared Command Execution Domain | Implemented (`7f273ea`) |
+| 导航一致性 | `AUC-PRESENTATION-018` Routing-Presentation Coordination | Implemented (`7f273ea`) |
 
 City 架构决策：
 
@@ -373,6 +375,8 @@ City 架构决策：
 - [ADR 0012：统一 Effective Cancellation Token 合同](../../../external/AtomUI.City/docs/decisions/0012-effective-cancellation-token-contract.md)
 - [ADR 0013：UI 可观察通知的统一调度与失败隔离](../../../external/AtomUI.City/docs/decisions/0013-ui-observable-notification-dispatch.md)
 - [ADR 0014：Presentation UI 命令工厂双入口](../../../external/AtomUI.City/docs/decisions/0014-presentation-ui-command-factory.md)
+- [ADR 0015：共享 CommandExecutionDomain](../../../external/AtomUI.City/docs/decisions/0015-shared-command-execution-domain.md)
+- [ADR 0016：Routing-Presentation 协调提交](../../../external/AtomUI.City/docs/decisions/0016-routing-presentation-coordination.md)
 
 ## 实际实施顺序
 
@@ -405,8 +409,8 @@ City 架构决策：
 ### 本次验证证据
 
 - City MVVM：89/89；Public API governance：4/4；Mvvm net8.0/net10.0：0 warning、0 error。
-- AtomBox Desktop：31/31，其中 6 项为本轮新增的生命周期、依赖边界、单一 worker、Shell composition、Channel 合并和导航顺序验证。
-- AtomBox 全量：672/672。
+- AtomBox Desktop：39/39，包含生命周期、依赖边界、单一 worker、Shell composition、Channel 合并、共享导航执行域和导航顺序验证。
+- AtomBox 全量：703/703。
 - AtomBox Release 全解构建：0 warning、0 error。
 - win-x64、linux-x64、osx-arm64 自包含单文件发布成功；主程序分别约 59.6 MB、59.1 MB、59.3 MB。
 - 静态审计确认：业务 ViewModel 中无 `Task.Run`、无 `Dispatcher.UIThread.Post(async ...)`，非 Desktop 业务程序集不引用 City；同步 UI adapter 中保留的普通 Dispatcher post 不属于游离异步业务回调。
