@@ -324,7 +324,14 @@ jobs:
           $version = "${{ github.ref_name }}" -replace '^v', ''
           $config = (Get-Content assets/linux/InstallerConfig.xml -Raw).Replace('__VERSION__', $version)
           Set-Content -LiteralPath "$configDir/InstallerConfig.xml" -Value $config -Encoding utf8
-          Copy-Item -LiteralPath assets/linux/icons/hicolor -Destination "$iconsDir/hicolor" -Recurse -Force
+
+          # AtomUITools uses Installer.Name for Icon=; linuxdeploy matches the filename case-sensitively.
+          $iconName = ([xml]$config).Installer.Name
+          foreach ($sizeDir in (Get-ChildItem -LiteralPath assets/linux/icons/hicolor -Directory)) {
+            $destination = "$iconsDir/hicolor/$($sizeDir.Name)/apps"
+            New-Item -ItemType Directory -Force $destination | Out-Null
+            Copy-Item -LiteralPath "$($sizeDir.FullName)/apps/atombox.png" -Destination "$destination/$iconName.png" -Force
+          }
           Copy-Item -LiteralPath assets/linux/icons/hicolor/256x256/apps/atombox.png -Destination "$imagesDir/AtomBox.png" -Force
 
       - name: Make executable
@@ -341,6 +348,10 @@ jobs:
             --output "${{ matrix.output_dir }}" `
             --verbosity Detailed `
             --cleanupBundleOption true
+
+          if ($LASTEXITCODE -ne 0) {
+            throw "AtomUITools create-appimage failed with exit code $LASTEXITCODE."
+          }
 
           $artifacts = @(Get-ChildItem -LiteralPath "${{ matrix.output_dir }}" -Filter "*.AppImage" -File)
           if ($artifacts.Count -ne 1) {
