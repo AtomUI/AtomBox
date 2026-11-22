@@ -3,7 +3,6 @@ bin
 .idea
 obj
 *.sln.DotSettings.user
-global.json
 lib-need-to-learn
 .local/
 .local/*.env.ps1

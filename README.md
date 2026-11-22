@@ -209,6 +209,8 @@ Planned improvements:
 
 ## Development
 
+Install the exact .NET SDK version specified in [global.json](global.json). Local builds and the release workflow use the same version. Update it in `global.json` and verify the release build matrix when upgrading the SDK.
+
 AtomBox pins AtomUI.City as a Git submodule. Clone with submodules enabled:
 
 ```bash

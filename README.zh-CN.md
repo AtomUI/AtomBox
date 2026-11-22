@@ -209,6 +209,8 @@ WebDAV 支持：
 
 ## 开发
 
+请安装 [global.json](global.json) 指定的 .NET SDK 版本。本地构建和发布流水线使用同一个版本。升级 SDK 时应修改此文件，并验证发布矩阵的各个平台。
+
 AtomBox 通过 Git 子模块固定 AtomUI.City 源码版本。克隆仓库时应同时拉取子模块：
 
 ```bash

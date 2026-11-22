@@ -38,7 +38,10 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          global-json-file: global.json
+
+      - name: Show .NET SDK version
+        run: dotnet --version
 
       - name: Restore
         run: dotnet restore AtomBox.slnx
@@ -132,7 +135,10 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          global-json-file: global.json
+
+      - name: Show .NET SDK version
+        run: dotnet --version
 
       - name: Restore
         run: dotnet restore AtomBox.slnx
@@ -251,7 +257,10 @@ jobs:
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
-          dotnet-version: 10.0.x
+          global-json-file: global.json
+
+      - name: Show .NET SDK version
+        run: dotnet --version
 
       - name: Install AppImage dependencies
         shell: bash
