@@ -53,7 +53,7 @@ public sealed class QiniuKodoIntegrationTests
             StorageProviderCategory.ObjectStorage,
             StorageProviderRegistry.QiniuKodoProviderId,
             "Qiniu Kodo Integration",
-            environment.Endpoint,
+            $"https://s3-{QiniuKodoProviderCreator.NormalizeRegion(environment.Region)}.qiniucs.com",
             environment.Region,
             new CredentialRef("qiniu-kodo-integration"),
             now,
@@ -76,7 +76,6 @@ public sealed class QiniuKodoIntegrationTests
     }
 
     private sealed record QiniuKodoTestEnvironment(
-        string Endpoint,
         string Region,
         string Bucket,
         string AccessKey,
@@ -90,13 +89,11 @@ public sealed class QiniuKodoIntegrationTests
                 return null;
             }
 
-            var endpoint = Environment.GetEnvironmentVariable("ATOMBOX_QINIU_KODO_ENDPOINT");
             var region = Environment.GetEnvironmentVariable("ATOMBOX_QINIU_KODO_REGION");
             var bucket = Environment.GetEnvironmentVariable("ATOMBOX_QINIU_KODO_BUCKET");
             var accessKey = Environment.GetEnvironmentVariable("ATOMBOX_QINIU_KODO_ACCESS_KEY");
             var secretKey = Environment.GetEnvironmentVariable("ATOMBOX_QINIU_KODO_SECRET_KEY");
-            if (string.IsNullOrWhiteSpace(endpoint) ||
-                string.IsNullOrWhiteSpace(region) ||
+            if (string.IsNullOrWhiteSpace(region) ||
                 string.IsNullOrWhiteSpace(bucket) ||
                 string.IsNullOrWhiteSpace(accessKey) ||
                 string.IsNullOrWhiteSpace(secretKey))
@@ -111,7 +108,6 @@ public sealed class QiniuKodoIntegrationTests
             }
 
             return new QiniuKodoTestEnvironment(
-                endpoint.Trim(),
                 region.Trim(),
                 bucket.Trim(),
                 accessKey.Trim(),

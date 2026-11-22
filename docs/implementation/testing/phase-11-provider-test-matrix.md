@@ -48,7 +48,7 @@ Phase 11 Provider 专项的目标是先建立一套稳定的 Provider 契约测�
 - 阿里云盘 / 百度网盘真实账号验收、OAuth/token refresh 和产品级体验。
 - OAuth / token refresh。
 - provider session pool。
-- 分片上传和断点续传。
+- 断点续传。
 - 跨 provider 复制。
 - 文件夹递归上传 / 下载。
 
@@ -200,11 +200,25 @@ Fake provider 不是生产 provider。它只用于测试和 headless scenario，
 
 | 字段 | 要求 |
 | --- | --- |
-| endpoint | 必填，例如 `oss-cn-hangzhou.aliyuncs.com`。 |
-| region | 可选或必填取决于 SDK 需要，但测试矩阵中必须明确。 |
+| endpoint | 必填；接受标准公网/内网原生 OSS hostname 或 S3 兼容 HTTPS Endpoint，例如 `oss-cn-hangzhou.aliyuncs.com`、`https://s3.oss-cn-hangzhou.aliyuncs.com`。 |
+| region | 推荐显式填写；缺失时必须能从标准 Endpoint 推导，同时存在但不一致时返回 Validation。 |
 | bucket | 可选；为空时 root 进入 bucket 列表。 |
 | accessKeyId | 必填 secret credential field。 |
 | accessKeySecret | 必填 secret credential field。 |
+| securityToken | 可选 secret credential field；存在时映射为 AWS session token 和原生 OSS `x-oss-security-token`。 |
+
+Endpoint 配置测试：
+
+| Case | 期望 |
+| --- | --- |
+| `AliyunOss_PublicEndpoint_Should_CreatePairedEndpointProfile` | 公网原生或 S3 Endpoint 生成同地域的 S3 与原生 HTTPS Endpoint。 |
+| `AliyunOss_InternalEndpoint_Should_CreatePairedEndpointProfile` | 内网原生或 S3 Endpoint 生成同地域的内网 S3 与原生 HTTPS Endpoint。 |
+| `AliyunOss_EndpointWithoutScheme_Should_DefaultToHttps` | 既有 hostname 配置继续可用，并统一使用 HTTPS。 |
+| `AliyunOss_Region_Should_BeDerivedFromStandardEndpoint` | Region 缺失时从标准 Endpoint 推导。 |
+| `AliyunOss_EndpointAndRegionMismatch_Should_ReturnValidation` | Endpoint 地域与显式 Region 不一致时不得创建客户端。 |
+| `AliyunOss_CustomOrNonstandardEndpoint_Should_ReturnValidation` | CNAME、自定义域名、path、query、fragment、accelerate 和未知域名不进入第一阶段。 |
+| `AliyunOss_AwsConfig_Should_UseVirtualHostedStyle` | `ForcePathStyle=false`，ServiceURL 和 AuthenticationRegion 来自 Endpoint Profile。 |
+| `AliyunOss_AwsConfig_Should_UseRequiredChecksumPolicy` | request/response checksum 均为 `WHEN_REQUIRED`。 |
 
 ### 8.2 OSS 路径语义
 
@@ -256,18 +270,40 @@ OSS 没有真实目录，但 Provider 必须为上层 UI 和 Application 提供�
 
 | Case | 期望 |
 | --- | --- |
-| `UploadAsync_ObservesCancellationDuringTransfer(false)` | 普通 PutObject 已开始读取后取消，SDK 输入流停止、结果映射为 Canceled，不得返回 Success。 |
-| `UploadAsync_ObservesCancellationDuringTransfer(true)` | 显式 multipart 已开始读取后取消，当前 part 停止、结果映射为 Canceled，不得返回 Success。 |
-| `UploadAsync_DoesNotReportSuccess_WhenCancellationRacesWithSdkCompletion` | SDK 返回边界恰好发生取消时，普通和分片上传均由取消屏障拒绝 Success。 |
-| `TransferCapabilities_ReportCooperativeCancellation` | Aliyun OSS 声明协作取消与进度能力，但不虚报 active abort。 |
-| `Upload_AbortsMultipartUpload_WhenCancellationOccursDuringPartTransfer` | part 传输中取消后不得调用 Complete，必须 best-effort 调用 AbortMultipartUpload。 |
+| `PutObjectAsync_UsesAliyunCompatibleRequestSettings` | 普通上传设置 `UseChunkEncoding=false`、`DisablePayloadSigning=true`，不发送 `aws-chunked`。 |
+| `UploadPartAsync_UsesAliyunCompatibleRequestSettings` | 每个 part 使用相同兼容设置，不依赖 AWS 默认 upload 行为。 |
+| `UploadAsync_ObservesCancellationDuringPutObject` | PutObject 已开始读取或发送后取消，同一个 token 进入 AWS 调用，结果不得返回 Success。 |
+| `UploadAsync_ObservesCancellationDuringMultipartRead` | 本地 part 读取使用带 token 的 `ReadAsync`，读取期间取消后不发送后续 part。 |
+| `UploadAsync_ObservesCancellationDuringUploadPart` | UploadPart 已开始发送后取消，结果不得返回 Success。 |
+| `TransferCapabilities_ReportAsynchronousCooperativeCancellation` | Aliyun OSS 上传/下载声明 Asynchronous、cooperative cancellation 和进度，不额外声明 active abort。 |
+| `Upload_AbortsMultipartUpload_WhenCancellationOccursDuringPartTransfer` | part 传输中取消后不得调用 Complete，必须使用独立清理 token 调用 AbortMultipartUpload。 |
+| `Upload_AbortTimeout_DoesNotLeaveTaskCancelingForever` | Abort 最长等待 10 秒；超时后保留取消结果并退出执行体。 |
 | `Upload_AbortsMultipartUpload_AndPreservesOriginalPartFailure` | part 失败时清理 multipart 会话；即使 Abort 也失败，仍保留原始上传错误。 |
 
-上述两条取消用例必须在传输开始后再触发 token，不能只覆盖“调用前已取消”。SDK 返回后的取消屏障也必须受测，避免取消与完成竞态把任务重新写成成功。
+取消用例必须在传输开始后再触发 token，不能只覆盖“调用前已取消”。Transfer 集成测试还必须验证任务最终进入 `Canceled`、从活动队列移除并进入历史，迟到结果不得覆盖已经持久化的用户取消意图。
 
-### 8.3.2 S3 兼容对象存储扩展操作
+### 8.3.2 下载取消
 
-S3 兼容 provider 当前包括：华为云 OBS、百度智能云 BOS、京东云 OSS、青云 QingStor、火山引擎 TOS。它们复用 `S3CompatibleProvider` 抽象，并在 registry 中声明 `CreateFolder`、`Rename`、`Move` 能力。
+| Case | 期望 |
+| --- | --- |
+| `DownloadAsync_PassesCancellationToGetObject` | GetObject 请求接收 Runtime 提供的 token。 |
+| `DownloadAsync_ObservesCancellationWhileCopyingResponse` | 响应流读取期间取消后停止复制、释放 response，结果不得为 Success。 |
+| `DownloadCancellation_ConvergesToCanceledHistory` | Runtime 从 `Canceling` 收敛为 `Canceled`，活动队列不再显示该任务，历史中可查询。 |
+
+### 8.3.3 固定路由与原生 OSS 补充
+
+| Case | 期望 |
+| --- | --- |
+| `ListBuckets_UsesNativeOssServiceClientOnly` | Root Bucket 列表只调用原生 OSS HTTP，不调用 AWS `ListBucketsAsync`。 |
+| `ObjectAndMultipartOperations_UseAwsClientOnly` | 创建 Bucket、对象与 Multipart 操作只调用 AWS 客户端。 |
+| `AwsFailure_DoesNotFallbackToNativeOss` | AWS 鉴权、配置、网络和服务端失败均直接映射错误，不自动切换路径。 |
+| `OssV4Signer_MatchesOfficialVectors` | canonical URI/query/header、credential scope 和 signature 与官方向量一致。 |
+| `OssV4Signer_IncludesSecurityTokenWhenPresent` | STS 请求包含并签名 `x-oss-security-token`。 |
+| `NativeOssError_MapsToCoreStorageError` | XML error code、HTTP status 和 request id 映射正确且不泄漏 secret。 |
+
+### 8.3.4 S3 兼容对象存储扩展操作
+
+AWS S3 兼容运行时当前覆盖阿里云 OSS、腾讯 COS、七牛 Kodo、又拍云 USS、华为云 OBS、百度 BOS、京东云 OSS、火山 TOS 和通用 S3。它们复用 `AwsSdkS3CompatibleClient` + `S3CompatibleProvider`，但各自保留独立 Endpoint/Profile。青云 QingStor 本轮冻结在旧同步适配路径，不纳入精确取消结论。
 
 | Case | 期望 |
 | --- | --- |
@@ -331,6 +367,13 @@ ATOMBOX_OSS_ACCESS_KEY_SECRET=...
 ATOMBOX_OSS_TEST_PREFIX=atombox-tests/
 ```
 
+内网真实性测试使用独立开关和 Endpoint，避免在普通公网 CI 中误判：
+
+```text
+ATOMBOX_TEST_ALIYUN_OSS_INTERNAL=1
+ATOMBOX_OSS_INTERNAL_ENDPOINT=oss-cn-hangzhou-internal.aliyuncs.com
+```
+
 规则：
 
 - 所有测试对象必须写入 `ATOMBOX_OSS_TEST_PREFIX` 下。
@@ -338,6 +381,7 @@ ATOMBOX_OSS_TEST_PREFIX=atombox-tests/
 - 删除操作只能删除 test prefix 下的对象。
 - 失败日志必须脱敏。
 - 如果环境变量缺失，测试显示 skipped，不失败。
+- 内网测试只有在运行环境确实可以访问阿里云内网 Endpoint 时才启用；未启用不影响公网真实性验收。
 - 普通 `dotnet test AtomBox.slnx` 不要求真实 OSS 账号。
 
 ## 10. SFTP / FTP / WebDAV 文件传输测试矩阵
@@ -398,7 +442,9 @@ ATOMBOX_OSS_TEST_PREFIX=atombox-tests/
 | `Ftp_MoveFolder_Should_CreateDestinationParentAndMove` | 目录移动前创建目标父目录，并走协议 directory move 能力。 |
 | `Ftp_MoveToExistingDestination_Should_ReturnConflict` | 目标路径已存在返回 Conflict。 |
 | `Ftp_Upload_Should_CreateMissingParentDirectories` | 上传 `a/b/file.txt` 前自动创建缺失的 `a`、`a/b`。 |
+| `Ftp_Upload_Should_ObserveCancellationDuringTransfer` | 上传进入 FluentFTP 异步传输后取消，底层执行体退出并返回 Canceled。 |
 | `Ftp_DownloadFile_Should_WriteContentAndReportProgress` | 下载文件写入目标 stream，并报告进度。 |
+| `Ftp_Download_Should_ObserveCancellationDuringTransfer` | 下载进入 FluentFTP 异步传输后取消，底层执行体退出并返回 Canceled。 |
 | `Ftp_DownloadFolder_Should_ReturnValidation` | 下载目录返回 Validation，不调用 download file。 |
 | `Ftp_DownloadMissingFile_Should_ReturnNotFound` | 缺失文件返回 NotFound。 |
 | `Ftp_DeleteFile_Should_CallDeleteFile` | 文件路径删除走协议 file delete。 |
@@ -447,6 +493,7 @@ ATOMBOX_FTP_TEST_PREFIX=atombox-tests/
 - 所有测试文件和目录必须写入 `*_TEST_PREFIX` 下。
 - 默认可以清理自己创建的测试对象；如果用于人工验收，可单独运行保留文件的 smoke。
 - 失败日志必须脱敏，不输出密码、私钥或完整 credential material。
+- FTP opt-in 必须包含真实服务器上的 CRUD，以及上传/下载进入协议执行体后的取消测试；取消测试必须在有限超时内收敛为 Canceled。
 - 普通 `dotnet test AtomBox.slnx` 不要求真实 SFTP/FTP 服务器。
 
 ### 10.6 WebDAV 配置与认证
@@ -465,7 +512,10 @@ ATOMBOX_FTP_TEST_PREFIX=atombox-tests/
 | `WebDav_ListRoot_Should_MapFilesAndFolders` | PROPFIND Depth 1 返回目录和文件，映射为 Core folder/file。 |
 | `WebDav_CreateFolder_Should_CreateFolderAndParents` | MKCOL 创建目录，自动创建缺失父目录；root 返回 Validation。 |
 | `WebDav_Upload_Should_CreateMissingParentDirectories` | PUT 上传 `a/b/file.txt` 前自动创建缺失的 `a`、`a/b`。 |
+| `WebDav_Upload_Should_PropagateCancellationToHttpContent` | PUT 内容序列化开始后取消，Token 到达请求内容流并返回 Canceled。 |
 | `WebDav_DownloadFile_Should_WriteContentAndReportProgress` | GET 下载文件写入目标 stream，并报告进度。 |
+| `WebDav_Download_Should_PropagateCancellationToResponseStream` | GET 响应复制开始后取消，Token 到达响应读取和目标写入并返回 Canceled。 |
+| `WebDav_NonCallerCancellation_Should_MapToTimeout` | 调用方 Token 未取消时出现的 `OperationCanceledException` 映射为超时/网络错误，不得误报用户取消。 |
 | `WebDav_DownloadFolder_Should_ReturnValidation` | 下载目录返回 Validation，不调用 GET。 |
 | `WebDav_DownloadMissingFile_Should_ReturnNotFound` | 缺失文件返回 NotFound。 |
 | `WebDav_DeleteFileOrFolder_Should_CallDelete` | 文件或目录删除走 DELETE。 |
@@ -496,6 +546,7 @@ ATOMBOX_WEBDAV_TEST_PREFIX=atombox-tests/
 - 所有测试文件和目录必须写入 `ATOMBOX_WEBDAV_TEST_PREFIX` 下。
 - 默认可以清理自己创建的测试对象；如果用于人工验收，可单独运行保留文件的 smoke。
 - 失败日志必须脱敏，不输出密码或完整 credential material。
+- WebDAV opt-in 必须包含真实服务器上的 CRUD，以及 PUT/GET 已进入流式 I/O 后的取消测试；取消测试必须在有限超时内收敛为 Canceled。
 - 普通 `dotnet test AtomBox.slnx` 不要求真实 WebDAV 服务器。
 
 ## 11. 后置 Provider 记录
@@ -507,8 +558,8 @@ ATOMBOX_WEBDAV_TEST_PREFIX=atombox-tests/
 | FTPS | TLS 模式、证书校验、显式/隐式 FTPS 需要单独设计和测试，本轮先不做。 |
 | 阿里云盘 | 涉及 OAuth/token/API 限制，本轮不做。 |
 | 百度网盘 | 涉及 OAuth/token/API 限制，本轮不做。 |
-| 腾讯 COS / 七牛 Kodo / 又拍云 USS | 已补齐目录标记、对象移动、对象重命名和伪目录递归移动；腾讯 COS 已具备大文件分片路径；七牛 Kodo 当前基础对象能力已接入，但真实环境下暂不声明 `MultipartUpload`；又拍云当前不声明 `MultipartUpload`。 |
-| 百度智能云 BOS / 京东云 OSS / 青云 QingStor | 已注册为 S3 兼容 provider，已具备 headless 单测和 opt-in 真实集成测试入口；真实账号验收等待 `.local` 环境变量填充后执行。 |
+| 青云 QingStor | 已注册且保留旧 S3 兼容实现，但本轮明确暂缓迁移，不纳入 AWS SDK 精确取消验收。 |
+| 各对象存储真实账号矩阵 | 八家 AWS SDK 适配器已具备 headless 单测和 opt-in 入口；真实账号、地域和 Endpoint 组合仍需按发布环境执行。 |
 
 后续迭代可复用本文档的公共 Provider 契约测试，再新增 provider-specific matrix。
 
@@ -527,23 +578,23 @@ ATOMBOX_WEBDAV_TEST_PREFIX=atombox-tests/
   - 对象重命名。
   - 伪目录递归移动。
 - 分页能力：
-  - 阿里 OSS 使用 marker。
-  - 腾讯 COS 使用 marker。
-  - 七牛 Kodo 使用 marker。
-  - S3 兼容 provider 使用 continuation-token / marker。
-  - 又拍云当前使用 Core 默认 offset pagination。
+  - 阿里 OSS 对象列表使用 AWS `ListObjectsV2` continuation token；Service 级 Bucket 列表走原生 OSS HTTP。
+  - 腾讯 COS、七牛 Kodo、又拍云、百度 BOS、京东云、火山 TOS 使用 AWS `ListObjectsV2` continuation token。
+  - 华为 OBS 使用 AWS `ListObjects` V1 marker。
+  - 通用 S3 与青云旧路径按各自 client 使用 continuation token / marker。
 - 大文件上传：
-  - 阿里 OSS 使用 SDK `InitiateMultipartUpload`、`UploadPart`、`CompleteMultipartUpload` 显式编排，并在取消/失败时调用 `AbortMultipartUpload`；不使用会吞入取消异常并自动重试的 `ResumableUploadObject`。
-  - 腾讯 COS 使用 SDK multipart upload。
-  - 七牛 Kodo 使用 SDK `ResumableUploader`。
-  - 百度 BOS、京东云 OSS、青云 QingStor 通过 S3 兼容 multipart upload。
-  - 七牛 Kodo、又拍云、华为 OBS、火山 TOS 当前不声明 `MultipartUpload`，仍走普通上传路径。
+  - 阿里 OSS 使用 AWS SDK `InitiateMultipartUpload`、`UploadPart`、`CompleteMultipartUpload` 显式编排，并在取消/失败时使用最长 10 秒的独立清理 token 调用 `AbortMultipartUpload`。
+  - 阿里 OSS、腾讯 COS、七牛 Kodo、又拍云、华为 OBS、百度 BOS、京东云 OSS、火山 TOS 均通过 AWS SDK 显式 multipart upload，并在取消/失败时执行有界 Abort 清理。
+  - 超过供应商单次 CopyObject 上限时使用 AWS SDK multipart copy。
+  - 青云 QingStor 继续旧 S3 兼容 multipart 路径，不纳入本轮异步取消保证。
 - 设置 OSS 环境变量后，Aliyun OSS 可以通过：
   - 连接测试。
   - 列 bucket / bucket root。
   - 上传小文件。
+  - 上传大文件并完成 Multipart。
   - 下载小文件。
   - 删除测试对象。
+  - 普通上传、Multipart 和下载的运行中取消，任务最终进入 `Canceled` 历史且不长期停留 `Canceling`。
 - 设置对应环境变量后，S3 兼容对象存储 provider 可以通过：
   - 列 bucket root。
   - 上传 root object 和 child prefix object。

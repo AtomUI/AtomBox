@@ -1,18 +1,12 @@
 using AtomBox.Core.Errors;
 using Amazon.Runtime;
 using Amazon.S3;
-using BaiduBce;
-using Aliyun.OSS.Common;
-using COSXML.CosException;
 using FluentFTP.Exceptions;
 using AtomBox.Providers.NetDisk.AliyunDrive;
 using AtomBox.Providers.NetDisk.BaiduNetDisk;
 using AtomBox.Providers.FileTransfer.WebDav;
-using AtomBox.Providers.ObjectStorage.QiniuKodo;
+using AtomBox.Providers.ObjectStorage.AliyunOss;
 using Renci.SshNet.Common;
-using TOS.Error;
-using ObsServiceException = OBS.ServiceException;
-using AliyunServiceException = Aliyun.OSS.Common.ServiceException;
 
 namespace AtomBox.Providers.Common;
 
@@ -27,8 +21,7 @@ public static class ProviderErrorMapper
             AmazonS3Exception s3Exception => FromAmazonS3Exception(s3Exception),
             AmazonServiceException serviceException => FromAmazonServiceException(serviceException),
             AmazonClientException clientException => FromAmazonClientException(clientException),
-            AliyunServiceException serviceException => FromServiceException(serviceException),
-            BceServiceException serviceException => FromBceServiceException(serviceException),
+            AliyunOssNativeException nativeOssException => FromAliyunOssNativeException(nativeOssException),
             SshAuthenticationException => new StorageError(
                 StorageErrorCode.AuthenticationFailed,
                 "Provider authentication failed.",
@@ -61,20 +54,6 @@ public static class ProviderErrorMapper
                 "Provider FTP operation failed.",
                 StorageErrorCategory.Provider,
                 isRetryable: true),
-            CosServerException serverException => FromCosServerException(serverException),
-            CosClientException => new StorageError(
-                StorageErrorCode.ProviderUnavailable,
-                "Provider COS client failed before the remote service completed the request.",
-                StorageErrorCategory.Provider,
-                isRetryable: true),
-            TosServerException serverException => FromTosServerException(serverException),
-            TosClientException => new StorageError(
-                StorageErrorCode.ProviderUnavailable,
-                "Provider TOS client failed before the remote service completed the request.",
-                StorageErrorCategory.Provider,
-                isRetryable: true),
-            ObsServiceException serviceException => FromHuaweiObsServiceException(serviceException),
-            QiniuKodoHttpException httpException => FromQiniuHttpException(httpException),
             AliyunDriveApiException driveException => FromAliyunDriveApiException(driveException),
             BaiduNetDiskApiException baiduException => FromBaiduNetDiskApiException(baiduException),
             WebDavHttpException webDavException => FromWebDavHttpException(webDavException),
@@ -83,16 +62,6 @@ public static class ProviderErrorMapper
                 StorageErrorCode.NetworkUnavailable,
                 "Provider HTTP network request failed.",
                 StorageErrorCategory.Network,
-                isRetryable: true),
-            BceClientException => new StorageError(
-                StorageErrorCode.ProviderUnavailable,
-                "Provider Baidu BOS client failed before the remote service completed the request.",
-                StorageErrorCategory.Provider,
-                isRetryable: true),
-            ClientException => new StorageError(
-                StorageErrorCode.ProviderUnavailable,
-                "Provider client failed before the remote service completed the request.",
-                StorageErrorCategory.Provider,
                 isRetryable: true),
             OperationCanceledException => new StorageError(
                 StorageErrorCode.OperationCanceled,
@@ -116,6 +85,21 @@ public static class ProviderErrorMapper
         var errorCode = string.IsNullOrWhiteSpace(exception.ErrorCode)
             ? statusCode.ToString(System.Globalization.CultureInfo.InvariantCulture)
             : exception.ErrorCode;
+
+        if (IsClockSkewError(errorCode))
+        {
+            return ClockSkewError(errorCode);
+        }
+
+        if (IsNetworkError(errorCode))
+        {
+            return new StorageError(
+                StorageErrorCode.NetworkUnavailable,
+                "Provider network request failed.",
+                StorageErrorCategory.Network,
+                isRetryable: true,
+                providerErrorCode: errorCode);
+        }
 
         if (statusCode == 401 || IsAuthenticationError(errorCode))
         {
@@ -193,66 +177,80 @@ public static class ProviderErrorMapper
             providerErrorCode: exception.GetType().Name);
     }
 
-    private static StorageError FromServiceException(AliyunServiceException exception)
+    private static StorageError FromAliyunOssNativeException(AliyunOssNativeException exception)
     {
-        var errorCode = exception.ErrorCode;
+        var errorCode = string.IsNullOrWhiteSpace(exception.ErrorCode)
+            ? exception.StatusCode.ToString(System.Globalization.CultureInfo.InvariantCulture)
+            : exception.ErrorCode;
+        var messageSuffix = string.IsNullOrWhiteSpace(exception.RequestId)
+            ? string.Empty
+            : $" RequestId={exception.RequestId}.";
+
         if (IsClockSkewError(errorCode))
         {
             return ClockSkewError(errorCode);
-        }
-
-        if (IsAuthenticationError(errorCode))
-        {
-            return new StorageError(
-                StorageErrorCode.AuthenticationFailed,
-                "Provider authentication failed.",
-                StorageErrorCategory.Authentication,
-                providerErrorCode: errorCode);
-        }
-
-        if (IsAuthorizationError(errorCode))
-        {
-            return new StorageError(
-                StorageErrorCode.AuthorizationFailed,
-                "Provider authorization failed.",
-                StorageErrorCategory.Authorization,
-                providerErrorCode: errorCode);
-        }
-
-        if (IsNotFoundError(errorCode))
-        {
-            return new StorageError(
-                StorageErrorCode.NotFound,
-                "Remote resource was not found.",
-                StorageErrorCategory.NotFound,
-                providerErrorCode: errorCode);
         }
 
         if (IsNetworkError(errorCode))
         {
             return new StorageError(
                 StorageErrorCode.NetworkUnavailable,
-                "Provider network request failed.",
+                "Provider network request failed." + messageSuffix,
                 StorageErrorCategory.Network,
                 isRetryable: true,
                 providerErrorCode: errorCode);
         }
 
-        if (IsRetryableServiceError(errorCode))
+        if (exception.StatusCode == 401 || IsAuthenticationError(errorCode))
         {
             return new StorageError(
-                StorageErrorCode.ProviderUnavailable,
-                "Provider service is temporarily unavailable.",
-                StorageErrorCategory.Provider,
-                isRetryable: true,
+                StorageErrorCode.AuthenticationFailed,
+                "Provider authentication failed." + messageSuffix,
+                StorageErrorCategory.Authentication,
+                providerErrorCode: errorCode);
+        }
+
+        if (exception.StatusCode == 403 || IsAuthorizationError(errorCode))
+        {
+            return new StorageError(
+                StorageErrorCode.AuthorizationFailed,
+                "Provider authorization failed." + messageSuffix,
+                StorageErrorCategory.Authorization,
+                providerErrorCode: errorCode);
+        }
+
+        if (exception.StatusCode == 404 || IsNotFoundError(errorCode))
+        {
+            return new StorageError(
+                StorageErrorCode.NotFound,
+                "Remote resource was not found." + messageSuffix,
+                StorageErrorCategory.NotFound,
+                providerErrorCode: errorCode);
+        }
+
+        if (exception.StatusCode is 409 or 412)
+        {
+            return new StorageError(
+                StorageErrorCode.Conflict,
+                "Remote resource conflict." + messageSuffix,
+                StorageErrorCategory.Conflict,
+                providerErrorCode: errorCode);
+        }
+
+        if (exception.StatusCode == 400)
+        {
+            return new StorageError(
+                StorageErrorCode.ValidationFailed,
+                "Provider request is invalid." + messageSuffix,
+                StorageErrorCategory.Validation,
                 providerErrorCode: errorCode);
         }
 
         return new StorageError(
             StorageErrorCode.ProviderUnavailable,
-            "Provider service request failed.",
+            "Provider Aliyun OSS service request failed." + messageSuffix,
             StorageErrorCategory.Provider,
-            isRetryable: true,
+            isRetryable: exception.StatusCode is 408 or 429 or >= 500 || IsRetryableServiceError(errorCode),
             providerErrorCode: errorCode);
     }
 
@@ -294,242 +292,6 @@ public static class ProviderErrorMapper
             "Provider FTP command failed.",
             StorageErrorCategory.Provider,
             providerErrorCode: completionCode);
-    }
-
-    private static StorageError FromBceServiceException(BceServiceException exception)
-    {
-        var errorCode = string.IsNullOrWhiteSpace(exception.ErrorCode)
-            ? exception.StatusCode.ToString(System.Globalization.CultureInfo.InvariantCulture)
-            : exception.ErrorCode;
-
-        if (IsClockSkewError(errorCode))
-        {
-            return ClockSkewError(errorCode);
-        }
-
-        if (exception.StatusCode == 401 ||
-            string.Equals(errorCode, "SignatureDoesNotMatch", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(errorCode, "InvalidAccessKeyId", StringComparison.OrdinalIgnoreCase))
-        {
-            return new StorageError(
-                StorageErrorCode.AuthenticationFailed,
-                "Provider authentication failed.",
-                StorageErrorCategory.Authentication,
-                providerErrorCode: errorCode);
-        }
-
-        if (exception.StatusCode == 403 ||
-            string.Equals(errorCode, "AccessDenied", StringComparison.OrdinalIgnoreCase))
-        {
-            return new StorageError(
-                StorageErrorCode.AuthorizationFailed,
-                "Provider authorization failed.",
-                StorageErrorCategory.Authorization,
-                providerErrorCode: errorCode);
-        }
-
-        if (exception.StatusCode == 404 ||
-            string.Equals(errorCode, "NoSuchBucket", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(errorCode, "NoSuchKey", StringComparison.OrdinalIgnoreCase))
-        {
-            return new StorageError(
-                StorageErrorCode.NotFound,
-                "Remote resource was not found.",
-                StorageErrorCategory.NotFound,
-                providerErrorCode: errorCode);
-        }
-
-        if (exception.StatusCode is 409 or 412 ||
-            string.Equals(errorCode, "BucketAlreadyExists", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(errorCode, "BucketAlreadyOwnedByYou", StringComparison.OrdinalIgnoreCase))
-        {
-            return new StorageError(
-                StorageErrorCode.Conflict,
-                "Remote resource conflict.",
-                StorageErrorCategory.Conflict,
-                providerErrorCode: errorCode);
-        }
-
-        if (exception.StatusCode == 400)
-        {
-            return new StorageError(
-                StorageErrorCode.ValidationFailed,
-                "Provider request is invalid.",
-                StorageErrorCategory.Validation,
-                providerErrorCode: errorCode);
-        }
-
-        return new StorageError(
-            StorageErrorCode.ProviderUnavailable,
-            "Provider Baidu BOS service request failed.",
-            StorageErrorCategory.Provider,
-            isRetryable: exception.StatusCode is 408 or 429 or >= 500 || IsRetryableServiceError(errorCode),
-            providerErrorCode: errorCode);
-    }
-
-    private static StorageError FromCosServerException(CosServerException exception)
-    {
-        var errorCode = string.IsNullOrWhiteSpace(exception.errorCode)
-            ? exception.statusCode.ToString(System.Globalization.CultureInfo.InvariantCulture)
-            : exception.errorCode;
-
-        if (IsClockSkewError(errorCode))
-        {
-            return ClockSkewError(errorCode);
-        }
-
-        if (exception.statusCode is 401 or 403 ||
-            string.Equals(errorCode, "AccessDenied", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(errorCode, "SignatureDoesNotMatch", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(errorCode, "InvalidSecretId", StringComparison.OrdinalIgnoreCase))
-        {
-            return new StorageError(
-                StorageErrorCode.AuthenticationFailed,
-                "Provider authentication failed.",
-                StorageErrorCategory.Authentication,
-                providerErrorCode: errorCode);
-        }
-
-        if (exception.statusCode == 404 ||
-            string.Equals(errorCode, "NoSuchBucket", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(errorCode, "NoSuchKey", StringComparison.OrdinalIgnoreCase))
-        {
-            return new StorageError(
-                StorageErrorCode.NotFound,
-                "Remote resource was not found.",
-                StorageErrorCategory.NotFound,
-                providerErrorCode: errorCode);
-        }
-
-        return new StorageError(
-            StorageErrorCode.ProviderUnavailable,
-            "Provider COS service request failed.",
-            StorageErrorCategory.Provider,
-            isRetryable: exception.statusCode is 408 or 429 or >= 500,
-            providerErrorCode: errorCode);
-    }
-
-    private static StorageError FromHuaweiObsServiceException(ObsServiceException exception)
-    {
-        var statusCode = (int)exception.StatusCode;
-        var errorCode = string.IsNullOrWhiteSpace(exception.ErrorCode)
-            ? statusCode.ToString(System.Globalization.CultureInfo.InvariantCulture)
-            : exception.ErrorCode;
-
-        if (IsClockSkewError(errorCode))
-        {
-            return ClockSkewError(errorCode);
-        }
-
-        if (statusCode is 401 or 403 ||
-            string.Equals(errorCode, "AccessDenied", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(errorCode, "SignatureDoesNotMatch", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(errorCode, "InvalidAccessKeyId", StringComparison.OrdinalIgnoreCase))
-        {
-            return new StorageError(
-                StorageErrorCode.AuthenticationFailed,
-                "Provider authentication failed.",
-                StorageErrorCategory.Authentication,
-                providerErrorCode: errorCode);
-        }
-
-        if (statusCode == 404 ||
-            string.Equals(errorCode, "NoSuchBucket", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(errorCode, "NoSuchKey", StringComparison.OrdinalIgnoreCase))
-        {
-            return new StorageError(
-                StorageErrorCode.NotFound,
-                "Remote resource was not found.",
-                StorageErrorCategory.NotFound,
-                providerErrorCode: errorCode);
-        }
-
-        return new StorageError(
-            StorageErrorCode.ProviderUnavailable,
-            "Provider Huawei OBS service request failed.",
-            StorageErrorCategory.Provider,
-            isRetryable: statusCode is 408 or 429 or >= 500,
-            providerErrorCode: errorCode);
-    }
-
-    private static StorageError FromTosServerException(TosServerException exception)
-    {
-        var errorCode = string.IsNullOrWhiteSpace(exception.Code)
-            ? exception.StatusCode.ToString(System.Globalization.CultureInfo.InvariantCulture)
-            : exception.Code;
-
-        if (exception.StatusCode is 401 or 403 ||
-            string.Equals(errorCode, "AccessDenied", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(errorCode, "SignatureDoesNotMatch", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(errorCode, "InvalidAccessKeyId", StringComparison.OrdinalIgnoreCase))
-        {
-            return new StorageError(
-                StorageErrorCode.AuthenticationFailed,
-                "Provider authentication failed.",
-                StorageErrorCategory.Authentication,
-                providerErrorCode: errorCode);
-        }
-
-        if (exception.StatusCode == 404 ||
-            string.Equals(errorCode, "NoSuchBucket", StringComparison.OrdinalIgnoreCase) ||
-            string.Equals(errorCode, "NoSuchKey", StringComparison.OrdinalIgnoreCase))
-        {
-            return new StorageError(
-                StorageErrorCode.NotFound,
-                "Remote resource was not found.",
-                StorageErrorCategory.NotFound,
-                providerErrorCode: errorCode);
-        }
-
-        return new StorageError(
-            StorageErrorCode.ProviderUnavailable,
-            "Provider TOS service request failed.",
-            StorageErrorCategory.Provider,
-            isRetryable: exception.StatusCode is 408 or 429 or >= 500,
-            providerErrorCode: errorCode);
-    }
-
-    private static StorageError FromQiniuHttpException(QiniuKodoHttpException exception)
-    {
-        var providerErrorCode = exception.StatusCode.ToString(System.Globalization.CultureInfo.InvariantCulture);
-        return FromQiniuStatusCode(exception.StatusCode, providerErrorCode);
-    }
-
-    private static StorageError FromQiniuStatusCode(int statusCode, string providerErrorCode)
-    {
-        if (statusCode is 401 or 631)
-        {
-            return new StorageError(
-                StorageErrorCode.AuthenticationFailed,
-                "Provider authentication failed.",
-                StorageErrorCategory.Authentication,
-                providerErrorCode: providerErrorCode);
-        }
-
-        if (statusCode == 403)
-        {
-            return new StorageError(
-                StorageErrorCode.AuthorizationFailed,
-                "Provider authorization failed.",
-                StorageErrorCategory.Authorization,
-                providerErrorCode: providerErrorCode);
-        }
-
-        if (statusCode is 404 or 612 or 614)
-        {
-            return new StorageError(
-                StorageErrorCode.NotFound,
-                "Remote resource was not found.",
-                StorageErrorCategory.NotFound,
-                providerErrorCode: providerErrorCode);
-        }
-
-        return new StorageError(
-            StorageErrorCode.ProviderUnavailable,
-            "Provider Qiniu Kodo request failed.",
-            StorageErrorCategory.Provider,
-            isRetryable: statusCode is 429 or >= 500,
-            providerErrorCode: providerErrorCode);
     }
 
     private static StorageError FromAliyunDriveApiException(AliyunDriveApiException exception)

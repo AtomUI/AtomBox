@@ -70,8 +70,10 @@ UploadViewModel
         -> IStorageAccountRepository
         -> IStorageProviderFactory
         -> IStorageProvider
-          -> AliyunOssProvider
-            -> Aliyun OSS SDK
+          -> S3CompatibleProvider (aliyun-oss)
+            -> AliyunOssS3Adapter
+              -> AWS SDK S3-compatible API
+              -> Native OSS HTTP API (ListBuckets only)
 ```
 
 传输任务创建和传输任务执行必须分开理解：
@@ -89,7 +91,7 @@ UploadViewModel
 | AtomBox.Core | .NET BCL，以及极少数不污染领域模型的基础类型 | Avalonia、AtomUI、Serilog、具体云厂商 SDK、数据库、配置文件实现、HTTP API 实现 | Core 是产品内核，只定义 AtomBox 的核心模型、抽象、错误、能力和领域规则。 |
 | AtomBox.Application | AtomBox.Core、AtomUI.City.State，`Microsoft.Extensions.DependencyInjection.Abstractions` | Avalonia、AtomUI 控件、具体云厂商 SDK、具体协议库、ViewModel、View、`IServiceProvider` 直接解析 | Application 编排用户用例，使用 City.State 发布账号和设置的运行时投影，不直接接触 UI 和具体后端实现；可提供 `IServiceCollection` 注册扩展供 Desktop 组合根调用。 |
 | AtomBox.Transfer | AtomBox.Core、AtomUI.City.Core、AtomUI.City.State，`Microsoft.Extensions.DependencyInjection.Abstractions` | Avalonia、AtomUI 控件、Application、具体云厂商 SDK、具体 Provider 实现、`IServiceProvider` 直接解析 | Transfer Engine 负责调度传输任务，通过 Core 中的 provider 抽象执行实际读写，使用 City.State 发布已持久化队列和 Runtime 健康投影，并通过自身 City Module 接入 Host 生命周期；标准 DI 扩展继续供测试组合使用。 |
-| AtomBox.Providers | AtomBox.Core，具体云厂商 SDK、FTP/SFTP 协议库、网盘 API 客户端，`Microsoft.Extensions.DependencyInjection.Abstractions` | Avalonia、AtomUI、ViewModel、Desktop UI、`IServiceProvider` 直接解析 | Provider 实现 Core 中的存储抽象，把外部 SDK/API 类型转换为 Core 类型；可提供 `IServiceCollection` 注册扩展供 Desktop 组合根调用。 |
+| AtomBox.Providers | AtomBox.Core，`AWSSDK.S3`、FTP/SFTP 协议库、网盘 API 客户端，`Microsoft.Extensions.DependencyInjection.Abstractions` | Avalonia、AtomUI、ViewModel、Desktop UI、`IServiceProvider` 直接解析 | Provider 实现 Core 中的存储抽象；对象存储统一通过 AWS SDK 与供应商 Profile/Adapter 收敛，协议/API 类型不得越界。 |
 | AtomBox.Infrastructure | AtomBox.Core，必要的系统库、加密库、持久化库、日志库，`Microsoft.Extensions.DependencyInjection.Abstractions` | Avalonia、AtomUI、ViewModel、具体页面逻辑、`IServiceProvider` 直接解析 | Infrastructure 提供配置、凭据、日志、缓存、本地持久化等技术实现；可提供 `IServiceCollection` 注册扩展供 Desktop 组合根调用。 |
 | AtomBox.Desktop | AtomBox.Application、AtomBox.Transfer、AtomBox.Providers、AtomBox.Infrastructure、AtomBox.Core，以及已实施的 AtomUI.City Core / Mvvm / Routing / Presentation / State / Localization / Build / Generators 能力 | 不应被 Core、Application、Transfer、Providers、Infrastructure 反向依赖 | Desktop 是 Avalonia/AtomUI 启动项目和 City 应用模块，负责 UI、模块组合和应用启动；Root Provider 只由 City Host 创建。 |
 

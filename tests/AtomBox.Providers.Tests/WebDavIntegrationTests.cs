@@ -15,6 +15,72 @@ public sealed class WebDavIntegrationTests
 {
     [Fact]
     [Trait("Category", "Integration")]
+    public async Task WebDavIntegration_CancelsInFlightUploadAndDownload()
+    {
+        var environment = WebDavTestEnvironment.TryRead();
+        if (environment is null)
+        {
+            return;
+        }
+
+        await using var provider = await CreateProviderAsync(environment);
+        var testRoot = environment.CreateTestRoot();
+        var rootPath = new RemotePath(testRoot, RemotePathKind.Folder);
+        var canceledUploadPath = new RemotePath($"{testRoot}/cancel-upload.bin");
+        var downloadSourcePath = new RemotePath($"{testRoot}/download-source.bin");
+
+        try
+        {
+            var createRoot = await provider.CreateFolderAsync(rootPath);
+            Assert.True(createRoot.IsSuccess, FormatError("Expected WebDAV cancellation test root creation to succeed.", createRoot.Error));
+
+            await using (var source = new CancellationBlockingReadStream())
+            using (var cancellationSource = new CancellationTokenSource())
+            {
+                var uploadTask = provider.UploadAsync(
+                    canceledUploadPath,
+                    source,
+                    1024,
+                    cancellationToken: cancellationSource.Token);
+                await source.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                cancellationSource.Cancel();
+
+                var uploadResult = await uploadTask.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.True(uploadResult.IsFailure);
+                Assert.Equal(StorageErrorCategory.Canceled, uploadResult.Error?.Category);
+            }
+
+            await using (var source = new MemoryStream(new byte[1024 * 1024]))
+            {
+                var uploadResult = await provider.UploadAsync(downloadSourcePath, source, source.Length);
+                Assert.True(uploadResult.IsSuccess, FormatError("Expected WebDAV download fixture upload to succeed.", uploadResult.Error));
+            }
+
+            await using (var destination = new CancellationBlockingWriteStream())
+            using (var cancellationSource = new CancellationTokenSource())
+            {
+                var downloadTask = provider.DownloadAsync(
+                    downloadSourcePath,
+                    destination,
+                    cancellationToken: cancellationSource.Token);
+                await destination.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+                cancellationSource.Cancel();
+
+                var downloadResult = await downloadTask.WaitAsync(TimeSpan.FromSeconds(5));
+                Assert.True(downloadResult.IsFailure);
+                Assert.Equal(StorageErrorCategory.Canceled, downloadResult.Error?.Category);
+            }
+        }
+        finally
+        {
+            await provider.DeleteAsync(canceledUploadPath);
+            await provider.DeleteAsync(downloadSourcePath);
+            await provider.DeleteAsync(rootPath);
+        }
+    }
+
+    [Fact]
+    [Trait("Category", "Integration")]
     public async Task WebDavIntegration_ListCreateUploadDownloadRenameMove_LeavesArtifacts()
     {
         var environment = WebDavTestEnvironment.TryRead();

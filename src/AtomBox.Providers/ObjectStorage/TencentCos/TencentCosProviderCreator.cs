@@ -4,8 +4,7 @@ using AtomBox.Core.Errors;
 using AtomBox.Core.Providers;
 using AtomBox.Core.Results;
 using AtomBox.Providers.Common;
-using COSXML;
-using COSXML.Auth;
+using AtomBox.Providers.ObjectStorage.S3Compatible;
 
 namespace AtomBox.Providers.ObjectStorage.TencentCos;
 
@@ -13,9 +12,7 @@ public sealed class TencentCosProviderCreator : IStorageProviderCreator
 {
     private readonly ProviderCredentialResolver _credentialResolver;
 
-    public TencentCosProviderCreator(
-        ProviderDescriptor descriptor,
-        ProviderCredentialResolver credentialResolver)
+    public TencentCosProviderCreator(ProviderDescriptor descriptor, ProviderCredentialResolver credentialResolver)
     {
         Descriptor = descriptor;
         _credentialResolver = credentialResolver;
@@ -23,88 +20,61 @@ public sealed class TencentCosProviderCreator : IStorageProviderCreator
 
     public ProviderDescriptor Descriptor { get; }
 
-    public async Task<OperationResult<IStorageProvider>> CreateAsync(
-        StorageAccount account,
-        CancellationToken cancellationToken = default)
+    public Task<OperationResult<IStorageProvider>> CreateAsync(StorageAccount account, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(account);
-
-        if (string.IsNullOrWhiteSpace(account.Endpoint))
+        var endpoint = NormalizeServiceEndpoint(account.Endpoint);
+        if (endpoint.IsFailure)
         {
-            return OperationResult<IStorageProvider>.Failure(StorageError.Validation("Tencent COS endpoint is required."));
+            return Task.FromResult(OperationResult<IStorageProvider>.Failure(endpoint.Error!));
         }
 
-        var region = account.GetProviderConfigValue("region");
-        if (string.IsNullOrWhiteSpace(region))
+        if (string.IsNullOrWhiteSpace(account.Region))
         {
-            return OperationResult<IStorageProvider>.Failure(StorageError.Validation("Tencent COS region is required."));
+            return Task.FromResult(OperationResult<IStorageProvider>.Failure(StorageError.Validation("Tencent COS region is required.")));
         }
 
-        var materialResult = await _credentialResolver.AcquireMaterialAsync(account, cancellationToken).ConfigureAwait(false);
-        if (materialResult.IsFailure)
-        {
-            return OperationResult<IStorageProvider>.Failure(materialResult.Error!);
-        }
-
-        var materialLease = materialResult.GetValueOrThrow();
-        try
-        {
-            var secretValidation = ValidateSecretMaterial(materialLease.Material);
-            if (secretValidation.IsFailure)
-            {
-                await materialLease.DisposeAsync().ConfigureAwait(false);
-                return OperationResult<IStorageProvider>.Failure(secretValidation.Error!);
-            }
-
-            var secretId = materialLease.Material.GetRequiredValue("accessKeyId");
-            var secretKey = materialLease.Material.GetRequiredValue("accessKeySecret");
-            var configBuilder = new CosXmlConfig.Builder()
-                .SetRegion(region);
-            if (!IsStandardTencentCosEndpoint(account.Endpoint, region))
-            {
-                configBuilder.SetHost(account.Endpoint);
-            }
-
-            var config = configBuilder.Build();
-            var credentialProvider = new DefaultQCloudCredentialProvider(secretId, secretKey, 600);
-            var client = new CosXmlServer(config, credentialProvider);
-
-            return OperationResult<IStorageProvider>.Success(
-                new TencentCosProvider(new TencentCosSdkClient(client, region), materialLease, Descriptor.Capabilities));
-        }
-        catch (Exception exception)
-        {
-            await materialLease.DisposeAsync().ConfigureAwait(false);
-            return OperationResult<IStorageProvider>.Failure(ProviderErrorMapper.FromException(exception));
-        }
+        return AwsSdkS3ProviderFactory.CreateAsync(
+            account,
+            Descriptor,
+            _credentialResolver,
+            new AwsSdkS3ProviderProfile(
+                endpoint.GetValueOrThrow(), account.Region, ForcePathStyle: false, CursorNamespace: "tencent-cos",
+                SingleCopyLimit: 5L * 1024 * 1024 * 1024, ValidateBucketName: ValidateBucketName),
+            cancellationToken: cancellationToken);
     }
 
-    private static OperationResult ValidateSecretMaterial(CredentialSecretMaterial material)
+    internal static OperationResult<string> NormalizeServiceEndpoint(string? endpoint)
     {
-        if (!material.TryGetValue("accessKeyId", out _))
+        var normalized = AwsSdkS3ProviderFactory.NormalizeEndpoint(endpoint, "Tencent COS");
+        if (!normalized.TryGetValue(out var value))
         {
-            return OperationResult.Failure(StorageError.Validation("Tencent COS credential requires accessKeyId."));
+            return normalized;
         }
 
-        if (!material.TryGetValue("accessKeySecret", out _))
+        var uri = new Uri(value);
+        var host = uri.Host;
+        var labels = host.Split('.');
+        if (labels is [var bucket, "cos", _, "myqcloud", "com"] && ValidateBucketName(bucket) is null)
         {
-            return OperationResult.Failure(StorageError.Validation("Tencent COS credential requires accessKeySecret."));
+            var regionalHost = host[(host.IndexOf('.') + 1)..];
+            return OperationResult<string>.Success(new UriBuilder(uri) { Host = regionalHost }.Uri.GetLeftPart(UriPartial.Authority));
         }
 
-        return OperationResult.Success();
+        return normalized;
     }
 
-    private static bool IsStandardTencentCosEndpoint(string endpoint, string region)
+    internal static StorageError? ValidateBucketName(string bucketName)
     {
-        var normalizedEndpoint = endpoint.Trim()
-            .Replace("https://", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .Replace("http://", string.Empty, StringComparison.OrdinalIgnoreCase)
-            .TrimEnd('/');
-        var normalizedRegion = region.Trim();
+        var separator = bucketName.LastIndexOf('-');
+        if (separator <= 0 || separator == bucketName.Length - 1 ||
+            bucketName[0] == '-' || bucketName[separator - 1] == '-' ||
+            !bucketName[..separator].All(character => char.IsAsciiLetterLower(character) || char.IsAsciiDigit(character) || character == '-') ||
+            !bucketName[(separator + 1)..].All(char.IsAsciiDigit))
+        {
+            return StorageError.Validation("Enter a complete Tencent COS bucket name in BucketName-APPID format, using lowercase letters, digits and hyphens.");
+        }
 
-        return string.Equals(
-            normalizedEndpoint,
-            $"cos.{normalizedRegion}.myqcloud.com",
-            StringComparison.OrdinalIgnoreCase);
+        return null;
     }
 }

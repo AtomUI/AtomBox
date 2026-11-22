@@ -53,14 +53,15 @@ public sealed class UpyunIntegrationTests
             StorageProviderCategory.ObjectStorage,
             StorageProviderRegistry.UpyunProviderId,
             "Upyun Integration",
-            environment.Endpoint,
+            "https://s3.api.upyun.com",
             null,
             new CredentialRef("upyun-integration"),
             now,
             now,
             new Dictionary<string, string>
             {
-                ["bucket"] = environment.Service
+                ["bucket"] = environment.Service,
+                ["credentialMode"] = "s3"
             });
 
         var result = await creator.CreateAsync(account);
@@ -76,10 +77,9 @@ public sealed class UpyunIntegrationTests
     }
 
     private sealed record UpyunTestEnvironment(
-        string Endpoint,
         string Service,
-        string Operator,
-        string Password,
+        string AccessKeyId,
+        string AccessKeySecret,
         string TestPrefix)
     {
         public static UpyunTestEnvironment? TryRead()
@@ -89,14 +89,12 @@ public sealed class UpyunIntegrationTests
                 return null;
             }
 
-            var endpoint = Environment.GetEnvironmentVariable("ATOMBOX_UPYUN_ENDPOINT");
             var service = Environment.GetEnvironmentVariable("ATOMBOX_UPYUN_SERVICE");
-            var operatorName = Environment.GetEnvironmentVariable("ATOMBOX_UPYUN_OPERATOR");
-            var password = Environment.GetEnvironmentVariable("ATOMBOX_UPYUN_PASSWORD");
-            if (string.IsNullOrWhiteSpace(endpoint) ||
-                string.IsNullOrWhiteSpace(service) ||
-                string.IsNullOrWhiteSpace(operatorName) ||
-                string.IsNullOrWhiteSpace(password))
+            var accessKeyId = Environment.GetEnvironmentVariable("ATOMBOX_UPYUN_S3_ACCESS_KEY_ID");
+            var accessKeySecret = Environment.GetEnvironmentVariable("ATOMBOX_UPYUN_S3_ACCESS_KEY_SECRET");
+            if (string.IsNullOrWhiteSpace(service) ||
+                string.IsNullOrWhiteSpace(accessKeyId) ||
+                string.IsNullOrWhiteSpace(accessKeySecret))
             {
                 return null;
             }
@@ -108,10 +106,9 @@ public sealed class UpyunIntegrationTests
             }
 
             return new UpyunTestEnvironment(
-                endpoint.Trim(),
                 service.Trim(),
-                operatorName.Trim(),
-                password.Trim(),
+                accessKeyId.Trim(),
+                accessKeySecret.Trim(),
                 NormalizePrefix(prefix));
         }
 
@@ -158,8 +155,8 @@ public sealed class UpyunIntegrationTests
                 new EnvironmentCredentialLease(_credentialRef),
                 new CredentialSecretMaterial(new Dictionary<string, string>
                 {
-                    ["accessKeyId"] = _environment.Operator,
-                    ["accessKeySecret"] = _environment.Password
+                    ["accessKeyId"] = _environment.AccessKeyId,
+                    ["accessKeySecret"] = _environment.AccessKeySecret
                 }));
 
             return Task.FromResult(OperationResult<CredentialMaterialLease>.Success(lease));

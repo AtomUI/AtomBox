@@ -55,7 +55,7 @@ public sealed class StorageProviderRegistry : IStorageProviderRegistry
             CreateObjectStorage(AliyunOssProviderId, "阿里云 OSS", supportsObjectMove: true, supportsMultipartUpload: true),
             CreateObjectStorage(TencentCosProviderId, "腾讯 COS", supportsObjectMove: true, supportsMultipartUpload: true),
             CreateObjectStorage(QiniuKodoProviderId, "七牛 Kodo", supportsObjectMove: true, supportsMultipartUpload: true),
-            CreateObjectStorage(UpyunProviderId, "又拍云 USS", supportsObjectMove: true, supportsMultipartUpload: true),
+            CreateObjectStorage(UpyunProviderId, "又拍云 USS", supportsObjectMove: true, supportsMultipartUpload: true, supportsBucketCreation: false),
             CreateObjectStorage(HuaweiObsProviderId, "华为云 OBS", supportsObjectMove: true, supportsMultipartUpload: true),
             CreateObjectStorage(BaiduBosProviderId, "百度智能云 BOS", supportsObjectMove: true, supportsMultipartUpload: true),
             CreateObjectStorage(JdCloudOssProviderId, "京东云 OSS", supportsObjectMove: true, supportsMultipartUpload: true),
@@ -86,7 +86,8 @@ public sealed class StorageProviderRegistry : IStorageProviderRegistry
         StorageProviderId id,
         string displayName,
         bool supportsObjectMove = false,
-        bool supportsMultipartUpload = false)
+        bool supportsMultipartUpload = false,
+        bool supportsBucketCreation = true)
     {
         var capabilities = StorageCapability.List |
             StorageCapability.Upload |
@@ -102,6 +103,10 @@ public sealed class StorageProviderRegistry : IStorageProviderRegistry
         {
             capabilities |= StorageCapability.MultipartUpload;
         }
+        if (supportsBucketCreation)
+        {
+            capabilities |= StorageCapability.CreateBucket;
+        }
 
         return new ProviderDescriptor(
             id,
@@ -110,9 +115,22 @@ public sealed class StorageProviderRegistry : IStorageProviderRegistry
             "对象存储 provider 类型。",
             new StorageCapabilitySet(capabilities),
             [
-                new ProviderConfigFieldDescriptor("endpoint", "Endpoint", ProviderConfigFieldKind.Endpoint, true),
-                new ProviderConfigFieldDescriptor("region", "Region", ProviderConfigFieldKind.Region, false),
-                new ProviderConfigFieldDescriptor("bucket", "Bucket", ProviderConfigFieldKind.Bucket, false)
+                new ProviderConfigFieldDescriptor(
+                    "endpoint",
+                    "Endpoint",
+                    ProviderConfigFieldKind.Endpoint,
+                    id != QiniuKodoProviderId && id != UpyunProviderId),
+                new ProviderConfigFieldDescriptor(
+                    "region",
+                    "Region",
+                    ProviderConfigFieldKind.Region,
+                    id == TencentCosProviderId || id == QiniuKodoProviderId || id == BaiduBosProviderId ||
+                    id == JdCloudOssProviderId || id == VolcengineTosProviderId),
+                new ProviderConfigFieldDescriptor(
+                    "bucket",
+                    "Bucket",
+                    ProviderConfigFieldKind.Bucket,
+                    id == UpyunProviderId)
             ]);
     }
 
@@ -163,7 +181,8 @@ public sealed class StorageProviderRegistry : IStorageProviderRegistry
             StorageCapability.CreateFolder |
             StorageCapability.Rename |
             StorageCapability.Move |
-            StorageCapability.MultipartUpload;
+            StorageCapability.MultipartUpload |
+            StorageCapability.CreateBucket;
 
         return new ProviderDescriptor(
             S3CompatibleProviderId,

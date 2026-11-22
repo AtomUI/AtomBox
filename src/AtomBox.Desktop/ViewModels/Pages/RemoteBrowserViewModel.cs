@@ -6,8 +6,10 @@ using AtomBox.Application.State;
 using AtomBox.Application.Browsing;
 using AtomBox.Application.Transfers;
 using AtomBox.Core.Accounts;
+using AtomBox.Core.Capabilities;
 using AtomBox.Core.Errors;
 using AtomBox.Core.Previews;
+using AtomBox.Core.Providers;
 using AtomBox.Core.RemoteItems;
 using AtomBox.Core.Results;
 using AtomBox.Core.Settings;
@@ -33,6 +35,7 @@ public sealed class RemoteBrowserViewModel : DesktopViewModelBase
 {
     private readonly IAtomBoxApplicationState _applicationState;
     private readonly RemoteBrowserAppService _browser;
+    private readonly IStorageProviderRegistry _providers;
     private readonly TransferAppService _transfers;
     private readonly IMessageService _messages;
     private readonly IDialogService _dialogs;
@@ -77,6 +80,7 @@ public sealed class RemoteBrowserViewModel : DesktopViewModelBase
     public RemoteBrowserViewModel(
         IAtomBoxApplicationState applicationState,
         RemoteBrowserAppService browser,
+        IStorageProviderRegistry providers,
         TransferAppService transfers,
         IMessageService messages,
         IDialogService dialogs,
@@ -90,6 +94,7 @@ public sealed class RemoteBrowserViewModel : DesktopViewModelBase
     {
         _applicationState = applicationState;
         _browser = browser;
+        _providers = providers;
         _transfers = transfers;
         _messages = messages;
         _dialogs = dialogs;
@@ -343,7 +348,10 @@ public sealed class RemoteBrowserViewModel : DesktopViewModelBase
     public bool CanCreateBucket =>
         _storageAccountId is not null &&
         !IsLoading &&
-        IsBucketList;
+        IsBucketList &&
+        _currentAccount is { } account &&
+        _providers.GetById(account.ProviderId).TryGetValue(out var provider) &&
+        provider.Capabilities.Supports(StorageCapability.CreateBucket);
 
     public bool CanCreateFolder =>
         _storageAccountId is not null &&
@@ -1961,20 +1969,23 @@ public sealed class RemoteBrowserViewModel : DesktopViewModelBase
 
     private async Task CreateBucketAsync(CancellationToken cancellationToken)
     {
-        if (_storageAccountId is null || !CanCreateBucket)
+        if (_storageAccountId is not { } accountId || !CanCreateBucket)
         {
             return;
         }
 
+        var prompt = _currentAccount?.ProviderId.Value == "tencent-cos"
+            ? "CreateTencentCosBucketPrompt"
+            : "CreateBucketPrompt";
         var bucketName = await _dialogs.ShowTextInputAsync(new TextInputDialogRequest(
             Localization.GetString("RemoteBrowser", "CreateBucketTitle"),
-            Localization.GetString("RemoteBrowser", "CreateBucketPrompt"),
+            Localization.GetString("RemoteBrowser", prompt),
             string.Empty,
             Localization.GetString("RemoteBrowser", "BucketNameField"),
             Localization.GetString("RemoteBrowser", "Create"),
             Localization.GetString("Common", "Cancel"))).ConfigureAwait(true);
         bucketName = bucketName?.Trim();
-        if (string.IsNullOrWhiteSpace(bucketName))
+        if (string.IsNullOrWhiteSpace(bucketName) || _storageAccountId != accountId)
         {
             return;
         }
@@ -1989,7 +2000,7 @@ public sealed class RemoteBrowserViewModel : DesktopViewModelBase
         StatusMessage = Localization.Format("RemoteBrowser", "CreatingBucket", bucketName);
         var path = new RemotePath(bucketName, RemotePathKind.BucketRoot);
         var result = await _browser.CreateRemoteFolderAsync(
-            new CreateRemoteFolderRequest(_storageAccountId.Value, path),
+            new CreateRemoteFolderRequest(accountId, path),
             cancellationToken).ConfigureAwait(true);
 
         if (result.IsFailure)
@@ -2003,7 +2014,7 @@ public sealed class RemoteBrowserViewModel : DesktopViewModelBase
                 new Dictionary<string, string>
                 {
                     ["Bucket"] = bucketName,
-                    [Localization.GetString("Common", "Account")] = _storageAccountId.Value.ToString()
+                    [Localization.GetString("Common", "Account")] = accountId.ToString()
                 });
             _messages.Error(message);
             return;

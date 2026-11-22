@@ -1,6 +1,3 @@
-using BaiduBce;
-using BaiduBce.Auth;
-using BaiduBce.Services.Bos;
 using AtomBox.Core.Accounts;
 using AtomBox.Core.Credentials;
 using AtomBox.Core.Errors;
@@ -23,80 +20,40 @@ public sealed class BaiduBosProviderCreator : IStorageProviderCreator
 
     public ProviderDescriptor Descriptor { get; }
 
-    public async Task<OperationResult<IStorageProvider>> CreateAsync(
-        StorageAccount account,
-        CancellationToken cancellationToken = default)
+    public Task<OperationResult<IStorageProvider>> CreateAsync(StorageAccount account, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(account);
-
-        if (string.IsNullOrWhiteSpace(account.Endpoint))
+        var endpoint = TryCreateS3Endpoint(account.Endpoint);
+        if (endpoint.IsFailure)
         {
-            return OperationResult<IStorageProvider>.Failure(StorageError.Validation("Baidu BOS endpoint is required."));
+            return Task.FromResult(OperationResult<IStorageProvider>.Failure(endpoint.Error!));
         }
 
-        var region = account.GetProviderConfigValue("region");
-        if (string.IsNullOrWhiteSpace(region))
+        if (string.IsNullOrWhiteSpace(account.Region))
         {
-            return OperationResult<IStorageProvider>.Failure(StorageError.Validation("Baidu BOS region is required."));
+            return Task.FromResult(OperationResult<IStorageProvider>.Failure(StorageError.Validation("Baidu BOS region is required.")));
         }
 
-        var materialResult = await _credentialResolver.AcquireMaterialAsync(account, cancellationToken).ConfigureAwait(false);
-        if (materialResult.IsFailure)
-        {
-            return OperationResult<IStorageProvider>.Failure(materialResult.Error!);
-        }
-
-        var materialLease = materialResult.GetValueOrThrow();
-        try
-        {
-            var validation = ValidateSecretMaterial(materialLease.Material);
-            if (validation.IsFailure)
-            {
-                await materialLease.DisposeAsync().ConfigureAwait(false);
-                return OperationResult<IStorageProvider>.Failure(validation.Error!);
-            }
-
-            var accessKeyId = materialLease.Material.GetRequiredValue("accessKeyId");
-            var accessKeySecret = materialLease.Material.GetRequiredValue("accessKeySecret");
-            var configuration = new BceClientConfiguration
-            {
-                Credentials = new DefaultBceCredentials(accessKeyId, accessKeySecret),
-                Endpoint = NormalizeEndpoint(account.Endpoint),
-                Protocol = BceConstants.Protocol.Https,
-                Region = region.Trim()
-            };
-            var client = new BaiduBosSdkClient(configuration, account.GetProviderConfigValue("bucket"));
-            return OperationResult<IStorageProvider>.Success(
-                new S3CompatibleProvider(client, materialLease, Descriptor.Capabilities));
-        }
-        catch (Exception exception)
-        {
-            await materialLease.DisposeAsync().ConfigureAwait(false);
-            return OperationResult<IStorageProvider>.Failure(ProviderErrorMapper.FromException(exception));
-        }
+        return AwsSdkS3ProviderFactory.CreateAsync(
+            account,
+            Descriptor,
+            _credentialResolver,
+            new AwsSdkS3ProviderProfile(
+                endpoint.GetValueOrThrow(), account.Region, ForcePathStyle: false, CursorNamespace: "baidu-bos",
+                RootBucket: account.GetProviderConfigValue("bucket"), SingleCopyLimit: 5L * 1024 * 1024 * 1024),
+            cancellationToken: cancellationToken);
     }
 
-    private static string NormalizeEndpoint(string endpoint)
+    internal static OperationResult<string> TryCreateS3Endpoint(string? endpoint)
     {
-        var trimmed = endpoint.Trim().TrimEnd('/');
-        return trimmed.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
-               trimmed.StartsWith("https://", StringComparison.OrdinalIgnoreCase)
-            ? trimmed
-            : $"https://{trimmed}";
-    }
-
-    private static OperationResult ValidateSecretMaterial(CredentialSecretMaterial material)
-    {
-        if (!material.TryGetValue("accessKeyId", out _))
+        var normalized = AwsSdkS3ProviderFactory.NormalizeEndpoint(endpoint, "Baidu BOS");
+        if (normalized.IsFailure)
         {
-            return OperationResult.Failure(StorageError.Validation("Baidu BOS credential requires accessKeyId."));
+            return normalized;
         }
 
-        if (!material.TryGetValue("accessKeySecret", out _))
-        {
-            return OperationResult.Failure(StorageError.Validation("Baidu BOS credential requires accessKeySecret."));
-        }
-
-        return OperationResult.Success();
+        var uri = new Uri(normalized.GetValueOrThrow());
+        var host = uri.Host.StartsWith("s3.", StringComparison.OrdinalIgnoreCase) ? uri.Host : $"s3.{uri.Host}";
+        return OperationResult<string>.Success(new UriBuilder(uri) { Host = host }.Uri.GetLeftPart(UriPartial.Authority));
     }
 }

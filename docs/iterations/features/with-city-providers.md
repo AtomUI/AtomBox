@@ -8,6 +8,10 @@
 
 > 后续实现说明（2026-10-20）：本审计记录的 SFTP 与 Aliyun OSS 运行中不可取消债务，已在 Providers 自身边界内独立治理。SFTP 现使用 SSH.NET 异步上传/下载并贯穿 `CancellationToken`；Aliyun OSS V1 SDK 没有原生 token，普通上传以可取消流/回调中断请求，大文件改为显式 multipart 编排并在取消时 abort 会话。两项改动均不采用 City 能力，也不改变本审计的 City 决策。
 >
+> 后续设计说明（2026-11-22）：上述 Aliyun OSS V1 SDK 方案是历史实现，将由 [`aliyun-oss-precise-cancellation.md`](aliyun-oss-precise-cancellation.md) 定义的 AWS S3 SDK + 阿里云适配层方案替代。该迁移仍完全位于 Providers 边界，不改变本文件“不采用 City 能力”的结论。
+>
+> 后续实现说明（2026-11-22）：对象存储已进一步统一为 `AWSSDK.S3` + 供应商适配层，腾讯、七牛、又拍、华为、百度、京东与火山的旧 SDK/原生实现一并废弃，青云暂缓。详见 [`object-storage-precise-cancellation-and-sdk-convergence.md`](object-storage-precise-cancellation-and-sdk-convergence.md)。本文件下方的 SDK 清单是迁移前审计快照，不再代表当前生产依赖。
+>
 > 创建时间：2026-10-13
 
 ## 结论摘要

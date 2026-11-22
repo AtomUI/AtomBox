@@ -1,11 +1,11 @@
+using Amazon.S3;
 using AtomBox.Core.Accounts;
 using AtomBox.Core.Credentials;
 using AtomBox.Core.Errors;
 using AtomBox.Core.Providers;
 using AtomBox.Core.Results;
 using AtomBox.Providers.Common;
-using Qiniu.Storage;
-using Qiniu.Util;
+using AtomBox.Providers.ObjectStorage.S3Compatible;
 
 namespace AtomBox.Providers.ObjectStorage.QiniuKodo;
 
@@ -13,9 +13,7 @@ public sealed class QiniuKodoProviderCreator : IStorageProviderCreator
 {
     private readonly ProviderCredentialResolver _credentialResolver;
 
-    public QiniuKodoProviderCreator(
-        ProviderDescriptor descriptor,
-        ProviderCredentialResolver credentialResolver)
+    public QiniuKodoProviderCreator(ProviderDescriptor descriptor, ProviderCredentialResolver credentialResolver)
     {
         Descriptor = descriptor;
         _credentialResolver = credentialResolver;
@@ -23,83 +21,37 @@ public sealed class QiniuKodoProviderCreator : IStorageProviderCreator
 
     public ProviderDescriptor Descriptor { get; }
 
-    public async Task<OperationResult<IStorageProvider>> CreateAsync(
-        StorageAccount account,
-        CancellationToken cancellationToken = default)
+    public Task<OperationResult<IStorageProvider>> CreateAsync(StorageAccount account, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(account);
-
-        if (string.IsNullOrWhiteSpace(account.Endpoint))
+        var region = NormalizeRegion(account.Region);
+        if (region is null)
         {
-            return OperationResult<IStorageProvider>.Failure(StorageError.Validation("Qiniu Kodo download domain is required."));
+            return Task.FromResult(OperationResult<IStorageProvider>.Failure(StorageError.Validation("Qiniu Kodo region is required.")));
         }
 
-        var materialResult = await _credentialResolver.AcquireMaterialAsync(account, cancellationToken).ConfigureAwait(false);
-        if (materialResult.IsFailure)
-        {
-            return OperationResult<IStorageProvider>.Failure(materialResult.Error!);
-        }
-
-        var materialLease = materialResult.GetValueOrThrow();
-        try
-        {
-            var secretValidation = ValidateSecretMaterial(materialLease.Material);
-            if (secretValidation.IsFailure)
-            {
-                await materialLease.DisposeAsync().ConfigureAwait(false);
-                return OperationResult<IStorageProvider>.Failure(secretValidation.Error!);
-            }
-
-            var accessKey = materialLease.Material.GetRequiredValue("accessKeyId");
-            var secretKey = materialLease.Material.GetRequiredValue("accessKeySecret");
-            var config = new Config
-            {
-                UseHttps = account.Endpoint.StartsWith("https://", StringComparison.OrdinalIgnoreCase),
-                Zone = GetZone(account.GetProviderConfigValue("region"))
-            };
-            var client = new QiniuKodoSdkClient(
-                new Mac(accessKey, secretKey),
-                config,
-                account.Endpoint,
-                accessKey,
-                secretKey);
-
-            return OperationResult<IStorageProvider>.Success(
-                new QiniuKodoProvider(client, materialLease, Descriptor.Capabilities));
-        }
-        catch (Exception exception)
-        {
-            await materialLease.DisposeAsync().ConfigureAwait(false);
-            return OperationResult<IStorageProvider>.Failure(ProviderErrorMapper.FromException(exception));
-        }
+        return AwsSdkS3ProviderFactory.CreateAsync(
+            account,
+            Descriptor,
+            _credentialResolver,
+            new AwsSdkS3ProviderProfile(
+                $"https://s3-{region}.qiniucs.com", region, ForcePathStyle: true, CursorNamespace: "qiniu-kodo",
+                RootBucket: account.GetProviderConfigValue("bucket"), CreateBucketAcl: S3CannedACL.Private),
+            cancellationToken: cancellationToken);
     }
 
-    private static OperationResult ValidateSecretMaterial(CredentialSecretMaterial material)
-    {
-        if (!material.TryGetValue("accessKeyId", out _))
-        {
-            return OperationResult.Failure(StorageError.Validation("Qiniu Kodo credential requires accessKeyId."));
-        }
-
-        if (!material.TryGetValue("accessKeySecret", out _))
-        {
-            return OperationResult.Failure(StorageError.Validation("Qiniu Kodo credential requires accessKeySecret."));
-        }
-
-        return OperationResult.Success();
-    }
-
-    private static Zone GetZone(string? region)
+    internal static string? NormalizeRegion(string? region)
     {
         return region?.Trim().ToLowerInvariant() switch
         {
-            "z0" or "cn-east" or "huadong" or "east-cn" => Zone.ZONE_CN_East,
-            "z1" or "cn-north" or "huabei" or "north-cn" => Zone.ZONE_CN_North,
-            "z2" or "cn-south" or "huanan" or "south-cn" => Zone.ZONE_CN_South,
-            "na0" or "us-north" or "north-america" => Zone.ZONE_US_North,
-            "as0" or "singapore" or "ap-southeast" => Zone.ZONE_AS_Singapore,
-            "cn-east-2" or "huadong-2" => Zone.ZONE_CN_East_2,
-            _ => Zone.ZONE_CN_East
+            "z0" or "cn-east" or "huadong" or "east-cn" or "cn-east-1" => "cn-east-1",
+            "z1" or "cn-north" or "huabei" or "north-cn" or "cn-north-1" => "cn-north-1",
+            "z2" or "cn-south" or "huanan" or "south-cn" or "cn-south-1" => "cn-south-1",
+            "na0" or "us-north" or "north-america" or "us-north-1" => "us-north-1",
+            "as0" or "singapore" or "ap-southeast" or "ap-southeast-1" => "ap-southeast-1",
+            "cn-east-2" or "huadong-2" => "cn-east-2",
+            null or "" => null,
+            var value => value
         };
     }
 }

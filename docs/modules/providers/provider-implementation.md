@@ -190,22 +190,46 @@ Provider 可以保留脱敏技术细节供 Application 和 Presentation 展示�
 - FTP/WebDAV 匿名模式不得读取或要求 secret material；SFTP/FTP/WebDAV 非匿名模式必须通过 credential lease 获取临时凭据材料。
 - SFTP/FTP 上传文件前应确保远端父目录存在；下载目录应返回 Validation；下载不存在文件应返回 NotFound；删除必须按文件/目录类型分别调用协议能力。
 - SFTP 上传和下载必须使用 SSH.NET 的异步传输 API，并把 Runtime 提供的 `CancellationToken` 贯穿到协议调用。用户取消后，协议执行体必须退出并返回 Canceled 错误语义；不得只在传输开始前检查令牌、随后继续执行同步上传或下载。
-- SFTP 取消停止后续传输，但不承诺删除远端已经产生的部分文件。部分远端数据的清理由用户根据实际结果决定，Provider 不得在结果未知时自动删除路径。
-- Aliyun OSS V1 SDK 的 `PutObject`、`UploadPart` 和 `ResumableUploadObject` 都不接受 `CancellationToken`，不得把传入 AtomBox token 描述成“SDK 原生取消”。普通上传必须通过可取消源流与 SDK 同步进度回调中断请求，并在 SDK 返回后设置取消屏障。
-- Aliyun OSS 大文件上传不得直接使用会捕获所有异常并重试的 `ResumableUploadObject`。AtomBox 使用 `InitiateMultipartUpload -> UploadPart -> CompleteMultipartUpload` 显式编排：每个 part 前后检查 token，正在发送的 part 通过可取消流/回调退出；取消或失败后 best-effort 调用 `AbortMultipartUpload` 清理未完成会话，且不得执行 Complete。
-- Aliyun OSS 仍不声明 active abort：V1 SDK 的单个 HTTP 请求没有 token/abort handle，取消只能在下一次源流读取或进度回调处被观测。若取消与 `CompleteMultipartUpload` 已在服务端提交发生不可判定竞态，本地以用户取消意图为准，但不得擅自删除可能已完成的远端对象。
+- FTP 必须使用 FluentFTP `AsyncFtpClient`；连接、目录列表、存在性检查、父目录创建、上传、下载、删除和移动必须接收同一个 Runtime `CancellationToken`。不得退回同步 `FtpClient` 后用 `Task.Run` 伪装可取消异步传输。
+- WebDAV 必须使用 `HttpClient.SendAsync` 和异步 Stream API；PROPFIND、MKCOL、DELETE、MOVE、PUT、GET、上传内容序列化和下载响应复制必须传递同一个 Runtime `CancellationToken`。自定义 `HttpContent` 必须覆盖带 Token 的 `SerializeToStreamAsync`，不得在无 Token 重载中丢失取消信号。
+- SFTP、FTP 和 WebDAV 的上传/下载能力均声明 `Asynchronous + SupportsCooperativeCancellation=true + SupportsActiveAbort=false`。用户取消必须使协议执行体退出并返回 Canceled；非调用方 Token 导致的 WebDAV `OperationCanceledException` 必须映射为 Timeout/Network，不得误报用户取消。
+- 文件传输取消只停止后续传输，不承诺删除远端已经产生的部分文件或本地部分下载。部分数据的清理由用户根据实际结果决定，Provider 不得在结果未知时自动删除路径。
+- Aliyun OSS 不再使用 `Aliyun.OSS.SDK.NetCore`。主要 Bucket、Object 和 Multipart 操作使用官方且未经修改的 `AWSSDK.S3`，S3 兼容接口没有承诺的操作才允许由阿里云适配层调用原生 OSS HTTP API。
+- 禁止 fork、patch、vendoring、反射注入或复制 AWS SDK 私有实现。阿里云兼容差异只能通过 AWS SDK 公共配置、公共 request 类型和 Providers 内部适配层解决。
+- Aliyun OSS 使用固定操作路由：`ListBuckets` 走原生 OSS HTTP；`PutBucket`、`ListObjectsV2`、对象上传/下载/删除/复制及 Multipart 全流程走 AWS SDK。一次操作不得在失败后从 AWS 路径自动切换到原生 HTTP 路径。
+- Aliyun OSS 的标准公网 S3 Endpoint 为 `https://s3.oss-{region}.aliyuncs.com`，标准内网 Endpoint 为 `https://s3.oss-{region}-internal.aliyuncs.com`；AWS 客户端必须使用虚拟主机寻址，不得启用 path-style。
+- Aliyun OSS 的 `PutObjectRequest` 和 `UploadPartRequest` 必须设置 `UseChunkEncoding=false`、`DisablePayloadSigning=true`，请求与响应 checksum 策略固定为 `WHEN_REQUIRED`，所有数据传输使用 HTTPS。
+- AWS SDK、原生 `HttpClient`、本地分片读取和下载响应复制必须接收同一个 Runtime `CancellationToken`。Aliyun OSS 声明异步上传/下载与 cooperative cancellation，不额外声明 active abort。
+- Aliyun OSS Multipart 由 AtomBox 明确选择普通上传或分片上传；分片读取使用可取消异步读取。取消或失败后不得执行 Complete，并用独立、最长 10 秒的清理令牌 best-effort 调用 `AbortMultipartUpload`；清理失败不得覆盖原始取消或上传错误。
+- 原生 OSS HTTP 第一阶段只实现 `ListBuckets`，使用独立 `OSS4-HMAC-SHA256` signer。Signer 和错误解析都属于 Providers 内部实现，不能泄漏凭据、Authorization、canonical request 或派生密钥。
 - WebDAV 上传文件前应确保远端父目录存在；下载目录应返回 Validation；下载不存在文件应返回 NotFound；创建目录使用 MKCOL，移动/重命名使用 MOVE。
 - Provider 契约提供 `CreateFolderAsync`、`RenameAsync`、`MoveAsync` 三个文件管理入口；不支持的 provider 必须返回 `OperationNotSupported`，不能伪装成功。
 - SFTP/FTP/WebDAV 必须真实支持创建目录、重命名和移动；对象存储 provider 在未接入 SDK copy-object 前不得用“下载到内存再上传”的方式伪装 move/rename。
 
 S3 compatible 对象存储分层：
 
-- `S3CompatibleProvider` 承载通用对象存储运行时行为：bucket/key 路径解析、prefix 伪目录列表、上传、下载、删除和统一错误映射。
-- `IS3CompatibleClient` 隔离具体 SDK/API，返回中性 `S3Compatible*` 数据模型。
-- `S3CompatibleAwsV4Client` 用于 AWS Signature V4 且 S3 API 兼容的服务，例如华为云 OBS、京东云 OSS、青云 QingStor 当前适配路径。
-- 百度智能云 BOS 使用百度官方 C# SDK（`BaiduBce.Services.Bos.BosClient`）实现 `BaiduBosSdkClient`，再适配到 `IS3CompatibleClient`，运行时仍复用 `S3CompatibleProvider`。
-- 火山引擎 TOS 使用官方 `Volcengine.TOS.SDK.NetCore`，通过 `VolcengineTosSdkClient` 适配到 `IS3CompatibleClient`，运行时仍复用 `S3CompatibleProvider`。
-- 具体云厂商 creator 负责校验自身必填配置、读取 credential material、选择合适的 `IS3CompatibleClient`，但不复制通用对象存储 provider 行为。
+- `S3CompatibleProvider` 承载通用对象存储运行时行为：bucket/key 路径解析、prefix 伪目录列表、上传、下载、删除、复制、分页游标和统一错误映射。
+- `IAsyncS3CompatibleClient` 是迁移后对象存储的数据面合同；实现必须把调用方 `CancellationToken` 传入网络 I/O 和流 I/O，不能用 `Task.FromResult` 包装同步传输伪装异步。
+- `AwsSdkS3CompatibleClient` 是阿里云、腾讯云、七牛、又拍云、华为云、百度云、京东云、火山引擎和通用 S3 的共享异步内核。它通过 `AwsSdkS3ClientOptions` 选择 ListObjects V1/V2、chunk/payload 策略、单次复制上限和 Multipart copy part 大小。
+- `AwsSdkS3ProviderFactory` 只负责凭据到 AWS credential 的映射、公共 checksum 配置、client 生命周期和通用 Provider 装配。各供应商 Creator 仍负责独立 Endpoint/Profile 校验，禁止复用一份没有差异的 Generic S3 配置。
+- `AliyunOssS3Adapter` 组合共享 AWS client 与最小原生 OSS service client；固定由原生路径处理 `ListBuckets`，其余操作委托 AWS client，失败后不 fallback。
+- `S3CompatibleAwsV4Client` 是冻结的同步兼容实现，只允许当前后置的青云 QingStor 使用。它不能作为新增供应商或迁移供应商的默认实现。
+- `IS3CompatibleClient` 与 `SynchronousS3CompatibleClientAdapter` 只为青云冻结路径保留；任何新对象存储能力必须使用真实异步合同。
+- 具体云厂商 Creator 负责地域、寻址、Endpoint、Bucket 创建限制、单 Bucket root 和凭据迁移，不复制通用对象存储 Provider 行为。
+
+供应商适配矩阵：
+
+| Provider | 寻址 / 列表 | 特殊约束 |
+| --- | --- | --- |
+| 阿里云 OSS | virtual-host / V2 | 原生 `ListBuckets`；公网/内网配对 Endpoint。 |
+| 腾讯云 COS | virtual-host / V2 | Bucket 保留 APPID 后缀。 |
+| 七牛 Kodo | path-style / V2 | 地域别名映射，在账号配置的地域创建私有 Bucket。 |
+| 又拍云 USS | path-style / V2 | 固定 Endpoint、单 Bucket、独立 S3 凭据，空间由厂商控制台创建。 |
+| 华为云 OBS | virtual-host / V1 | Region 可从标准 Endpoint 推导。 |
+| 百度 BOS | virtual-host / V2 | 原生 Endpoint 映射到 S3 Endpoint；支持单 Bucket root。 |
+| 京东云 OSS | path-style / V2 | 使用账号地域 Endpoint。 |
+| 火山引擎 TOS | virtual-host / V2 | `tos-*` 映射到 `tos-s3-*`。 |
+| 青云 QingStor | 冻结旧路径 | 本轮不迁移、不扩展。 |
 
 暂不追求：
 

@@ -62,6 +62,7 @@
   <data name="UploadCreatedMultiple" xml:space="preserve"><value>Created {0} upload tasks.</value></data>
   <data name="CreateBucketTitle" xml:space="preserve"><value>Create Bucket</value></data>
   <data name="CreateBucketPrompt" xml:space="preserve"><value>Enter the new Bucket name:</value></data>
+  <data name="CreateTencentCosBucketPrompt" xml:space="preserve"><value>Enter the full bucket name including your Tencent Cloud APPID, for example example-1250000000.</value></data>
   <data name="BucketNameField" xml:space="preserve"><value>Bucket Name</value></data>
   <data name="Create" xml:space="preserve"><value>Create</value></data>
   <data name="InvalidBucketName" xml:space="preserve"><value>Bucket names cannot contain path separators.</value></data>

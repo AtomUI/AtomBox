@@ -12,9 +12,7 @@ public sealed class HuaweiObsProviderCreator : IStorageProviderCreator
 {
     private readonly ProviderCredentialResolver _credentialResolver;
 
-    public HuaweiObsProviderCreator(
-        ProviderDescriptor descriptor,
-        ProviderCredentialResolver credentialResolver)
+    public HuaweiObsProviderCreator(ProviderDescriptor descriptor, ProviderCredentialResolver credentialResolver)
     {
         Descriptor = descriptor;
         _credentialResolver = credentialResolver;
@@ -22,59 +20,41 @@ public sealed class HuaweiObsProviderCreator : IStorageProviderCreator
 
     public ProviderDescriptor Descriptor { get; }
 
-    public async Task<OperationResult<IStorageProvider>> CreateAsync(
-        StorageAccount account,
-        CancellationToken cancellationToken = default)
+    public Task<OperationResult<IStorageProvider>> CreateAsync(StorageAccount account, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(account);
-
-        if (string.IsNullOrWhiteSpace(account.Endpoint))
+        var endpoint = AwsSdkS3ProviderFactory.NormalizeEndpoint(account.Endpoint, "Huawei OBS");
+        if (endpoint.IsFailure)
         {
-            return OperationResult<IStorageProvider>.Failure(StorageError.Validation("Huawei OBS endpoint is required."));
+            return Task.FromResult(OperationResult<IStorageProvider>.Failure(endpoint.Error!));
         }
 
-        var materialResult = await _credentialResolver.AcquireMaterialAsync(account, cancellationToken).ConfigureAwait(false);
-        if (materialResult.IsFailure)
+        var region = string.IsNullOrWhiteSpace(account.Region) ? TryDeriveRegion(endpoint.GetValueOrThrow()) : account.Region.Trim();
+        if (string.IsNullOrWhiteSpace(region))
         {
-            return OperationResult<IStorageProvider>.Failure(materialResult.Error!);
+            return Task.FromResult(OperationResult<IStorageProvider>.Failure(
+                StorageError.Validation("Huawei OBS region is required and could not be derived from endpoint.")));
         }
 
-        var materialLease = materialResult.GetValueOrThrow();
-        try
-        {
-            var secretValidation = ValidateSecretMaterial(materialLease.Material);
-            if (secretValidation.IsFailure)
-            {
-                await materialLease.DisposeAsync().ConfigureAwait(false);
-                return OperationResult<IStorageProvider>.Failure(secretValidation.Error!);
-            }
-
-            var accessKeyId = materialLease.Material.GetRequiredValue("accessKeyId");
-            var accessKeySecret = materialLease.Material.GetRequiredValue("accessKeySecret");
-            var client = new HuaweiObsSdkClient(account.Endpoint, accessKeyId, accessKeySecret);
-
-            return OperationResult<IStorageProvider>.Success(
-                new S3CompatibleProvider(client, materialLease, Descriptor.Capabilities));
-        }
-        catch (Exception exception)
-        {
-            await materialLease.DisposeAsync().ConfigureAwait(false);
-            return OperationResult<IStorageProvider>.Failure(ProviderErrorMapper.FromException(exception));
-        }
+        return AwsSdkS3ProviderFactory.CreateAsync(
+            account,
+            Descriptor,
+            _credentialResolver,
+            new AwsSdkS3ProviderProfile(
+                endpoint.GetValueOrThrow(), region, ForcePathStyle: false, CursorNamespace: "huawei-obs",
+                ObjectListingApi: S3ObjectListingApi.V1, SingleCopyLimit: 5L * 1024 * 1024 * 1024),
+            cancellationToken: cancellationToken);
     }
 
-    private static OperationResult ValidateSecretMaterial(CredentialSecretMaterial material)
+    internal static string? TryDeriveRegion(string endpoint)
     {
-        if (!material.TryGetValue("accessKeyId", out _))
+        if (!Uri.TryCreate(endpoint, UriKind.Absolute, out var uri))
         {
-            return OperationResult.Failure(StorageError.Validation("Huawei OBS credential requires accessKeyId."));
+            return null;
         }
 
-        if (!material.TryGetValue("accessKeySecret", out _))
-        {
-            return OperationResult.Failure(StorageError.Validation("Huawei OBS credential requires accessKeySecret."));
-        }
-
-        return OperationResult.Success();
+        var parts = uri.Host.Split('.', StringSplitOptions.RemoveEmptyEntries);
+        var obsIndex = Array.FindIndex(parts, item => string.Equals(item, "obs", StringComparison.OrdinalIgnoreCase));
+        return obsIndex >= 0 && obsIndex + 1 < parts.Length ? parts[obsIndex + 1] : null;
     }
 }
