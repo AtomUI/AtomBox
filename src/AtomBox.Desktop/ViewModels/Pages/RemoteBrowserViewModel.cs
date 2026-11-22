@@ -2609,6 +2609,8 @@ public sealed record RemoteListRowViewModel(
 
     public bool CanSelect => IsFile;
 
+    public bool IsDeleteActionVisible => Kind != RemoteItemKind.Bucket;
+
     public bool IsBatchSelectionVisible =>
         RemoteBrowserFeatureFlags.BatchFileSelectionEnabled && CanSelect;
 

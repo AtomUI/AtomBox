@@ -240,6 +240,7 @@
                                                     <atom:MenuItem Header="{loc:Loc Common.Delete}"
                                                                    Command="{Binding DeleteCommand}"
                                                                    CommandParameter="{Binding}"
+                                                                   IsVisible="{Binding IsDeleteActionVisible}"
                                                                    IsEnabled="{Binding CanDelete}" />
                                                 </atom:ContextMenu>
                                             </Border.ContextMenu>
