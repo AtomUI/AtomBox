@@ -12,7 +12,6 @@ env:
   ATOMUI_TOOLS_SOURCE: ${{ github.workspace }}/.artifacts/atomuitools-source
   ATOMUI_TOOLS_BIN: ${{ github.workspace }}/.artifacts/atomuitools
   ATOMUI_TOOLS_MAC_BIN: ${{ github.workspace }}/.artifacts/atomuitools/AtomUITools.Mac
-  ATOMUI_TOOLS_LINUX_BIN: ${{ github.workspace }}/.artifacts/atomuitools/AtomUITools.Linux
 
 jobs:
   build:
@@ -246,14 +245,6 @@ jobs:
         with:
           submodules: recursive
 
-      - name: Checkout AtomUITools
-        uses: actions/checkout@v4
-        with:
-          repository: AtomUI/AtomUITools
-          ref: develop
-          token: ${{ secrets.ACCESS_TOKEN }}
-          path: .artifacts/atomuitools-source
-
       - name: Setup .NET
         uses: actions/setup-dotnet@v4
         with:
@@ -282,19 +273,6 @@ jobs:
       - name: Test
         run: dotnet test AtomBox.slnx --configuration Release --no-restore
 
-      - name: Build AtomUITools
-        shell: pwsh
-        run: |
-          New-Item -ItemType Directory -Path "${{ env.ATOMUI_TOOLS_BIN }}" -Force | Out-Null
-          Set-Location "${{ env.ATOMUI_TOOLS_SOURCE }}/scripts"
-          pwsh ./PublishAtomUIToolsLocal.ps1 `
-            -publishRootPath "${{ env.ATOMUI_TOOLS_BIN }}" `
-            -runtime "${{ matrix.rid }}"
-
-          if (-not (Test-Path -LiteralPath "${{ env.ATOMUI_TOOLS_LINUX_BIN }}" -PathType Leaf)) {
-            throw "AtomUITools.Linux was not created at ${{ env.ATOMUI_TOOLS_LINUX_BIN }}."
-          }
-
       - name: Publish AtomBox
         shell: pwsh
         run: |
@@ -313,54 +291,15 @@ jobs:
           Get-ChildItem -LiteralPath $packages -Filter "*.pdb" -File -ErrorAction SilentlyContinue |
             Remove-Item -Force
 
-      - name: Stage Linux installer resources
-        shell: pwsh
-        run: |
-          $configDir = "${{ matrix.publish_root }}/config"
-          $imagesDir = "${{ matrix.publish_root }}/packages/Assets/Images"
-          $iconsDir = "$imagesDir/icons"
-          New-Item -ItemType Directory -Force $configDir, $imagesDir, $iconsDir, "${{ matrix.output_dir }}" | Out-Null
-
-          $version = "${{ github.ref_name }}" -replace '^v', ''
-          $config = (Get-Content assets/linux/InstallerConfig.xml -Raw).Replace('__VERSION__', $version)
-          Set-Content -LiteralPath "$configDir/InstallerConfig.xml" -Value $config -Encoding utf8
-
-          # AtomUITools uses Installer.Name for Icon=; linuxdeploy matches the filename case-sensitively.
-          $iconName = ([xml]$config).Installer.Name
-          foreach ($sizeDir in (Get-ChildItem -LiteralPath assets/linux/icons/hicolor -Directory)) {
-            $destination = "$iconsDir/hicolor/$($sizeDir.Name)/apps"
-            New-Item -ItemType Directory -Force $destination | Out-Null
-            Copy-Item -LiteralPath "$($sizeDir.FullName)/apps/atombox.png" -Destination "$destination/$iconName.png" -Force
-          }
-          Copy-Item -LiteralPath assets/linux/icons/hicolor/256x256/apps/atombox.png -Destination "$imagesDir/AtomBox.png" -Force
-
-      - name: Make executable
-        shell: bash
-        run: chmod +x "${{ matrix.publish_root }}/packages/AtomBox.Desktop"
-
       - name: Create AppImage
-        shell: pwsh
+        shell: bash
+        env:
+          ARCH: ${{ matrix.appimage_arch }}
         run: |
-          & "${{ env.ATOMUI_TOOLS_LINUX_BIN }}" create-appimage `
-            --runtime "${{ matrix.rid }}" `
-            --config "${{ matrix.publish_root }}/config/InstallerConfig.xml" `
-            --packages "${{ matrix.publish_root }}/packages" `
-            --output "${{ matrix.output_dir }}" `
-            --verbosity Detailed `
-            --cleanupBundleOption true
-
-          if ($LASTEXITCODE -ne 0) {
-            throw "AtomUITools create-appimage failed with exit code $LASTEXITCODE."
-          }
-
-          $artifacts = @(Get-ChildItem -LiteralPath "${{ matrix.output_dir }}" -Filter "*.AppImage" -File)
-          if ($artifacts.Count -ne 1) {
-            throw "Expected exactly one AppImage, found $($artifacts.Count)."
-          }
-
-          $version = "${{ github.ref_name }}" -replace '^v', ''
-          $packageName = "AtomBox-$version-${{ matrix.rid }}.AppImage"
-          Move-Item -LiteralPath $artifacts[0].FullName -Destination "${{ matrix.output_dir }}/$packageName" -Force
+          version="${GITHUB_REF_NAME#v}"
+          bash assets/linux/create-appimage.sh \
+            "${{ matrix.publish_root }}/packages" \
+            "${{ matrix.output_dir }}/AtomBox-${version}-${{ matrix.rid }}.AppImage"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

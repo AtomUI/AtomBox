@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=AtomBox
+Exec=AtomBox.Desktop
+Icon=atombox
+Terminal=false
+Categories=Utility;
