@@ -1,28 +1,44 @@
 namespace AtomBox.Providers.FileTransfer.Ftp;
 
-internal interface IFtpClientAdapter : IDisposable
+internal interface IFtpClientAdapter : IAsyncDisposable
 {
     bool IsConnected { get; }
 
-    void Connect();
+    Task ConnectAsync(CancellationToken cancellationToken = default);
 
-    IReadOnlyList<FtpRemoteEntry> ListDirectory(string path);
+    Task<IReadOnlyList<FtpRemoteEntry>> ListDirectoryAsync(
+        string path,
+        CancellationToken cancellationToken = default);
 
-    bool FileExists(string path);
+    Task<bool> FileExistsAsync(string path, CancellationToken cancellationToken = default);
 
-    bool DirectoryExists(string path);
+    Task<bool> DirectoryExistsAsync(string path, CancellationToken cancellationToken = default);
 
-    void CreateDirectory(string path);
+    Task CreateDirectoryAsync(string path, CancellationToken cancellationToken = default);
 
-    void DeleteFile(string path);
+    Task DeleteFileAsync(string path, CancellationToken cancellationToken = default);
 
-    void DeleteDirectory(string path);
+    Task DeleteDirectoryAsync(string path, CancellationToken cancellationToken = default);
 
-    void MoveFile(string sourcePath, string destinationPath);
+    Task MoveFileAsync(
+        string sourcePath,
+        string destinationPath,
+        CancellationToken cancellationToken = default);
 
-    void MoveDirectory(string sourcePath, string destinationPath);
+    Task MoveDirectoryAsync(
+        string sourcePath,
+        string destinationPath,
+        CancellationToken cancellationToken = default);
 
-    void UploadFile(Stream content, string path, Action<long>? progress = null);
+    Task UploadFileAsync(
+        Stream content,
+        string path,
+        Action<long>? progress = null,
+        CancellationToken cancellationToken = default);
 
-    void DownloadFile(string path, Stream destination, Action<long>? progress = null);
+    Task DownloadFileAsync(
+        string path,
+        Stream destination,
+        Action<long>? progress = null,
+        CancellationToken cancellationToken = default);
 }

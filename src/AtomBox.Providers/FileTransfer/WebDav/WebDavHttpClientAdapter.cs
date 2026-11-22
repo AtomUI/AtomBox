@@ -17,12 +17,24 @@ internal sealed class WebDavHttpClientAdapter : IWebDavClientAdapter
         string? username,
         string? password,
         int timeoutSeconds)
+        : this(
+            baseUri,
+            username,
+            password,
+            timeoutSeconds,
+            new HttpClientHandler { UseProxy = false })
+    {
+    }
+
+    internal WebDavHttpClientAdapter(
+        Uri baseUri,
+        string? username,
+        string? password,
+        int timeoutSeconds,
+        HttpMessageHandler handler)
     {
         _baseUri = NormalizeBaseUri(baseUri);
-        _client = new HttpClient(new HttpClientHandler
-        {
-            UseProxy = false
-        })
+        _client = new HttpClient(handler)
         {
             BaseAddress = _baseUri,
             Timeout = TimeSpan.FromSeconds(timeoutSeconds)
@@ -35,28 +47,39 @@ internal sealed class WebDavHttpClientAdapter : IWebDavClientAdapter
         }
     }
 
-    public IReadOnlyList<WebDavRemoteEntry> ListDirectory(string path)
+    public async Task<IReadOnlyList<WebDavRemoteEntry>> ListDirectoryAsync(
+        string path,
+        CancellationToken cancellationToken = default)
     {
-        var entries = PropFind(path, "1");
+        var entries = await PropFindAsync(path, "1", cancellationToken).ConfigureAwait(false);
         return entries
             .Where(entry => !IsSamePath(entry.Path, path))
             .Select(entry => entry.ToRemoteEntry())
             .ToArray();
     }
 
-    public bool FileExists(string path)
+    public async Task<bool> FileExistsAsync(
+        string path,
+        CancellationToken cancellationToken = default)
     {
-        return TryGetEntry(path, out var entry) && !entry.IsDirectory;
+        var entry = await TryGetEntryAsync(path, cancellationToken).ConfigureAwait(false);
+        return entry is not null && !entry.IsDirectory;
     }
 
-    public bool DirectoryExists(string path)
+    public async Task<bool> DirectoryExistsAsync(
+        string path,
+        CancellationToken cancellationToken = default)
     {
-        return TryGetEntry(path, out var entry) && entry.IsDirectory;
+        var entry = await TryGetEntryAsync(path, cancellationToken).ConfigureAwait(false);
+        return entry?.IsDirectory == true;
     }
 
-    public void CreateDirectory(string path)
+    public async Task CreateDirectoryAsync(
+        string path,
+        CancellationToken cancellationToken = default)
     {
-        using var response = Send(new HttpRequestMessage(new HttpMethod("MKCOL"), BuildUri(path)));
+        using var request = new HttpRequestMessage(new HttpMethod("MKCOL"), BuildUri(path));
+        using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
         if (response.StatusCode is HttpStatusCode.Created or HttpStatusCode.MethodNotAllowed)
         {
             return;
@@ -65,75 +88,92 @@ internal sealed class WebDavHttpClientAdapter : IWebDavClientAdapter
         EnsureSuccess(response);
     }
 
-    public void Delete(string path)
+    public async Task DeleteAsync(string path, CancellationToken cancellationToken = default)
     {
-        using var response = Send(new HttpRequestMessage(HttpMethod.Delete, BuildUri(path)));
+        using var request = new HttpRequestMessage(HttpMethod.Delete, BuildUri(path));
+        using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
         EnsureSuccess(response, HttpStatusCode.NoContent, HttpStatusCode.OK, HttpStatusCode.MultiStatus);
     }
 
-    public void Move(string sourcePath, string destinationPath)
+    public async Task MoveAsync(
+        string sourcePath,
+        string destinationPath,
+        CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(new HttpMethod("MOVE"), BuildUri(sourcePath));
         request.Headers.TryAddWithoutValidation("Destination", BuildUri(destinationPath).AbsoluteUri);
         request.Headers.TryAddWithoutValidation("Overwrite", "F");
-        using var response = Send(request);
+        using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
         EnsureSuccess(response, HttpStatusCode.Created, HttpStatusCode.NoContent);
     }
 
-    public void UploadFile(Stream content, string path, Action<long>? progress = null)
+    public async Task UploadFileAsync(
+        Stream content,
+        string path,
+        Action<long>? progress = null,
+        CancellationToken cancellationToken = default)
     {
         using var request = new HttpRequestMessage(HttpMethod.Put, BuildUri(path));
         request.Content = new ProgressHttpContent(content, progress);
-        using var response = Send(request);
+        using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
         EnsureSuccess(response, HttpStatusCode.Created, HttpStatusCode.NoContent, HttpStatusCode.OK);
     }
 
-    public void DownloadFile(string path, Stream destination, Action<long>? progress = null)
+    public async Task DownloadFileAsync(
+        string path,
+        Stream destination,
+        Action<long>? progress = null,
+        CancellationToken cancellationToken = default)
     {
-        using var response = Send(new HttpRequestMessage(HttpMethod.Get, BuildUri(path)));
+        using var request = new HttpRequestMessage(HttpMethod.Get, BuildUri(path));
+        using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
         EnsureSuccess(response, HttpStatusCode.OK);
-        using var stream = response.Content.ReadAsStream();
+        await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false);
         var buffer = new byte[81920];
         long transferred = 0;
         while (true)
         {
-            var read = stream.Read(buffer, 0, buffer.Length);
+            var read = await stream.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
             if (read == 0)
             {
                 break;
             }
 
-            destination.Write(buffer, 0, read);
+            await destination.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
             transferred += read;
             progress?.Invoke(transferred);
         }
     }
 
-    public void Dispose()
+    public ValueTask DisposeAsync()
     {
         _client.Dispose();
+        return ValueTask.CompletedTask;
     }
 
-    private bool TryGetEntry(string path, out WebDavEntry entry)
+    private async Task<WebDavEntry?> TryGetEntryAsync(
+        string path,
+        CancellationToken cancellationToken)
     {
         try
         {
-            entry = PropFind(path, "0").First(item => IsSamePath(item.Path, path));
-            return true;
+            return (await PropFindAsync(path, "0", cancellationToken).ConfigureAwait(false))
+                .First(item => IsSamePath(item.Path, path));
         }
         catch (WebDavHttpException exception) when (exception.StatusCode == 404)
         {
-            entry = default!;
-            return false;
+            return null;
         }
         catch (InvalidOperationException)
         {
-            entry = default!;
-            return false;
+            return null;
         }
     }
 
-    private IReadOnlyList<WebDavEntry> PropFind(string path, string depth)
+    private async Task<IReadOnlyList<WebDavEntry>> PropFindAsync(
+        string path,
+        string depth,
+        CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(new HttpMethod("PROPFIND"), BuildUri(path));
         request.Headers.TryAddWithoutValidation("Depth", depth);
@@ -152,9 +192,9 @@ internal sealed class WebDavHttpClientAdapter : IWebDavClientAdapter
             Encoding.UTF8,
             "application/xml");
 
-        using var response = Send(request);
+        using var response = await SendAsync(request, cancellationToken).ConfigureAwait(false);
         EnsureSuccess(response, HttpStatusCode.MultiStatus);
-        var xml = response.Content.ReadAsStringAsync().GetAwaiter().GetResult();
+        var xml = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
         var document = XDocument.Parse(xml);
         return document
             .Descendants(Dav + "response")
@@ -207,9 +247,21 @@ internal sealed class WebDavHttpClientAdapter : IWebDavClientAdapter
         return new WebDavEntry(NormalizePath(decodedPath), name, isDirectory, length, modified);
     }
 
-    private HttpResponseMessage Send(HttpRequestMessage request)
+    private async Task<HttpResponseMessage> SendAsync(
+        HttpRequestMessage request,
+        CancellationToken cancellationToken)
     {
-        return _client.Send(request, HttpCompletionOption.ResponseHeadersRead);
+        try
+        {
+            return await _client.SendAsync(
+                request,
+                HttpCompletionOption.ResponseHeadersRead,
+                cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception) when (!cancellationToken.IsCancellationRequested)
+        {
+            throw new TimeoutException("The WebDAV request timed out.", exception);
+        }
     }
 
     private static void EnsureSuccess(HttpResponseMessage response, params HttpStatusCode[] accepted)
@@ -302,6 +354,7 @@ internal sealed class WebDavHttpClientAdapter : IWebDavClientAdapter
             long transferred = 0;
             while (true)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var read = _source.Read(buffer, 0, buffer.Length);
                 if (read == 0)
                 {
@@ -314,19 +367,27 @@ internal sealed class WebDavHttpClientAdapter : IWebDavClientAdapter
             }
         }
 
-        protected override async Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        protected override Task SerializeToStreamAsync(Stream stream, TransportContext? context)
+        {
+            return SerializeToStreamAsync(stream, context, CancellationToken.None);
+        }
+
+        protected override async Task SerializeToStreamAsync(
+            Stream stream,
+            TransportContext? context,
+            CancellationToken cancellationToken)
         {
             var buffer = new byte[81920];
             long transferred = 0;
             while (true)
             {
-                var read = await _source.ReadAsync(buffer).ConfigureAwait(false);
+                var read = await _source.ReadAsync(buffer.AsMemory(), cancellationToken).ConfigureAwait(false);
                 if (read == 0)
                 {
                     break;
                 }
 
-                await stream.WriteAsync(buffer.AsMemory(0, read)).ConfigureAwait(false);
+                await stream.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
                 transferred += read;
                 _progress?.Invoke(transferred);
             }

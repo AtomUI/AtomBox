@@ -15,33 +15,63 @@ public class S3CompatibleProvider : IStorageProvider
 {
     private readonly IAsyncS3CompatibleClient _client;
     private readonly CredentialMaterialLease _credentialLease;
+    private readonly S3CompatibleProviderOptions _options;
 
     internal S3CompatibleProvider(
         IS3CompatibleClient client,
         CredentialMaterialLease credentialLease,
-        StorageCapabilitySet capabilities)
-        : this(new SynchronousS3CompatibleClientAdapter(client), credentialLease, capabilities)
+        StorageCapabilitySet capabilities,
+        S3CompatibleProviderOptions? options = null)
+        : this(
+            new SynchronousS3CompatibleClientAdapter(client),
+            credentialLease,
+            capabilities,
+            options,
+            new TransferExecutionCapabilities(
+                TransferIoExecutionKind.Blocking,
+                TransferIoExecutionKind.Blocking,
+                supportsCooperativeCancellation: false,
+                supportsActiveAbort: false,
+                supportsProgress: true))
     {
     }
 
     internal S3CompatibleProvider(
         IAsyncS3CompatibleClient client,
         CredentialMaterialLease credentialLease,
-        StorageCapabilitySet capabilities)
+        StorageCapabilitySet capabilities,
+        S3CompatibleProviderOptions? options = null)
+        : this(
+            client,
+            credentialLease,
+            capabilities,
+            options,
+            new TransferExecutionCapabilities(
+                TransferIoExecutionKind.Asynchronous,
+                TransferIoExecutionKind.Asynchronous,
+                supportsCooperativeCancellation: true,
+                supportsActiveAbort: false,
+                supportsProgress: true))
+    {
+    }
+
+    private S3CompatibleProvider(
+        IAsyncS3CompatibleClient client,
+        CredentialMaterialLease credentialLease,
+        StorageCapabilitySet capabilities,
+        S3CompatibleProviderOptions? options,
+        TransferExecutionCapabilities transferCapabilities)
     {
         _client = client;
         _credentialLease = credentialLease;
+        _options = options ?? S3CompatibleProviderOptions.Default;
         Capabilities = capabilities;
+        TransferCapabilities = transferCapabilities;
     }
 
     public StorageCapabilitySet Capabilities { get; }
 
-    public TransferExecutionCapabilities TransferCapabilities { get; } = new(
-        TransferIoExecutionKind.Blocking,
-        TransferIoExecutionKind.Blocking,
-        supportsCooperativeCancellation: false,
-        supportsActiveAbort: false,
-        supportsProgress: true);
+    public TransferExecutionCapabilities TransferCapabilities { get; }
 
     public async Task<OperationResult<IReadOnlyList<RemoteItem>>> ListAsync(
         RemotePath path,
@@ -80,13 +110,13 @@ public class S3CompatibleProvider : IStorageProvider
                 return ProviderPaging.PageInMemory(path, buckets.GetValueOrThrow(), pageRequest);
             }
 
-            if (!ProviderPageCursor.TryGetProviderToken(pageRequest.Cursor, "s3-compatible", out var cursor))
+            if (!ProviderPageCursor.TryGetProviderToken(pageRequest.Cursor, _options.CursorNamespace, out var cursor))
             {
                 return OperationResult<RemoteItemPage>.Failure(
                     StorageError.Validation("Remote page cursor is invalid for this provider."));
             }
 
-            var pathResult = S3CompatiblePath.FromRemotePath(path);
+            var pathResult = GetScopedPath(path);
             if (pathResult.IsFailure)
             {
                 return OperationResult<RemoteItemPage>.Failure(pathResult.Error!);
@@ -106,7 +136,7 @@ public class S3CompatibleProvider : IStorageProvider
 
             RemotePageCursor? nextCursor = string.IsNullOrWhiteSpace(nextToken)
                 ? null
-                : ProviderPageCursor.FromProviderToken("s3-compatible", nextToken);
+                : ProviderPageCursor.FromProviderToken(_options.CursorNamespace, nextToken);
             return OperationResult<RemoteItemPage>.Success(new RemoteItemPage(
                 path,
                 items,
@@ -131,7 +161,7 @@ public class S3CompatibleProvider : IStorageProvider
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
-            var pathResult = S3CompatiblePath.FromRemotePath(path);
+            var pathResult = GetScopedPath(path);
             if (pathResult.IsFailure)
             {
                 return OperationResult.Failure(pathResult.Error!);
@@ -194,7 +224,7 @@ public class S3CompatibleProvider : IStorageProvider
             }
             else
             {
-                var progressStream = new ProgressReadStream(content, contentLength, progress);
+                var progressStream = new ProgressReadStream(content, contentLength, progress, cancellationToken);
                 await _client.PutObjectAsync(
                     objectPath.BucketName,
                     objectPath.KeyPrefix,
@@ -224,8 +254,20 @@ public class S3CompatibleProvider : IStorageProvider
             cancellationToken.ThrowIfCancellationRequested();
             if (path.Kind == RemotePathKind.BucketRoot)
             {
+                if (!Capabilities.Supports(StorageCapability.CreateBucket))
+                {
+                    return OperationResult.Failure(StorageError.NotSupported(
+                        "This provider requires creating buckets in its management console."));
+                }
+
+                var bucketName = path.Value.Trim('/');
+                if (_options.ValidateBucketName?.Invoke(bucketName) is { } error)
+                {
+                    return OperationResult.Failure(error);
+                }
+
                 await _client.CreateBucketAsync(
-                    path.Value.Trim('/'),
+                    bucketName,
                     cancellationToken).ConfigureAwait(false);
                 return OperationResult.Success();
             }
@@ -371,7 +413,9 @@ public class S3CompatibleProvider : IStorageProvider
     private async Task<OperationResult<IReadOnlyList<RemoteItem>>> ListBucketsAsync(
         CancellationToken cancellationToken)
     {
-        var buckets = await _client.ListBucketsAsync(cancellationToken).ConfigureAwait(false);
+        var buckets = string.IsNullOrWhiteSpace(_options.RootBucket)
+            ? await _client.ListBucketsAsync(cancellationToken).ConfigureAwait(false)
+            : [new S3CompatibleBucket(_options.RootBucket, null)];
         var items = buckets
             .Select(bucket => new RemoteItem(
                 bucket.Name,
@@ -387,7 +431,7 @@ public class S3CompatibleProvider : IStorageProvider
         RemotePath path,
         CancellationToken cancellationToken)
     {
-        var pathResult = S3CompatiblePath.FromRemotePath(path);
+        var pathResult = GetScopedPath(path);
         if (pathResult.IsFailure)
         {
             return OperationResult<IReadOnlyList<RemoteItem>>.Failure(pathResult.Error!);
@@ -570,9 +614,9 @@ public class S3CompatibleProvider : IStorageProvider
         }
     }
 
-    private static OperationResult<S3CompatiblePath> GetObjectPath(RemotePath path, string emptyKeyMessage)
+    private OperationResult<S3CompatiblePath> GetObjectPath(RemotePath path, string emptyKeyMessage)
     {
-        var pathResult = S3CompatiblePath.FromRemotePath(path);
+        var pathResult = GetScopedPath(path);
         if (pathResult.IsFailure)
         {
             return pathResult;
@@ -582,6 +626,21 @@ public class S3CompatibleProvider : IStorageProvider
         return string.IsNullOrWhiteSpace(objectPath.KeyPrefix)
             ? OperationResult<S3CompatiblePath>.Failure(StorageError.Validation(emptyKeyMessage))
             : OperationResult<S3CompatiblePath>.Success(objectPath);
+    }
+
+    private OperationResult<S3CompatiblePath> GetScopedPath(RemotePath path)
+    {
+        var pathResult = S3CompatiblePath.FromRemotePath(path);
+        if (pathResult.IsFailure || string.IsNullOrWhiteSpace(_options.RootBucket))
+        {
+            return pathResult;
+        }
+
+        var objectPath = pathResult.GetValueOrThrow();
+        return string.Equals(objectPath.BucketName, _options.RootBucket, StringComparison.Ordinal)
+            ? pathResult
+            : OperationResult<S3CompatiblePath>.Failure(StorageError.Validation(
+                $"This provider account is restricted to bucket '{_options.RootBucket}'."));
     }
 
     private static async Task CopyToAsync(

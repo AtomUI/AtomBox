@@ -108,7 +108,8 @@ public sealed class ObjectStorageMultipartIntegrationTests
             new Dictionary<string, string>
             {
                 ["bucket"] = environment.Bucket,
-                ["region"] = environment.Region
+                ["region"] = environment.Region,
+                ["credentialMode"] = environment.ProviderId == StorageProviderRegistry.UpyunProviderId ? "s3" : string.Empty
             });
 
         var result = await creator.CreateAsync(account);
@@ -229,7 +230,7 @@ internal sealed record MultipartTestEnvironment(
             StorageProviderRegistry.QiniuKodoProviderId,
             "Qiniu Kodo",
             "QINIU_KODO",
-            "ATOMBOX_QINIU_KODO_ENDPOINT",
+            null,
             "ATOMBOX_QINIU_KODO_REGION",
             "ATOMBOX_QINIU_KODO_BUCKET",
             "ATOMBOX_QINIU_KODO_ACCESS_KEY",
@@ -286,11 +287,11 @@ internal sealed record MultipartTestEnvironment(
             StorageProviderRegistry.UpyunProviderId,
             "Upyun USS",
             "UPYUN",
-            "ATOMBOX_UPYUN_ENDPOINT",
+            null,
             null,
             "ATOMBOX_UPYUN_SERVICE",
-            "ATOMBOX_UPYUN_OPERATOR",
-            "ATOMBOX_UPYUN_PASSWORD",
+            "ATOMBOX_UPYUN_S3_ACCESS_KEY_ID",
+            "ATOMBOX_UPYUN_S3_ACCESS_KEY_SECRET",
             "ATOMBOX_UPYUN_TEST_PREFIX");
     }
 
@@ -321,18 +322,27 @@ internal sealed record MultipartTestEnvironment(
         StorageProviderId providerId,
         string displayName,
         string environmentPrefix,
-        string endpointVariable,
+        string? endpointVariable,
         string? regionVariable,
         string bucketVariable,
         string accessKeyIdVariable,
         string accessKeySecretVariable,
         string prefixVariable)
     {
-        var endpoint = Environment.GetEnvironmentVariable(endpointVariable);
+        var endpoint = endpointVariable is null
+            ? providerId == StorageProviderRegistry.UpyunProviderId
+                ? "https://s3.api.upyun.com"
+                : null
+            : Environment.GetEnvironmentVariable(endpointVariable);
         var region = regionVariable is null ? string.Empty : Environment.GetEnvironmentVariable(regionVariable);
         var bucket = Environment.GetEnvironmentVariable(bucketVariable);
         var accessKeyId = Environment.GetEnvironmentVariable(accessKeyIdVariable);
         var accessKeySecret = Environment.GetEnvironmentVariable(accessKeySecretVariable);
+        if (providerId == StorageProviderRegistry.QiniuKodoProviderId && !string.IsNullOrWhiteSpace(region))
+        {
+            endpoint = $"https://s3-{QiniuKodoProviderCreator.NormalizeRegion(region)}.qiniucs.com";
+        }
+
         if (string.IsNullOrWhiteSpace(endpoint) ||
             (regionVariable is not null && string.IsNullOrWhiteSpace(region)) ||
             string.IsNullOrWhiteSpace(bucket) ||

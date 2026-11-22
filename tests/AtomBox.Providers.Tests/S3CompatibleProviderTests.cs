@@ -12,6 +12,98 @@ namespace AtomBox.Providers.Tests;
 public sealed class S3CompatibleProviderTests
 {
     [Fact]
+    public async Task AsyncClient_ReportsCooperativeCancellationWithoutActiveAbort()
+    {
+        await using var provider = CreateProvider(new FakeS3CompatibleClient());
+
+        Assert.Equal(TransferIoExecutionKind.Asynchronous, provider.TransferCapabilities.UploadExecution);
+        Assert.Equal(TransferIoExecutionKind.Asynchronous, provider.TransferCapabilities.DownloadExecution);
+        Assert.True(provider.TransferCapabilities.SupportsCooperativeCancellation);
+        Assert.False(provider.TransferCapabilities.SupportsActiveAbort);
+    }
+
+    [Fact]
+    public async Task ListRoot_UsesConfiguredBucketWithoutCallingServiceListBuckets()
+    {
+        var client = new FakeS3CompatibleClient();
+        await using var provider = CreateProvider(
+            client,
+            options: new S3CompatibleProviderOptions("upyun", RootBucket: "service-a"));
+
+        var result = await provider.ListAsync(RemotePath.Root);
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("service-a", Assert.Single(result.GetValueOrThrow()).Name);
+        Assert.Equal(0, client.ListBucketsCalls);
+    }
+
+    [Fact]
+    public async Task ConfiguredRootBucket_RejectsPathsOutsideAccountScope()
+    {
+        var client = new FakeS3CompatibleClient();
+        await using var provider = CreateProvider(
+            client,
+            options: new S3CompatibleProviderOptions("upyun", RootBucket: "service-a"));
+
+        var result = await provider.UploadAsync(
+            new RemotePath("service-b/file.txt", RemotePathKind.ObjectPath),
+            new MemoryStream([1]),
+            contentLength: 1);
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCode.ValidationFailed, result.Error?.Code);
+        Assert.Null(client.PutBucketName);
+    }
+
+    [Fact]
+    public async Task CreateFolderAsync_RejectsBucketCreationWithoutCapability()
+    {
+        var client = new FakeS3CompatibleClient();
+        await using var provider = CreateProvider(
+            client,
+            options: new S3CompatibleProviderOptions("upyun"));
+
+        var result = await provider.CreateFolderAsync(new RemotePath("new-bucket", RemotePathKind.BucketRoot));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCode.OperationNotSupported, result.Error?.Code);
+        Assert.Null(client.PutBucketName);
+    }
+
+    [Fact]
+    public async Task CreateFolderAsync_SendsBucketCreationWhenCapabilityIsPresent()
+    {
+        var client = new FakeS3CompatibleClient();
+        await using var provider = CreateProvider(client, additionalCapabilities: StorageCapability.CreateBucket);
+
+        var result = await provider.CreateFolderAsync(new RemotePath("new-bucket", RemotePathKind.BucketRoot));
+
+        Assert.True(result.IsSuccess);
+        Assert.Equal("new-bucket", client.PutBucketName);
+        Assert.Null(client.PutKey);
+    }
+
+    [Fact]
+    public async Task UploadAsync_PropagatesCancellationToAsyncClientAndProgressStream()
+    {
+        var client = new FakeS3CompatibleClient { BlockPutObjectUntilCancellation = true };
+        await using var provider = CreateProvider(client);
+        using var cancellation = new CancellationTokenSource();
+        await using var content = new MemoryStream(new byte[1024]);
+
+        var operation = provider.UploadAsync(
+            new RemotePath("bucket-a/cancel.bin", RemotePathKind.ObjectPath),
+            content,
+            content.Length,
+            cancellationToken: cancellation.Token);
+        await client.PutObjectStarted.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => operation);
+        Assert.True(client.PutObjectObservedCancellation);
+    }
+
+    [Fact]
     public async Task CreateFolderAsync_CreatesEmptyFolderMarkerObject()
     {
         var client = new FakeS3CompatibleClient();
@@ -325,7 +417,9 @@ public sealed class S3CompatibleProviderTests
 
     private static S3CompatibleProvider CreateProvider(
         FakeS3CompatibleClient client,
-        TrackableCredentialLease? lease = null)
+        TrackableCredentialLease? lease = null,
+        S3CompatibleProviderOptions? options = null,
+        StorageCapability additionalCapabilities = StorageCapability.None)
     {
         lease ??= new TrackableCredentialLease(new CredentialRef("cred-1"));
         return new S3CompatibleProvider(
@@ -344,7 +438,9 @@ public sealed class S3CompatibleProviderTests
                 StorageCapability.Delete |
                 StorageCapability.CreateFolder |
                 StorageCapability.Rename |
-                StorageCapability.Move));
+                StorageCapability.Move |
+                additionalCapabilities),
+            options);
     }
 
     private sealed class FakeS3CompatibleClient : IAsyncS3CompatibleClient
@@ -386,10 +482,19 @@ public sealed class S3CompatibleProviderTests
 
         public bool BlockListObjectsUntilCancellation { get; init; }
 
+        public bool BlockPutObjectUntilCancellation { get; init; }
+
         public TaskCompletionSource<bool> ListObjectsStarted { get; } =
             new(TaskCreationOptions.RunContinuationsAsynchronously);
 
         public bool ListObjectsObservedCancellation { get; private set; }
+
+        public TaskCompletionSource<bool> PutObjectStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public bool PutObjectObservedCancellation { get; private set; }
+
+        public int ListBucketsCalls { get; private set; }
 
         public bool WasDisposed { get; private set; }
 
@@ -397,6 +502,7 @@ public sealed class S3CompatibleProviderTests
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            ListBucketsCalls++;
             return Task.FromResult(Buckets);
         }
 
@@ -482,19 +588,32 @@ public sealed class S3CompatibleProviderTests
             return Task.CompletedTask;
         }
 
-        public Task PutObjectAsync(
+        public async Task PutObjectAsync(
             string bucketName,
             string key,
             Stream content,
             CancellationToken cancellationToken = default)
         {
             cancellationToken.ThrowIfCancellationRequested();
+            if (BlockPutObjectUntilCancellation)
+            {
+                PutObjectStarted.TrySetResult(true);
+                try
+                {
+                    await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    PutObjectObservedCancellation = true;
+                    throw;
+                }
+            }
+
             PutBucketName = bucketName;
             PutKey = key;
             using var copy = new MemoryStream();
-            content.CopyTo(copy);
+            await content.CopyToAsync(copy, cancellationToken);
             PutPayload = copy.ToArray();
-            return Task.CompletedTask;
         }
 
         public async Task PutObjectMultipartAsync(

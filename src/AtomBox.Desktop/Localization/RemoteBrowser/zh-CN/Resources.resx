@@ -62,6 +62,7 @@
   <data name="UploadCreatedMultiple" xml:space="preserve"><value>已创建 {0} 个上传任务。</value></data>
   <data name="CreateBucketTitle" xml:space="preserve"><value>新增 Bucket</value></data>
   <data name="CreateBucketPrompt" xml:space="preserve"><value>请输入新的 Bucket 名称：</value></data>
+  <data name="CreateTencentCosBucketPrompt" xml:space="preserve"><value>请输入包含腾讯云 APPID 的完整存储桶名，例如 example-1250000000。</value></data>
   <data name="BucketNameField" xml:space="preserve"><value>Bucket 名称</value></data>
   <data name="Create" xml:space="preserve"><value>创建</value></data>
   <data name="InvalidBucketName" xml:space="preserve"><value>Bucket 名称不能包含路径分隔符。</value></data>

@@ -98,7 +98,7 @@ Round 2 需要：
 | 替身 | 职责 | 状态 |
 | --- | --- | --- |
 | `FakeObjectStorageProvider` | Phase 11 已建的 fake provider，走 IStorageProvider 正式契约 | 复用 Phase 11 测试 |
-| `AliyunOssProvider` | 真实 OSS provider（opt-in） | 复用 Phase 11 |
+| `aliyun-oss` runtime provider | `AliyunOssS3Adapter` 组合出的真实 OSS provider（opt-in） | 复用 Phase 11 |
 | `SftpProvider` | 真实 SFTP provider（opt-in） | 复用 Phase 11 |
 
 ## 5. TransferTask 模型测试矩阵
@@ -364,6 +364,19 @@ FakeObjectStorageProvider 是 Phase 11 Provider 契约测试中已建的正式 f
 | `Transfer_Ftp_UploadSmallFile` | 上传小文件到 FTP 测试 prefix，状态 Succeeded |
 | `Transfer_Ftp_DownloadUploadedFile` | 下载已上传的文件，内容一致 |
 | `Transfer_Ftp_DeleteTestFile` | 删除测试文件，状态 Succeeded |
+| `Transfer_Ftp_CancelInFlightUpload` | 上传进入 FluentFTP 后取消，任务由 Canceling 收敛为 Canceled，并进入历史 |
+| `Transfer_Ftp_CancelInFlightDownload` | 下载进入 FluentFTP 后取消，任务由 Canceling 收敛为 Canceled，并进入历史 |
+
+### 13.5 Transfer + WebDAV（opt-in）
+
+需要同 Phase 11 Provider 测试矩阵 §10.8 的环境变量：`ATOMBOX_TEST_WEBDAV=1`
+
+| Case | 期望 |
+| --- | --- |
+| `Transfer_WebDav_UploadSmallFile` | PUT 上传小文件，状态 Succeeded |
+| `Transfer_WebDav_DownloadUploadedFile` | GET 下载已上传文件，内容一致 |
+| `Transfer_WebDav_CancelInFlightUpload` | PUT 内容流开始后取消，任务由 Canceling 收敛为 Canceled，并进入历史 |
+| `Transfer_WebDav_CancelInFlightDownload` | GET 响应流开始后取消，任务由 Canceling 收敛为 Canceled，并进入历史 |
 
 ## 14. 完成条件
 
@@ -385,6 +398,6 @@ FakeObjectStorageProvider 是 Phase 11 Provider 契约测试中已建的正式 f
 
 - Transfer + FakeObjectStorageProvider 集成测试覆盖 §13.1 全部 case
 - 设置 OSS 环境变量后 Transfer + Aliyun OSS 可通过 §13.2 的 upload / download / delete 测试
-- 设置 SFTP / FTP 环境变量后对应集成测试可通过 §13.3 或 §13.4 测试
+- 设置 SFTP / FTP / WebDAV 环境变量后对应集成测试可通过 §13.3、§13.4 或 §13.5 测试
 - Round 2 测试默认不跑，不纳入 `dotnet test AtomBox.Transfer.Tests` 默认结果
 - Round 2 测试 `ATOMBOX_TEST_*` 环境变量模板记录于 `.local/` 目录或本文档附录

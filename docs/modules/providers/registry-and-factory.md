@@ -55,6 +55,8 @@ Registry 中保存的是 provider 类型元数据，不是 provider 运行时对
 - 根据 `StorageAccount.ProviderId` 找到对应 provider 构造逻辑。
 - 通过 Core 凭据端口解析 `CredentialRef`。
 - 把账号配置和凭据材料转换为具体 SDK/API/协议 client 所需参数。
+- 对对象存储先由供应商 Creator 生成独立 Endpoint/Profile，再由 `AwsSdkS3ProviderFactory` 装配短生命周期 `AmazonS3Client`、`AwsSdkS3CompatibleClient` 与 `S3CompatibleProvider`；不得把八家供应商压成同一份无差别配置。
+- 为迁移后的对象存储映射 `accessKeyId`、`accessKeySecret` 和可选 session/security token，并统一设置兼容 checksum 与流式请求策略。
 - 根据账号配置中的 `authMode` 选择认证方式，例如 SFTP 密码/私钥、FTP 匿名/用户名密码。
 - 根据账号配置中的文件传输选项构造短生命周期协议 client，例如 SFTP host key policy、FTP passive/active、WebDAV endpoint URL 和 timeout。
 - 创建短生命周期 `IStorageProvider` 实例。
@@ -69,6 +71,13 @@ Registry 中保存的是 provider 类型元数据，不是 provider 运行时对
 - 在应用启动阶段主动连接所有账号。
 - 为 UI 渲染左侧菜单而创建 provider。
 - 持有或直接调用 `IServiceProvider`。
+
+对象存储账号兼容规则：
+
+- Provider ID 与账号/历史引用保持不变，迁移 SDK 不等于迁移业务身份。
+- 阿里云、腾讯、七牛、华为、百度、京东和火山继续使用既有 AK/SK 字段。
+- 又拍云旧操作员凭据不是 S3 凭据。只有 `ProviderConfig["credentialMode"] == "s3"` 的账号可以创建新 Provider；旧账号必须由用户编辑并填写 S3 AccessKey/SecretAccessKey，Factory 不得猜测、转换或复用旧密码。
+- 青云 QingStor 本轮保持冻结旧 Creator；不得因其他供应商已迁移而隐式改变青云账号行为。
 
 Factory 是 provider 对象创建器，不是连接池，不是账号仓库，也不是后台守护进程。
 
@@ -102,13 +111,13 @@ Factory 只在真实远程操作开始时执行。
 | --- | --- | --- | --- |
 | provider 类型元数据 | `aliyun-oss`、`sftp`、`baidu-netdisk`、显示名、能力声明、配置字段 schema | `StorageProviderRegistry` | 应用级单例数据 |
 | 账号实例配置 | 用户命名的账号、endpoint、region、bucket、root path、`CredentialRef` | Core `StorageAccount`，由账号仓储持久化 | 用户配置生命周期 |
-| 运行时 provider 对象 | `AliyunOssProvider`、`SftpProvider`、`BaiduNetDiskProvider` | `StorageProviderFactory` 创建，调用方短期持有 | 短用例或传输批次生命周期 |
+| 运行时 provider 对象 | 阿里云适配后的 `S3CompatibleProvider`、`SftpProvider`、`BaiduNetDiskProvider` | `StorageProviderFactory` 创建，调用方短期持有 | 短用例或传输批次生命周期 |
 
 示例：
 
 - `aliyun-oss` 这个 provider 类型存在于 Registry。
 - 用户账号“公司生产 OSS”存在于 `StorageAccount`。
-- 用“公司生产 OSS”执行一次远程列表时创建的 `AliyunOssProvider` 实例存在于短用例运行期间。
+- 用“公司生产 OSS”执行一次远程列表时，由 `AliyunOssProviderCreator` 创建的 `S3CompatibleProvider` 实例存在于短用例运行期间。
 
 不能把“公司生产 OSS”的 endpoint 和 bucket 放进 Registry。Registry 只知道阿里云 OSS 这种 provider 类型需要 endpoint、region、bucket 等字段，不知道某个用户实际填了什么值。
 
@@ -120,7 +129,7 @@ Application 只消费 Core 端口：
 - 需要测试连接、列目录、删除远程项时，Application 调用 `IStorageProviderFactory` 创建短生命周期 provider。
 - 需要创建传输任务时，Application 不创建 provider，只创建任务描述。
 
-Application 不知道 `AliyunOssProvider`、`SftpProvider` 这些具体类型，也不知道任何 SDK 类型。
+Application 不知道 `S3CompatibleProvider`、`SftpProvider` 这些具体类型，也不知道任何 SDK 或厂商 adapter 类型。
 
 ## 7. 与 Transfer 的关系
 

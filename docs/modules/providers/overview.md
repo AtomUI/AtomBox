@@ -12,7 +12,7 @@
 
 `AtomBox.Providers` 是 AtomBox 的具体存储后端适配层。
 
-它负责把阿里云 OSS、腾讯 COS、七牛 Kodo、又拍云 USS、华为云 OBS、百度智能云 BOS、京东云 OSS、青云 QingStor、火山引擎 TOS、FTP/SFTP/WebDAV、阿里云盘、百度网盘等外部 SDK/API/协议转换为 AtomBox Core 中定义的统一模型、统一能力和统一错误语义。
+它负责把阿里云 OSS、腾讯 COS、七牛 Kodo、又拍云 USS、华为云 OBS、百度智能云 BOS、京东云 OSS、青云 QingStor、火山引擎 TOS、FTP/SFTP/WebDAV、阿里云盘、百度网盘等外部 API/协议转换为 AtomBox Core 中定义的统一模型、统一能力和统一错误语义。对象存储除暂缓的青云外统一以 `AWSSDK.S3` 为协议内核，并在 Providers 内包裹供应商 Profile/Adapter。
 
 第一版发布基线中，对象存储、SFTP、FTP、WebDAV 是主要可用路径；阿里云盘、百度网盘 provider 代码和注册已经存在，但未作为第一版充分验收主路径承诺。
 
@@ -22,7 +22,7 @@ Providers 不是 UI 层，也不是任务调度层。Provider 只负责“怎么
 
 Providers 允许包含：
 
-- 具体云厂商 SDK、FTP/SFTP 协议库、网盘 HTTP API 客户端。
+- `AWSSDK.S3`、FTP/SFTP 协议库、网盘 HTTP API 客户端，以及确有兼容缺口时的最小厂商原生 HTTP 适配器。
 - Provider 实现类，例如 OSS、SFTP、网盘 provider。
 - SDK/API DTO 到 Core 模型的转换。
 - SDK/API 异常到 Core 错误模型的转换。
@@ -39,7 +39,7 @@ Providers 禁止包含：
 - 把 SDK DTO 泄漏给 Application、Transfer 或 Desktop。
 - 持有、注入或直接解析 `IServiceProvider`。
 
-Providers 可以依赖外部 SDK，但必须把外部 SDK 的复杂性关在模块内部。SDK 类型一旦泄漏到外层，架构就已经开始烂。
+Providers 可以依赖外部 SDK，但必须把外部 SDK 的复杂性关在模块内部。对象存储不得重新引入已废弃的厂商 SDK，也不得修改 AWS SDK；SDK 类型一旦泄漏到外层，架构就已经开始烂。
 
 ## 3. 推荐目录
 
@@ -86,22 +86,23 @@ Factory / Registry 分工：
 | --- | --- | --- | --- |
 | provider 类型元数据 | `aliyun-oss`、`sftp`、显示名、能力声明、账号配置字段描述 | `StorageProviderRegistry` | 描述 AtomBox 支持哪类后端。 |
 | 账号实例配置 | 某个账号的名称、endpoint、region、bucket、`CredentialRef` | Core `StorageAccount`，由账号仓储持久化 | 描述用户配置的某个具体连接。 |
-| 运行时 provider 对象 | `AliyunOssProvider`、`S3CompatibleProvider`、`SftpProvider` 实例 | `StorageProviderFactory` 创建，调用方短期持有 | 描述一次短用例或一次传输批次中真正访问远端的对象。具体云厂商 creator 可以创建同一个通用运行时 provider。 |
+| 运行时 provider 对象 | `S3CompatibleProvider`、`SftpProvider` 等实例 | `StorageProviderFactory` 创建，调用方短期持有 | 描述一次短用例或一次传输批次中真正访问远端的对象。阿里云等具体云厂商 creator 可以用专用 client adapter 创建同一个通用运行时 provider。 |
 
 这三类东西混在一起，Providers 迟早会烂：Registry 会变成账号仓库，Factory 会变成全局连接池，Provider 会变成带状态的半单例。
 
 对象存储：
 
-- `AliyunOssProvider`
-- `TencentCosProvider`
-- `QiniuKodoProvider`
-- `UpyunProvider`
-- `S3CompatibleProvider`
+- `AliyunOssProviderCreator` + `AliyunOssS3Adapter` + `S3CompatibleProvider`
+- `S3CompatibleProvider` + `AwsSdkS3CompatibleClient`
+  - `TencentCosProviderCreator`
+  - `QiniuKodoProviderCreator`
+  - `UpyunProviderCreator`
   - `HuaweiObsProviderCreator`
   - `BaiduBosProviderCreator`
   - `JdCloudOssProviderCreator`
-  - `QingStorProviderCreator`
   - `VolcengineTosProviderCreator`
+  - `GenericS3ProviderCreator`
+- `S3CompatibleProvider` + `S3CompatibleAwsV4Client`（仅冻结的 `QingStorProviderCreator`）
 
 文件传输：
 
@@ -116,7 +117,7 @@ Factory / Registry 分工：
 
 第一版发布说明：
 
-- OSS 主路径已覆盖阿里云 OSS、腾讯 COS、七牛 Kodo、又拍云 USS、华为云 OBS、火山引擎 TOS 等真实账号验证；百度 BOS、京东云 OSS、青云 QingStor 已接入但真实验收依赖用户后续提供账号。
+- OSS 主路径统一使用 AWS SDK S3 异步内核，覆盖阿里云 OSS、腾讯 COS、七牛 Kodo、又拍云 USS、华为云 OBS、百度 BOS、京东云 OSS、火山引擎 TOS；青云 QingStor 暂时冻结在旧适配路径并后置审计。
 - SFTP、FTP、WebDAV 已进入第一版文件传输主路径。
 - FTPS、完整 OAuth 授权流程、网盘 token refresh 和更复杂网盘产品体验不作为第一版发布承诺。
 

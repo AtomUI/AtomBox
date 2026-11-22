@@ -410,7 +410,7 @@ public sealed class ObjectStorageComprehensiveIntegrationTests
                 "Qiniu Kodo",
                 "QINIU_KODO",
                 "ATOMBOX_TEST_QINIU_KODO",
-                "ATOMBOX_QINIU_KODO_ENDPOINT",
+                null,
                 "ATOMBOX_QINIU_KODO_REGION",
                 "ATOMBOX_QINIU_KODO_BUCKET",
                 "ATOMBOX_QINIU_KODO_ACCESS_KEY",
@@ -425,11 +425,11 @@ public sealed class ObjectStorageComprehensiveIntegrationTests
                 "Upyun USS",
                 "UPYUN",
                 "ATOMBOX_TEST_UPYUN",
-                "ATOMBOX_UPYUN_ENDPOINT",
+                null,
                 null,
                 "ATOMBOX_UPYUN_SERVICE",
-                "ATOMBOX_UPYUN_OPERATOR",
-                "ATOMBOX_UPYUN_PASSWORD",
+                "ATOMBOX_UPYUN_S3_ACCESS_KEY_ID",
+                "ATOMBOX_UPYUN_S3_ACCESS_KEY_SECRET",
                 "ATOMBOX_UPYUN_TEST_PREFIX");
         }
 
@@ -468,7 +468,7 @@ public sealed class ObjectStorageComprehensiveIntegrationTests
             string displayName,
             string environmentPrefix,
             string enabledName,
-            string endpointName,
+            string? endpointName,
             string? regionName,
             string bucketName,
             string accessKeyIdName,
@@ -480,11 +480,18 @@ public sealed class ObjectStorageComprehensiveIntegrationTests
                 return null;
             }
 
-            var endpoint = Environment.GetEnvironmentVariable(endpointName);
+            var endpoint = endpointName is null
+                ? providerId == StorageProviderRegistry.UpyunProviderId ? "https://s3.api.upyun.com" : null
+                : Environment.GetEnvironmentVariable(endpointName);
             var region = regionName is null ? null : Environment.GetEnvironmentVariable(regionName);
             var bucket = Environment.GetEnvironmentVariable(bucketName);
             var accessKeyId = Environment.GetEnvironmentVariable(accessKeyIdName);
             var accessKeySecret = Environment.GetEnvironmentVariable(accessKeySecretName);
+            if (providerId == StorageProviderRegistry.QiniuKodoProviderId && !string.IsNullOrWhiteSpace(region))
+            {
+                endpoint = $"https://s3-{QiniuKodoProviderCreator.NormalizeRegion(region)}.qiniucs.com";
+            }
+
             if (string.IsNullOrWhiteSpace(endpoint) ||
                 string.IsNullOrWhiteSpace(bucket) ||
                 string.IsNullOrWhiteSpace(accessKeyId) ||
@@ -513,7 +520,8 @@ public sealed class ObjectStorageComprehensiveIntegrationTests
                 new Dictionary<string, string>
                 {
                     ["bucket"] = bucket.Trim(),
-                    ["region"] = region?.Trim() ?? string.Empty
+                    ["region"] = region?.Trim() ?? string.Empty,
+                    ["credentialMode"] = providerId == StorageProviderRegistry.UpyunProviderId ? "s3" : string.Empty
                 });
         }
 

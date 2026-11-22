@@ -240,6 +240,7 @@
                                                     <atom:MenuItem Header="{loc:Loc Common.Delete}"
                                                                    Command="{Binding DeleteCommand}"
                                                                    CommandParameter="{Binding}"
+                                                                   IsVisible="{Binding IsDeleteActionVisible}"
                                                                    IsEnabled="{Binding CanDelete}" />
                                                 </atom:ContextMenu>
                                             </Border.ContextMenu>
@@ -514,7 +515,7 @@
                                               VerticalAlignment="Center"
                                               Command="{Binding RefreshCommand}" />
                         </Border>
-                        <Border Classes="app-float-action-frame">
+                        <Border Classes="app-float-action-frame" IsVisible="{Binding CanCreateBucket}">
                             <atom:FloatButton Classes="app-float-action"
                                               BoxShadow="0 0 0 0 Transparent"
                                               Icon="{antdicons:AntDesignIconProvider PlusOutlined}"

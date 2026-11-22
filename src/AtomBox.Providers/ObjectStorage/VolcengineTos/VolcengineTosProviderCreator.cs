@@ -20,64 +20,42 @@ public sealed class VolcengineTosProviderCreator : IStorageProviderCreator
 
     public ProviderDescriptor Descriptor { get; }
 
-    public async Task<OperationResult<IStorageProvider>> CreateAsync(
-        StorageAccount account,
-        CancellationToken cancellationToken = default)
+    public Task<OperationResult<IStorageProvider>> CreateAsync(StorageAccount account, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(account);
-
-        if (string.IsNullOrWhiteSpace(account.Endpoint))
+        var endpoint = TryCreateS3Endpoint(account.Endpoint);
+        if (endpoint.IsFailure)
         {
-            return OperationResult<IStorageProvider>.Failure(StorageError.Validation("Volcengine TOS endpoint is required."));
+            return Task.FromResult(OperationResult<IStorageProvider>.Failure(endpoint.Error!));
         }
 
-        var region = account.GetProviderConfigValue("region");
-        if (string.IsNullOrWhiteSpace(region))
+        if (string.IsNullOrWhiteSpace(account.Region))
         {
-            return OperationResult<IStorageProvider>.Failure(StorageError.Validation("Volcengine TOS region is required."));
+            return Task.FromResult(OperationResult<IStorageProvider>.Failure(StorageError.Validation("Volcengine TOS region is required.")));
         }
 
-        var materialResult = await _credentialResolver.AcquireMaterialAsync(account, cancellationToken).ConfigureAwait(false);
-        if (materialResult.IsFailure)
-        {
-            return OperationResult<IStorageProvider>.Failure(materialResult.Error!);
-        }
-
-        var materialLease = materialResult.GetValueOrThrow();
-        try
-        {
-            var validation = ValidateSecretMaterial(materialLease.Material);
-            if (validation.IsFailure)
-            {
-                await materialLease.DisposeAsync().ConfigureAwait(false);
-                return OperationResult<IStorageProvider>.Failure(validation.Error!);
-            }
-
-            var accessKeyId = materialLease.Material.GetRequiredValue("accessKeyId");
-            var accessKeySecret = materialLease.Material.GetRequiredValue("accessKeySecret");
-            var client = new VolcengineTosSdkClient(account.Endpoint, region, accessKeyId, accessKeySecret);
-            return OperationResult<IStorageProvider>.Success(
-                new S3CompatibleProvider(client, materialLease, Descriptor.Capabilities));
-        }
-        catch (Exception exception)
-        {
-            await materialLease.DisposeAsync().ConfigureAwait(false);
-            return OperationResult<IStorageProvider>.Failure(ProviderErrorMapper.FromException(exception));
-        }
+        return AwsSdkS3ProviderFactory.CreateAsync(
+            account,
+            Descriptor,
+            _credentialResolver,
+            new AwsSdkS3ProviderProfile(
+                endpoint.GetValueOrThrow(), account.Region, ForcePathStyle: false, CursorNamespace: "volcengine-tos",
+                SingleCopyLimit: 5L * 1024 * 1024 * 1024),
+            cancellationToken: cancellationToken);
     }
 
-    private static OperationResult ValidateSecretMaterial(CredentialSecretMaterial material)
+    internal static OperationResult<string> TryCreateS3Endpoint(string? endpoint)
     {
-        if (!material.TryGetValue("accessKeyId", out _))
+        var normalized = AwsSdkS3ProviderFactory.NormalizeEndpoint(endpoint, "Volcengine TOS");
+        if (normalized.IsFailure)
         {
-            return OperationResult.Failure(StorageError.Validation("Volcengine TOS credential requires accessKeyId."));
+            return normalized;
         }
 
-        if (!material.TryGetValue("accessKeySecret", out _))
-        {
-            return OperationResult.Failure(StorageError.Validation("Volcengine TOS credential requires accessKeySecret."));
-        }
-
-        return OperationResult.Success();
+        var uri = new Uri(normalized.GetValueOrThrow());
+        var host = uri.Host.StartsWith("tos-s3-", StringComparison.OrdinalIgnoreCase)
+            ? uri.Host
+            : uri.Host.StartsWith("tos-", StringComparison.OrdinalIgnoreCase) ? $"tos-s3-{uri.Host[4..]}" : uri.Host;
+        return OperationResult<string>.Success(new UriBuilder(uri) { Host = host }.Uri.GetLeftPart(UriPartial.Authority));
     }
 }

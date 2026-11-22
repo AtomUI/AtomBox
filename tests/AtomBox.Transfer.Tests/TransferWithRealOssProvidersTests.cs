@@ -347,7 +347,11 @@ public sealed record TransferOssTestConfig(
             new CredentialRef($"transfer-{DisplayName.ToLowerInvariant().Replace(' ', '-')}"),
             now,
             now,
-            new Dictionary<string, string> { ["bucket"] = Bucket });
+            new Dictionary<string, string>
+            {
+                ["bucket"] = Bucket,
+                ["credentialMode"] = ProviderId == StorageProviderRegistry.UpyunProviderId ? "s3" : string.Empty
+            });
 
         var result = await creator.CreateAsync(account).ConfigureAwait(false);
         if (result.IsFailure)
@@ -406,9 +410,9 @@ public sealed record TransferOssTestConfig(
     private static TransferOssTestConfig? TryReadQiniu()
     {
         var raw = TryReadEnvVars("ATOMBOX_TEST_QINIU_KODO",
-            "ATOMBOX_QINIU_KODO_ENDPOINT", "ATOMBOX_QINIU_KODO_REGION", "ATOMBOX_QINIU_KODO_BUCKET",
+            null, "ATOMBOX_QINIU_KODO_REGION", "ATOMBOX_QINIU_KODO_BUCKET",
             "ATOMBOX_QINIU_KODO_ACCESS_KEY", "ATOMBOX_QINIU_KODO_SECRET_KEY",
-            "ATOMBOX_QINIU_KODO_TEST_PREFIX", hasRegion: false);
+            "ATOMBOX_QINIU_KODO_TEST_PREFIX", hasRegion: true);
         if (raw is null) return null;
 
         return new TransferOssTestConfig(
@@ -422,8 +426,8 @@ public sealed record TransferOssTestConfig(
     private static TransferOssTestConfig? TryReadUpyun()
     {
         var raw = TryReadEnvVars("ATOMBOX_TEST_UPYUN",
-            "ATOMBOX_UPYUN_ENDPOINT", null, "ATOMBOX_UPYUN_SERVICE",
-            "ATOMBOX_UPYUN_OPERATOR", "ATOMBOX_UPYUN_PASSWORD",
+            null, null, "ATOMBOX_UPYUN_SERVICE",
+            "ATOMBOX_UPYUN_S3_ACCESS_KEY_ID", "ATOMBOX_UPYUN_S3_ACCESS_KEY_SECRET",
             "ATOMBOX_UPYUN_TEST_PREFIX", hasRegion: false);
         if (raw is null) return null;
 
@@ -472,7 +476,7 @@ public sealed record TransferOssTestConfig(
         string AccessKeyId, string AccessKeySecret, string Prefix);
 
     private static RawEnvVars? TryReadEnvVars(
-        string enabledName, string endpointName, string? regionName,
+        string enabledName, string? endpointName, string? regionName,
         string bucketName, string accessKeyIdName, string accessKeySecretName,
         string prefixName, bool hasRegion)
     {
@@ -481,11 +485,18 @@ public sealed record TransferOssTestConfig(
             return null;
         }
 
-        var endpoint = Environment.GetEnvironmentVariable(endpointName);
+        var endpoint = endpointName is null
+            ? enabledName == "ATOMBOX_TEST_UPYUN" ? "https://s3.api.upyun.com" : null
+            : Environment.GetEnvironmentVariable(endpointName);
         var region = hasRegion && regionName is not null ? Environment.GetEnvironmentVariable(regionName) : null;
         var bucket = Environment.GetEnvironmentVariable(bucketName);
         var accessKeyId = Environment.GetEnvironmentVariable(accessKeyIdName);
         var accessKeySecret = Environment.GetEnvironmentVariable(accessKeySecretName);
+        if (enabledName == "ATOMBOX_TEST_QINIU_KODO" && !string.IsNullOrWhiteSpace(region))
+        {
+            endpoint = $"https://s3-{NormalizeQiniuRegion(region)}.qiniucs.com";
+        }
+
         if (string.IsNullOrWhiteSpace(endpoint) ||
             string.IsNullOrWhiteSpace(bucket) ||
             string.IsNullOrWhiteSpace(accessKeyId) ||
@@ -513,6 +524,19 @@ public sealed record TransferOssTestConfig(
     private static void AddIfFilled(List<TransferOssTestConfig> items, TransferOssTestConfig? item)
     {
         if (item is not null) items.Add(item);
+    }
+
+    private static string NormalizeQiniuRegion(string region)
+    {
+        return region.Trim().ToLowerInvariant() switch
+        {
+            "z0" => "cn-east-1",
+            "z1" => "cn-north-1",
+            "z2" => "cn-south-1",
+            "na0" => "us-north-1",
+            "as0" => "ap-southeast-1",
+            var value => value
+        };
     }
 
     private static string NormalizePrefix(string prefix)

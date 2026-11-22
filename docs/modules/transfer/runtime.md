@@ -93,7 +93,8 @@ TransferOperationExecutor
 
 ```text
 TransferOperationExecutor
-  -> new AliyunOssProvider(...)
+  -> IStorageProviderFactory
+    -> S3CompatibleProvider(AliyunOssS3Adapter)
 ```
 
 或者：
@@ -133,6 +134,8 @@ Application 查询用例
 State 不取代 Store，也不改变 Application 的命令入口。
 
 Provider 的进度回调只能更新线程安全的最新内存快照并立即返回，禁止在 `IProgress.Report` 中同步等待异步 Store。Runtime 通过统一异步循环合并、节流和批量持久化进度，成功落盘后再更新 City.State；执行结束时先强制 flush 最终进度，再通过 Revision/预期状态条件提交终态。
+
+Provider 只有在上传、下载及其连接、存在性检查、父目录准备等前置网络步骤都接收同一个 Runtime `CancellationToken` 时，才允许声明 `SupportsCooperativeCancellation=true`。这类 Provider 的 `UploadExecution` / `DownloadExecution` 必须声明为 `Asynchronous`，Executor 直接 await，不再包入不可中止的 `Task.Run`。FTP 和 WebDAV 与 SFTP 遵守同一规则，但都不声明 `SupportsActiveAbort`。
 
 速度不能按相邻两次 Provider 回调的瞬时时间差直接计算。Provider SDK 可能在极短时间内突发报告多个累计字节快照，这类回调反映缓冲区推进，不代表稳定网络吞吐量。`TransferSpeedMeter` 必须使用单调时钟，在至少一秒的有效采样窗口上按累计字节增量计算，并在窗口之间进行平滑；窗口内回调沿用最近一次可信速度。字节倒退的迟到或乱序回调必须在进入测速器前拒绝，不能污染后续采样基线。
 

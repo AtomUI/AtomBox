@@ -13,5 +13,6 @@ public enum StorageCapability
     Search = 1 << 6,
     Share = 1 << 7,
     MultipartUpload = 1 << 8,
-    Move = 1 << 9
+    Move = 1 << 9,
+    CreateBucket = 1 << 10
 }

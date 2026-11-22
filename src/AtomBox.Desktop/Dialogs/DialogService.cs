@@ -1236,6 +1236,7 @@ public sealed class DialogService : IDialogService
                 .ToDictionary(item => item.Key, item => item.Value, StringComparer.Ordinal);
             ApplyExplicitAuthMode(provider, config);
             ApplyExplicitWebDavProfile(provider, config);
+            ApplyExplicitObjectStorageCredentialMode(provider, config, credentialValues.Count > 0);
 
             if (config.TryGetValue("port", out var portText) &&
                 (!int.TryParse(portText, out var port) || port is < 1 or > 65535))
@@ -1584,7 +1585,17 @@ public sealed class DialogService : IDialogService
                     return field.Key is "endpoint" or "region";
                 }
 
-                return field.Key is "endpoint" or "region";
+                if (IsUpyun(provider))
+                {
+                    return field.Key == "bucket";
+                }
+
+                if (string.Equals(provider.Id.Value, "qiniu-kodo", StringComparison.Ordinal))
+                {
+                    return field.Key is "region" or "bucket";
+                }
+
+                return field.Key is "endpoint" or "region" or "bucket";
             }
 
             if (IsFtp(provider) || IsSftp(provider))
@@ -1618,6 +1629,11 @@ public sealed class DialogService : IDialogService
         private static bool IsGenericS3(ProviderDescriptor provider)
         {
             return string.Equals(provider.Id.Value, "s3-compatible", StringComparison.Ordinal);
+        }
+
+        private static bool IsUpyun(ProviderDescriptor provider)
+        {
+            return string.Equals(provider.Id.Value, "upyun", StringComparison.Ordinal);
         }
 
         private string GetProviderDisplayName(ProviderDescriptor provider)
@@ -1780,6 +1796,26 @@ public sealed class DialogService : IDialogService
             }
 
             values["webDavProfile"] = GetSelectedWebDavProfile();
+        }
+
+        private void ApplyExplicitObjectStorageCredentialMode(
+            ProviderDescriptor provider,
+            IDictionary<string, string> values,
+            bool credentialsChanged)
+        {
+            if (!IsUpyun(provider))
+            {
+                return;
+            }
+
+            var alreadyMigrated = _request.ExistingAccount?.ProviderConfig.TryGetValue(
+                "credentialMode",
+                out var existingMode) == true &&
+                string.Equals(existingMode, "s3", StringComparison.OrdinalIgnoreCase);
+            if (_request.ExistingAccount is null || credentialsChanged || alreadyMigrated)
+            {
+                values["credentialMode"] = "s3";
+            }
         }
 
         private string L(string key) => _localization.GetString("Account", key);

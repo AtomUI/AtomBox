@@ -2,6 +2,7 @@ using AtomBox.Core.Accounts;
 using AtomBox.Core.Capabilities;
 using AtomBox.Core.Credentials;
 using AtomBox.Core.Errors;
+using AtomBox.Core.Providers;
 using AtomBox.Core.Results;
 using AtomBox.Core.RemoteItems;
 using AtomBox.Core.Transfers;
@@ -13,6 +14,60 @@ namespace AtomBox.Providers.Tests;
 
 public sealed class WebDavStorageProviderTests
 {
+    [Fact]
+    public async Task UploadAsync_CancelsInFlightTransfer()
+    {
+        var client = new FakeWebDavClient
+        {
+            BlockUploadUntilCanceled = true
+        };
+        await using var provider = CreateProvider(client);
+        await using var content = new MemoryStream(new byte[1024]);
+        using var cancellationSource = new CancellationTokenSource();
+
+        var uploadTask = provider.UploadAsync(
+            new RemotePath("file.bin"),
+            content,
+            content.Length,
+            cancellationToken: cancellationSource.Token);
+        await client.UploadStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        cancellationSource.Cancel();
+        var result = await uploadTask.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCategory.Canceled, result.Error?.Category);
+        Assert.Equal(TransferIoExecutionKind.Asynchronous, provider.TransferCapabilities.UploadExecution);
+        Assert.True(provider.TransferCapabilities.SupportsCooperativeCancellation);
+    }
+
+    [Fact]
+    public async Task DownloadAsync_CancelsInFlightTransfer()
+    {
+        var client = new FakeWebDavClient
+        {
+            ExistingFiles = ["/file.bin"],
+            BlockDownloadUntilCanceled = true
+        };
+        await using var provider = CreateProvider(client);
+        await using var destination = new MemoryStream();
+        using var cancellationSource = new CancellationTokenSource();
+
+        var downloadTask = provider.DownloadAsync(
+            new RemotePath("file.bin"),
+            destination,
+            cancellationToken: cancellationSource.Token);
+        await client.DownloadStarted.Task.WaitAsync(TimeSpan.FromSeconds(1));
+
+        cancellationSource.Cancel();
+        var result = await downloadTask.WaitAsync(TimeSpan.FromSeconds(1));
+
+        Assert.True(result.IsFailure);
+        Assert.Equal(StorageErrorCategory.Canceled, result.Error?.Category);
+        Assert.Equal(TransferIoExecutionKind.Asynchronous, provider.TransferCapabilities.DownloadExecution);
+        Assert.True(provider.TransferCapabilities.SupportsCooperativeCancellation);
+    }
+
     [Fact]
     public async Task ListAsync_MapsFoldersAndFiles()
     {
@@ -318,55 +373,100 @@ public sealed class WebDavStorageProviderTests
 
         public byte[] DownloadPayload { get; init; } = [];
 
-        public IReadOnlyList<WebDavRemoteEntry> ListDirectory(string path)
+        public bool BlockUploadUntilCanceled { get; init; }
+
+        public bool BlockDownloadUntilCanceled { get; init; }
+
+        public TaskCompletionSource<bool> UploadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public TaskCompletionSource<bool> DownloadStarted { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public Task<IReadOnlyList<WebDavRemoteEntry>> ListDirectoryAsync(
+            string path,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             LastListPath = path;
-            return Entries;
+            return Task.FromResult(Entries);
         }
 
-        public bool FileExists(string path)
+        public Task<bool> FileExistsAsync(string path, CancellationToken cancellationToken = default)
         {
-            return ExistingFiles.Contains(path);
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(ExistingFiles.Contains(path));
         }
 
-        public bool DirectoryExists(string path)
+        public Task<bool> DirectoryExistsAsync(string path, CancellationToken cancellationToken = default)
         {
-            return ExistingDirectories.Contains(path) || CreatedDirectories.Contains(path);
+            cancellationToken.ThrowIfCancellationRequested();
+            return Task.FromResult(ExistingDirectories.Contains(path) || CreatedDirectories.Contains(path));
         }
 
-        public void CreateDirectory(string path)
+        public Task CreateDirectoryAsync(string path, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             CreatedDirectories.Add(path);
+            return Task.CompletedTask;
         }
 
-        public void Delete(string path)
+        public Task DeleteAsync(string path, CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             DeletePath = path;
+            return Task.CompletedTask;
         }
 
-        public void Move(string sourcePath, string destinationPath)
+        public Task MoveAsync(
+            string sourcePath,
+            string destinationPath,
+            CancellationToken cancellationToken = default)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             MovedPath = (sourcePath, destinationPath);
+            return Task.CompletedTask;
         }
 
-        public void UploadFile(Stream content, string path, Action<long>? progress = null)
+        public async Task UploadFileAsync(
+            Stream content,
+            string path,
+            Action<long>? progress = null,
+            CancellationToken cancellationToken = default)
         {
             UploadPath = path;
-            using var copy = new MemoryStream();
-            content.CopyTo(copy);
+            UploadStarted.TrySetResult(true);
+            if (BlockUploadUntilCanceled)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+
+            await using var copy = new MemoryStream();
+            await content.CopyToAsync(copy, cancellationToken);
             UploadPayload = copy.ToArray();
             progress?.Invoke(UploadPayload.Length);
         }
 
-        public void DownloadFile(string path, Stream destination, Action<long>? progress = null)
+        public async Task DownloadFileAsync(
+            string path,
+            Stream destination,
+            Action<long>? progress = null,
+            CancellationToken cancellationToken = default)
         {
             DownloadPath = path;
-            destination.Write(DownloadPayload);
+            DownloadStarted.TrySetResult(true);
+            if (BlockDownloadUntilCanceled)
+            {
+                await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken);
+            }
+
+            await destination.WriteAsync(DownloadPayload, cancellationToken);
             progress?.Invoke(DownloadPayload.Length);
         }
 
-        public void Dispose()
+        public ValueTask DisposeAsync()
         {
+            return ValueTask.CompletedTask;
         }
     }
 
